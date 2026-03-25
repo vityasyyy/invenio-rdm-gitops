@@ -1,0 +1,18 @@
+# Environment file with secrets - DO NOT COMMIT
+.env
+
+# Terraform variables (may contain sensitive values)
+*.tfvars
+*.tfvars.*
+
+# Terraform state
+*.tfstate
+*.tfstate.*
+
+# Terraform provider plugins
+.terraform/
+.terraform.lock.hcl
+
+# Override files
+override.tf
+override.tf.json
