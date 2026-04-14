@@ -14,7 +14,7 @@ spec:
           type: RuntimeDefault
       automountServiceAccountToken: false
       containers:
-        - name: argocd-redis
+        - name: redis
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

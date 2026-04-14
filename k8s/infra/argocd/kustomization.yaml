@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - https://raw.githubusercontent.com/argoproj/argo-cd/v2.12.0/manifests/install.yaml
   - install.yaml
+  - argocd-ingress.yaml
 
 namespace: argocd
 
