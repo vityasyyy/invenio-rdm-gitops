@@ -1,0 +1,27 @@
+# Security policies - NetworkPolicies, PodSecurityAdmission, LimitRanges, ResourceQuotas
+# Wave -5: Applied BEFORE everything else to establish security boundaries
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: security-policies
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+  labels:
+    app.kubernetes.io/name: infra
+    app.kubernetes.io/component: security
+spec:
+  project: infra
+  source:
+    repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
+    targetRevision: main
+    path: k8s/infra/security
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - PrunePropagationPolicy=foreground
+      - ServerSideApply=true
