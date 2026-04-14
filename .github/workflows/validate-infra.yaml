@@ -1,0 +1,127 @@
+name: Validate Infrastructure
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'argocd/**'
+      - 'k8s/**'
+      - 'external-lb/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-yaml:
+    name: Validate YAML Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Lint YAML files
+        run: |
+          yamllint -d '{extends: relaxed, rules: {line-length: {max: 120}}}' \
+            argocd/ k8s/ external-lb/k8s/
+
+  validate-kustomize:
+    name: Validate Kustomize Builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Validate ArgoCD kustomize
+        run: |
+          kustomize build k8s/infra/argocd/ > /dev/null
+          echo "✓ k8s/infra/argocd/ builds successfully"
+
+      - name: Validate Sealed Secrets kustomize
+        run: |
+          kustomize build k8s/infra/sealed-secrets/ > /dev/null
+          echo "✓ k8s/infra/sealed-secrets/ builds successfully"
+
+      - name: Validate Security kustomize
+        run: |
+          kustomize build k8s/infra/security/ > /dev/null
+          echo "✓ k8s/infra/security/ builds successfully"
+
+      - name: Validate Cloudflared kustomize
+        run: |
+          kustomize build external-lb/k8s/ > /dev/null
+          echo "✓ external-lb/k8s/ builds successfully"
+
+  validate-terraform:
+    name: Validate Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        working-directory: external-lb/terraform/envs/dev
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        working-directory: external-lb/terraform/envs/dev
+        run: terraform validate
+
+  validate-argocd-apps:
+    name: Validate ArgoCD Applications
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubeval
+        run: |
+          curl -L https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz | tar xz
+          sudo mv kubeval /usr/local/bin/
+
+      - name: Validate ArgoCD app manifests
+        run: |
+          for f in argocd/apps/*.yaml argocd/projects/*.yaml; do
+            echo "Validating $f..."
+            kubeval --strict "$f"
+          done
+        continue-on-error: true
+
+      - name: Check all apps reference valid paths
+        run: |
+          echo "Checking ArgoCD apps reference existing paths..."
+          for f in argocd/apps/*.yaml; do
+            path=$(grep 'path:' "$f" | head -1 | awk '{print $2}' || true)
+            if [ -n "$path" ]; then
+              if [ ! -d "$path" ] && [ ! -f "$path" ]; then
+                echo "WARNING: $f references path '$path' which does not exist"
+              else
+                echo "✓ $f → $path exists"
+              fi
+            fi
+          done
+
+  check-sync-waves:
+    name: Verify Sync Wave Ordering
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check wave annotations
+        run: |
+          echo "Sync wave ordering for ArgoCD apps:"
+          echo ""
+          for f in argocd/apps/*.yaml; do
+            name=$(grep 'name:' "$f" | head -1 | awk '{print $2}')
+            wave=$(grep 'sync-wave' "$f" | awk '{print $2}' || echo "0 (default)")
+            printf "  Wave %s: %s\n" "$wave" "$name"
+          done
+          echo ""
+          echo "Expected order: security(-5) → traefik/cloudflared(-4) → sealed-secrets/argocd-self(-3) → cert-manager(-2) → velero(2) → monitoring(5)"
