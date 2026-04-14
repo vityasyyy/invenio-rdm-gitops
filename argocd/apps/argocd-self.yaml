@@ -1,0 +1,29 @@
+# ArgoCD self-management
+# Wave -3: ArgoCD manages its own lifecycle via this app
+# After initial bootstrap, changes to k8s/infra/argocd/ are synced by ArgoCD itself
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-self
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+  labels:
+    app.kubernetes.io/name: infra
+    app.kubernetes.io/component: argocd
+spec:
+  project: infra
+  source:
+    repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
+    targetRevision: main
+    path: k8s/infra/argocd
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
