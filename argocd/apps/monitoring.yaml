@@ -1,0 +1,73 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: infra
+  source:
+    chart: kube-prometheus-stack
+    repoURL: https://prometheus-community.github.io/helm-charts
+    targetRevision: "69.6.0"
+    helm:
+      values: |
+        prometheus:
+          prometheusSpec:
+            resources:
+              requests:
+                cpu: 200m
+                memory: 512Mi
+              limits:
+                cpu: "1"
+                memory: 2Gi
+            retention: 7d
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: btd-nfs
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: 10Gi
+        grafana:
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          adminPassword: null  # Set via SealedSecret
+          persistence:
+            enabled: true
+            storageClassName: btd-nfs
+            size: 2Gi
+        alertmanager:
+          enabled: true
+          alertmanagerSpec:
+            resources:
+              requests:
+                cpu: 50m
+                memory: 64Mi
+              limits:
+                cpu: 200m
+                memory: 128Mi
+        defaultRules:
+          create: true
+        kubeStateMetrics:
+          enabled: true
+        nodeExporter:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - PrunePropagationPolicy=foreground
