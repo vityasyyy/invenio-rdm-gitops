@@ -12,9 +12,8 @@ spec:
         fsGroup: 999
         seccompProfile:
           type: RuntimeDefault
-      automountServiceAccountToken: false
       containers:
-        - name: argocd-dex-server
+        - name: dex
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

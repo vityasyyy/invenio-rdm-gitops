@@ -27,3 +27,4 @@ spec:
     syncOptions:
       - PruneLast=true
       - ApplyOutOfSyncOnly=true
+      - ServerSideApply=true
