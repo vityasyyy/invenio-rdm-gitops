@@ -53,6 +53,8 @@ spec:
       kind: PodSecurityPolicy
     - group: rbac.authorization.k8s.io
       kind: ClusterRoleBindingList
+    - group: networking.k8s.io
+      kind: IngressClass
   namespaceResourceWhitelist:
     - group: ''
       kind: ConfigMap
@@ -72,6 +74,10 @@ spec:
       kind: PersistentVolumeClaim
     - group: ''
       kind: Endpoints
+    - group: ''
+      kind: ServiceMonitor
+    - group: ''
+      kind: PodMetrics
     - group: apps
       kind: Deployment
     - group: apps
