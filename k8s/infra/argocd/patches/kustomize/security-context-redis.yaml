@@ -12,7 +12,6 @@ spec:
         fsGroup: 999
         seccompProfile:
           type: RuntimeDefault
-      automountServiceAccountToken: false
       containers:
         - name: redis
           securityContext:
