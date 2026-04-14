@@ -45,6 +45,14 @@ spec:
       kind: ClusterIssuer
     - group: apiextensions.k8s.io
       kind: CustomResourceDefinition
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+    - group: policy
+      kind: PodSecurityPolicy
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBindingList
   namespaceResourceWhitelist:
     - group: ''
       kind: ConfigMap
@@ -60,6 +68,10 @@ spec:
       kind: ResourceQuota
     - group: ''
       kind: Namespace
+    - group: ''
+      kind: PersistentVolumeClaim
+    - group: ''
+      kind: Endpoints
     - group: apps
       kind: Deployment
     - group: apps

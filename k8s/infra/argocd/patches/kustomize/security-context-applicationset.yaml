@@ -1,7 +1,7 @@
-- target:
-    kind: Deployment
-    name: argocd-applicationset-controller
-  patch: |
+target:
+  kind: Deployment
+  name: argocd-applicationset-controller
+patch: |
     - op: add
       path: /spec/template/spec/securityContext
       value:

@@ -18,6 +18,7 @@ spec:
     path: k8s/infra/security
   destination:
     server: https://kubernetes.default.svc
+    namespace: argocd
   syncPolicy:
     automated:
       prune: true

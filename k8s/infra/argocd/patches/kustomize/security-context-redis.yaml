@@ -1,7 +1,7 @@
-- target:
-    kind: Deployment
-    name: argocd-redis
-  patch: |
+target:
+  kind: Deployment
+  name: argocd-redis
+patch: |
     - op: add
       path: /spec/template/spec/securityContext
       value:

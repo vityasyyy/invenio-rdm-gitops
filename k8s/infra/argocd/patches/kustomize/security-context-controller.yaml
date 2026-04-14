@@ -1,7 +1,7 @@
-- target:
-    kind: StatefulSet
-    name: argocd-application-controller
-  patch: |
+target:
+  kind: StatefulSet
+  name: argocd-application-controller
+patch: |
     - op: add
       path: /spec/template/spec/securityContext
       value:

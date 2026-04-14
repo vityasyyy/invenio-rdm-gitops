@@ -1,7 +1,7 @@
-- target:
-    kind: Deployment
-    name: sealed-secrets-controller
-  patch: |
+target:
+  kind: Deployment
+  name: sealed-secrets-controller
+patch: |
     - op: add
       path: /spec/template/spec/securityContext
       value:
