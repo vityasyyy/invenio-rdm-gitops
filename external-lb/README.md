@@ -11,22 +11,24 @@ Internet → Cloudflare Edge → Cloudflare Tunnel → Traefik (K8s) → Your Se
 Cloudflare Tunnel creates an outbound-only connection from your infrastructure to Cloudflare's edge. This means:
 
 - **No firewall holes** - No inbound ports needed on your K8s cluster
-- **DDoS protection** - Traffic goes through Cloudflare's network
+- **DDoS protection** - Traffic goes through Cloudflare's global network
 - **Automatic SSL** - Certificates managed by Cloudflare
+- **Zero config** - Works with any Kubernetes service
 
 ## File Structure
 
 ```
 external-lb/terraform/
 ├── envs/dev/
-│   ├── main.tf        # Entry point - instantiates the tunnel module
+│   ├── main.tf        # Entry point - instantiates tunnel module
 │   ├── providers.tf   # Provider & terraform version config
-│   └── variables.tf  # Input variables for this environment
-└── modules/
-    └── cloudflare-tunnel/
-        ├── main.tf       # Creates tunnel, DNS record, and config
-        ├── variables.tf  # Module input variables
-        └── outputs.tf    # Module outputs (tunnel_id)
+│   ├── variables.tf  # Input variables for this environment
+│   ├── .env          # Your Cloudflare credentials (gitignored)
+│   └── .env.example  # Template for .env
+└── modules/cloudflare-tunnel/
+    ├── main.tf       # Creates tunnel, DNS record, and config
+    ├── variables.tf  # Module input variables
+    └── outputs.tf    # Module outputs (tunnel_id)
 ```
 
 ## Entry Point
@@ -39,14 +41,14 @@ module "tunnel" {
 
   account_id    = var.account_id
   zone_id       = var.zone_id
-  name          = "invenio-tunnel"
-  hostname      = "invenio.vityasy.me"
+  name          = "infra-tunnel"
+  hostname      = "*.vityasy.me"
   service       = "http://traefik.traefik.svc.cluster.local:80"
   tunnel_secret = var.tunnel_secret
 }
 ```
 
-This instantiates the reusable `cloudflare-tunnel` module with environment-specific values.
+The `hostname: "*.vityasy.me"` means any subdomain (e.g., `argocd.vityasy.me`, `app.vityasy.me`) will route through this tunnel to Traefik. Traefik then uses IngressRoute rules to route to specific services.
 
 ## What Gets Created
 
@@ -56,14 +58,11 @@ A new tunnel in your Cloudflare account.
 
 ### 2. `cloudflare_record.this`
 
-A CNAME DNS record pointing `invenio.vityasy.me` to `<tunnel-id>.cfargotunnel.com`.
+A CNAME DNS record pointing `*.vityasy.me` to `<tunnel-id>.cfargotunnel.com`.
 
 ### 3. `cloudflare_tunnel_config.this`
 
-Routing configuration telling the tunnel:
-
-- `invenio.vityasy.me` → forward to `http://traefik.traefik.svc.cluster.local:80`
-- Everything else → return 404
+Routing configuration telling the tunnel to forward all subdomain traffic to Traefik.
 
 ## Prerequisites
 
@@ -81,11 +80,11 @@ Routing configuration telling the tunnel:
 openssl rand -base64 32
 ```
 
-This creates a 32-byte random secret used to authenticate the tunnel.
+This creates a 32-byte random secret used to authenticate the tunnel. Save this value to your `.env` file.
 
 ### 2. Create `terraform.tfvars`
 
-In `envs/dev/terraform.tfvars`:
+In `envs/dev/terraform.tfvars` (or `.env` file):
 
 ```hcl
 cloudflare_api_token = "your_cloudflare_api_token"
@@ -108,13 +107,26 @@ terraform plan   # Review changes
 terraform apply  # Create resources
 ```
 
-### 4. Verify
+### 4. Deploy cloudflared DaemonSet
+
+After Terraform creates the tunnel:
+
+```bash
+../scripts/bootstrap-dev.sh
+```
+
+This script:
+1. Fetches tunnel credentials from Cloudflare API
+2. Creates a K8s secret with the credentials
+3. Deploys the cloudflared DaemonSet to `kube-system`
+
+### 5. Verify
 
 After apply:
 
-- DNS record should exist at your domain registrar or Cloudflare
+- DNS record should exist at Cloudflare
 - Tunnel should show as "Active" in Cloudflare Zero Trust dashboard
-- Visit `https://invenio.vityasy.me` (or your configured hostname)
+- Visit `https://argocd.vityasy.me` (or any subdomain) to test
 
 ## Variables Reference
 
@@ -129,21 +141,33 @@ After apply:
 
 The `cloudflare-tunnel` module exposes:
 
-- `tunnel_id` - ID of the created tunnel (useful for referencing in other configs)
+- `tunnel_id` - ID of the created tunnel (useful for referencing)
+- `tunnel_name` - Name of the tunnel
+- `cname` - CNAME target (`<tunnel-id>.cfargotunnel.com`)
 
 ## Troubleshooting
 
 **Tunnel not connecting:**
 
-- Verify the tunnel secret matches exactly
-- Check if the tunnel shows as active in Cloudflare Zero Trust dashboard
+- Verify tunnel secret matches exactly
+- Check if tunnel shows as active in Cloudflare Zero Trust dashboard
+- Review cloudflared pod logs: `kubectl logs -n kube-system -l app=cloudflared --tail=50`
 
 **DNS not resolving:**
 
 - Allow a few minutes for DNS propagation
 - Verify CNAME record exists in Cloudflare DNS settings
+- Check that wildcard record `*.vityasy.me` was created
 
 **502/503 errors:**
 
-- Ensure your K8s service is running
-- Verify the service URL is correct (check if Traefik is in `traefik` namespace)
+- Ensure your Traefik service is running
+- Verify service URL is correct (check if Traefik is in `traefik` namespace)
+- Check IngressRoute exists for the subdomain you're accessing
+
+## Security Notes
+
+- The tunnel secret (`TF_VAR_tunnel_secret`) should be treated like a password
+- Store it in a password manager or encrypted vault
+- Rotate it periodically for improved security (requires Terraform reapply)
+- The cloudflared DaemonSet runs as non-root user 65534 with minimal privileges
