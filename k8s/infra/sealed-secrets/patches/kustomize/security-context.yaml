@@ -1,29 +1,29 @@
-target:
-  kind: Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
   name: sealed-secrets-controller
-patch: |
-    - op: add
-      path: /spec/template/spec/securityContext
-      value:
+  namespace: kube-system
+spec:
+  template:
+    spec:
+      securityContext:
         runAsNonRoot: true
         runAsUser: 1001
         runAsGroup: 1001
         fsGroup: 1001
         seccompProfile:
           type: RuntimeDefault
-    - op: add
-      path: /spec/template/spec/containers/0/securityContext
-      value:
-        allowPrivilegeEscalation: false
-        capabilities:
-          drop:
-            - ALL
-    - op: add
-      path: /spec/template/spec/containers/0/resources
-      value:
-        requests:
-          cpu: "25m"
-          memory: "32Mi"
-        limits:
-          cpu: "100m"
-          memory: "128Mi"
+      containers:
+        - name: sealed-secrets-controller
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "25m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"

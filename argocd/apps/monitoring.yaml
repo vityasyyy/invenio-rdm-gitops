@@ -44,6 +44,18 @@ spec:
             enabled: true
             storageClassName: btd-nfs
             size: 2Gi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 472
+            runAsGroup: 472
+            fsGroup: 472
+          containerSecurityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          initChownData:
+            enabled: false
         alertmanager:
           enabled: true
           alertmanagerSpec:
@@ -60,6 +72,9 @@ spec:
           enabled: true
         nodeExporter:
           enabled: true
+          nodeAffinity: {}
+          tolerations:
+            - operator: Exists
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring

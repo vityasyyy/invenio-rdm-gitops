@@ -1,29 +1,28 @@
-target:
-  kind: StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
   name: argocd-application-controller
-patch: |
-    - op: add
-      path: /spec/template/spec/securityContext
-      value:
+spec:
+  template:
+    spec:
+      securityContext:
         runAsNonRoot: true
         runAsUser: 999
         runAsGroup: 999
         fsGroup: 999
         seccompProfile:
           type: RuntimeDefault
-    - op: add
-      path: /spec/template/spec/containers/0/securityContext
-      value:
-        allowPrivilegeEscalation: false
-        capabilities:
-          drop:
-            - ALL
-    - op: add
-      path: /spec/template/spec/containers/0/resources
-      value:
-        requests:
-          cpu: "250m"
-          memory: "512Mi"
-        limits:
-          cpu: "1000m"
-          memory: "1Gi"
+      containers:
+        - name: argocd-application-controller
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"

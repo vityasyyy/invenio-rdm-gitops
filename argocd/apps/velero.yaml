@@ -24,6 +24,19 @@ spec:
           enabled: true
         snapshotsEnabled: true
         deployNodeAgent: true
+        configuration:
+          backupStorageLocation:
+            name: default
+            provider: aws
+            bucket: velero-backups
+            config:
+              region: us-east-1
+              s3ForcePathStyle: true
+          volumeSnapshotLocation:
+            name: default
+            provider: aws
+            config:
+              region: us-east-1
   destination:
     server: https://kubernetes.default.svc
     namespace: velero
