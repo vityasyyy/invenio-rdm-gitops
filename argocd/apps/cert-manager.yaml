@@ -22,16 +22,17 @@ spec:
           limits:
             cpu: 250m
             memory: 256Mi
-        podSecurityContext:
+        securityContext:
           runAsNonRoot: true
           runAsUser: 1000
           seccompProfile:
             type: RuntimeDefault
-        securityContext:
+        containerSecurityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
               - ALL
+          readOnlyRootFilesystem: true
   destination:
     server: https://kubernetes.default.svc
     namespace: cert-manager
