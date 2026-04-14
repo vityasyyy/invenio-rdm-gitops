@@ -1,0 +1,31 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cluster-health-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: cluster-health
+      rules:
+        - alert: PodCrashLooping
+          expr: rate(kube_pod_container_status_restarts_total[15m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash looping"
+        - alert: PodNotReady
+          expr: kube_pod_status_phase{phase!="Running"} == 1
+          for: 10m
+          labels:
+            severity: warning
+        - alert: HighMemoryUsage
+          expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.1
+          for: 5m
+          labels:
+            severity: warning
+        - alert: NodeDiskPressure
+          expr: kube_node_status_condition{condition="DiskPressure",status="true"} == 1
+          for: 5m
+          labels:
+            severity: critical

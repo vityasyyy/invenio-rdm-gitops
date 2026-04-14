@@ -1,0 +1,112 @@
+# Traefik Helm Values - Versioned Configuration
+#
+# Chart: traefik/traefik v39.0.6
+# App Version: v3.6.11
+# Image: docker.io/traefik:v3.6.11
+#
+# This file is the source of truth for Traefik configuration.
+# Any changes should be committed to Git.
+
+image:
+  registry: docker.io
+  repository: traefik
+  tag: "v3.6.11"
+  pullPolicy: IfNotPresent
+
+# Enable dashboard for debugging (accessible via internal port)
+ports:
+  traefik:
+    port: 8080
+    expose:
+      default: false
+    exposedPort: 8080
+  web:
+    port: 8000
+    expose:
+      default: true
+    exposedPort: 80
+  websecure:
+    port: 8443
+    expose:
+      default: true
+    exposedPort: 443
+    http:
+      tls:
+        enabled: true
+  metrics:
+    port: 9100
+    expose:
+      default: false
+    exposedPort: 9100
+
+# Service type - ClusterIP since Cloudflare Tunnel uses internal DNS
+service:
+  type: ClusterIP
+  single: true
+
+# Kubernetes CRD provider - watch these namespaces for IngressRoutes
+providers:
+  kubernetesCRD:
+    enabled: true
+    # Watch traefik, argocd, and monitoring namespaces for IngressRoute resources
+    namespaces:
+      - traefik
+      - argocd
+      - monitoring
+    allowCrossNamespace: false
+    allowEmptyServices: true
+  kubernetesIngress:
+    enabled: true
+    allowEmptyServices: true
+    # Watch traefik, argocd, and monitoring namespaces for standard Ingress resources
+    namespaces:
+      - traefik
+      - argocd
+      - monitoring
+
+# IngressClass - make Traefik the default ingress controller
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+  name: traefik
+
+# Logging
+logs:
+  general:
+    level: INFO
+  access:
+    enabled: true
+    format: json
+
+# Health and version checks
+global:
+  checkNewVersion: true
+  sendAnonymousUsage: false
+
+# Single replica - sufficient for small clusters
+deployment:
+  replicas: 1
+
+# Resource limits
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+# Pod security
+podSecurityContext:
+  runAsGroup: 65532
+  runAsNonRoot: true
+  runAsUser: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
