@@ -1,0 +1,30 @@
+# Cloudflare Tunnel DaemonSet
+# Wave -4: Deployed alongside Traefik (tunnel needs Traefik to route to)
+# NOTE: The tunnel token secret (cloudflared-credentials) is created manually
+#       via bootstrap-dev.sh because it requires dynamic API calls to Cloudflare.
+#       Only the DaemonSet is ArgoCD-managed.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cloudflared
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+  labels:
+    app.kubernetes.io/name: infra
+    app.kubernetes.io/component: cloudflared
+spec:
+  project: infra
+  source:
+    repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
+    targetRevision: main
+    path: external-lb/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - PrunePropagationPolicy=foreground
