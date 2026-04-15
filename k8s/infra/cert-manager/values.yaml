@@ -1,0 +1,37 @@
+# Cert-Manager Helm Values - Versioned Configuration
+#
+# Chart: cert-manager v1.16.2
+# Source: https://charts.jetstack.io
+#
+# This file is the source of truth for Cert-Manager configuration.
+# Any changes should be committed to Git.
+
+# Install CRDs automatically
+installCRDs: true
+
+# Single replica - sufficient for small clusters
+replicaCount: 1
+
+# Resource limits
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+# Pod security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container security context
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true

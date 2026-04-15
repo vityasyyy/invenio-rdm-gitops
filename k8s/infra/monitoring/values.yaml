@@ -1,0 +1,81 @@
+# Prometheus/Grafana Helm Values - Versioned Configuration
+#
+# Chart: kube-prometheus-stack v69.6.0
+# Source: https://prometheus-community.github.io/helm-charts
+#
+# This file is the source of truth for Monitoring stack configuration.
+# Any changes should be committed to Git.
+
+# Prometheus configuration
+prometheus:
+  prometheusSpec:
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    retention: 7d
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: btd-nfs
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+
+# Grafana configuration
+grafana:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  adminPassword: null  # Set via SealedSecret
+  persistence:
+    enabled: true
+    storageClassName: btd-nfs
+    size: 2Gi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 472
+    runAsGroup: 472
+    fsGroup: 472
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  initChownData:
+    enabled: false
+
+# Alertmanager configuration
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+# Default alerting rules
+defaultRules:
+  create: true
+
+# Kube State Metrics
+kubeStateMetrics:
+  enabled: true
+
+# Node Exporter
+nodeExporter:
+  enabled: true
+  nodeAffinity: {}
+  tolerations:
+    - operator: Exists

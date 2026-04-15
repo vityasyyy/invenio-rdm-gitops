@@ -1,0 +1,41 @@
+# Velero Helm Values - Versioned Configuration
+#
+# Chart: velero v11.4.0
+# Source: https://vmware-tanzu.github.io/helm-charts
+#
+# This file is the source of truth for Velero configuration.
+# Any changes should be committed to Git.
+
+# Resource limits
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Enable metrics for Prometheus monitoring
+metrics:
+  enabled: true
+
+# Enable volume snapshots
+snapshotsEnabled: true
+
+# Deploy node agent for backup/restore
+deployNodeAgent: true
+
+# Backup storage configuration
+configuration:
+  backupStorageLocation:
+    - name: default
+      provider: aws
+      bucket: velero-backups
+      config:
+        region: us-east-1
+        s3ForcePathStyle: true
+  volumeSnapshotLocation:
+    - name: default
+      provider: aws
+      config:
+        region: us-east-1

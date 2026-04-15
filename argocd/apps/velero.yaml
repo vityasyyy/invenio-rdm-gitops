@@ -7,36 +7,18 @@ metadata:
     argocd.argoproj.io/sync-wave: "2"
 spec:
   project: infra
-  source:
-    chart: velero
-    repoURL: https://vmware-tanzu.github.io/helm-charts
-    targetRevision: "11.4.0"
-    helm:
-      values: |
-        resources:
-          requests:
-            cpu: 50m
-            memory: 128Mi
-          limits:
-            cpu: 500m
-            memory: 512Mi
-        metrics:
-          enabled: true
-        snapshotsEnabled: true
-        deployNodeAgent: true
-        configuration:
-          backupStorageLocation:
-            name: default
-            provider: aws
-            bucket: velero-backups
-            config:
-              region: us-east-1
-              s3ForcePathStyle: true
-          volumeSnapshotLocation:
-            name: default
-            provider: aws
-            config:
-              region: us-east-1
+  sources:
+    # Helm chart source
+    - chart: velero
+      repoURL: https://vmware-tanzu.github.io/helm-charts
+      targetRevision: "11.4.0"
+      helm:
+        valueFiles:
+          - $values/k8s/infra/velero/values.yaml
+    # Values file source (this repo)
+    - repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
+      targetRevision: main
+      ref: values
   destination:
     server: https://kubernetes.default.svc
     namespace: velero

@@ -7,32 +7,18 @@ metadata:
     argocd.argoproj.io/sync-wave: "-2"
 spec:
   project: infra
-  source:
-    chart: cert-manager
-    repoURL: https://charts.jetstack.io
-    targetRevision: v1.16.2
-    helm:
-      values: |
-        installCRDs: true
-        replicaCount: 1
-        resources:
-          requests:
-            cpu: 50m
-            memory: 128Mi
-          limits:
-            cpu: 250m
-            memory: 256Mi
-        securityContext:
-          runAsNonRoot: true
-          runAsUser: 1000
-          seccompProfile:
-            type: RuntimeDefault
-        containerSecurityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-              - ALL
-          readOnlyRootFilesystem: true
+  sources:
+    # Helm chart source
+    - chart: cert-manager
+      repoURL: https://charts.jetstack.io
+      targetRevision: v1.16.2
+      helm:
+        valueFiles:
+          - $values/k8s/infra/cert-manager/values.yaml
+    # Values file source (this repo)
+    - repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
+      targetRevision: main
+      ref: values
   destination:
     server: https://kubernetes.default.svc
     namespace: cert-manager

@@ -7,91 +7,18 @@ metadata:
     argocd.argoproj.io/sync-wave: "-4"
 spec:
   project: infra
-  source:
-    chart: traefik
-    repoURL: https://traefik.github.io/charts
-    targetRevision: v39.0.6
-    helm:
-      values: |
-        image:
-          registry: docker.io
-          repository: traefik
-          tag: "v3.6.11"
-        ports:
-          traefik:
-            port: 8080
-            expose:
-              default: false
-          web:
-            port: 8000
-            expose:
-              default: true
-            exposedPort: 80
-          websecure:
-            port: 8443
-            expose:
-              default: true
-            exposedPort: 443
-            http:
-              tls:
-                enabled: true
-          metrics:
-            port: 9100
-            expose:
-              default: false
-        service:
-          type: ClusterIP
-          single: true
-        providers:
-          kubernetesCRD:
-            enabled: true
-            namespaces:
-              - traefik
-              - argocd
-              - monitoring
-            allowCrossNamespace: false
-            allowEmptyServices: true
-          kubernetesIngress:
-            enabled: true
-            allowEmptyServices: true
-            namespaces:
-              - traefik
-              - argocd
-              - monitoring
-        ingressClass:
-          enabled: true
-          isDefaultClass: true
-          name: traefik
-        logs:
-          general:
-            level: INFO
-          access:
-            enabled: true
-            format: json
-        global:
-          checkNewVersion: true
-          sendAnonymousUsage: false
-        deployment:
-          replicas: 1
-        resources:
-          requests:
-            cpu: "100m"
-            memory: "128Mi"
-          limits:
-            cpu: "500m"
-            memory: "512Mi"
-        podSecurityContext:
-          runAsGroup: 65532
-          runAsNonRoot: true
-          runAsUser: 65532
-          seccompProfile:
-            type: RuntimeDefault
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-              - ALL
-          readOnlyRootFilesystem: true
+  sources:
+    # Helm chart source
+    - chart: traefik
+      repoURL: https://traefik.github.io/charts
+      targetRevision: v39.0.6
+      helm:
+        valueFiles:
+          - $values/k8s/infra/traefik/values.yaml
+    # Values file source (this repo)
+    - repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
+      targetRevision: main
+      ref: values
   destination:
     server: https://kubernetes.default.svc
     namespace: traefik
