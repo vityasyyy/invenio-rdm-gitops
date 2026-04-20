@@ -20,5 +20,9 @@ spec:
             matchLabels:
               app: cloudflared
       ports:
+        - port: 80
+          protocol: TCP
+        - port: 443
+          protocol: TCP
         - port: 8000
           protocol: TCP
