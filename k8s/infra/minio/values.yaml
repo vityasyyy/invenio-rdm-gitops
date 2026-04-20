@@ -41,6 +41,8 @@ containerSecurityContext:
   capabilities:
     drop:
       - ALL
+  seccompProfile:
+    type: RuntimeDefault
 
 service:
   type: ClusterIP
