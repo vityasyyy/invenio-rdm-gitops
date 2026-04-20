@@ -82,3 +82,10 @@ nodeExporter:
   nodeAffinity: {}
   tolerations:
     - operator: Exists
+
+# Prometheus Operator - disable admission webhooks to prevent failing job
+prometheusOperator:
+  admissionWebhooks:
+    enabled: false
+    patch:
+      enabled: false
