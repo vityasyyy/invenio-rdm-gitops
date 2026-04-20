@@ -1,0 +1,51 @@
+# MinIO Helm Values - S3-Compatible Object Storage
+#
+# Chart: minio v5.4.0
+# Source: https://charts.min.io/
+#
+# This file is the source of truth for MinIO configuration.
+# Used by Velero as the S3-compatible backup storage backend.
+
+mode: standalone
+
+rootUser: minioadmin
+rootPassword: minioadmin123
+
+buckets:
+  - name: velero-backups
+    policy: none
+    purge: false
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 1Gi
+
+persistence:
+  enabled: true
+  storageClass: btd-nfs
+  size: 20Gi
+  accessMode: ReadWriteOnce
+
+securityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  runAsNonRoot: true
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 9000
+
+consoleService:
+  type: ClusterIP
+  port: 9001

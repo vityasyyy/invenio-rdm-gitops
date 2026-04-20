@@ -1,0 +1,23 @@
+# Velero backup schedule - weekly infrastructure backup
+---
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: weekly-infra-backup
+  namespace: velero
+spec:
+  schedule: "0 3 * * 0"
+  template:
+    ttl: 672h
+    includedNamespaces:
+      - argocd
+      - traefik
+      - monitoring
+      - minio
+      - invenio
+      - velero
+      - cert-manager
+    snapshotVolumes: true
+    storageLocation: default
+    volumeSnapshotLocations:
+      - default

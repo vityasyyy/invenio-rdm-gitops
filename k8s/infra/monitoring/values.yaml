@@ -35,7 +35,8 @@ grafana:
     limits:
       cpu: 500m
       memory: 512Mi
-  adminPassword: null  # Set via SealedSecret
+  adminExistingSecret: grafana-admin-credentials
+  adminPasswordKey: password
   persistence:
     enabled: true
     storageClassName: btd-nfs

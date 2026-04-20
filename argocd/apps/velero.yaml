@@ -19,6 +19,10 @@ spec:
     - repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
       targetRevision: main
       ref: values
+    # Additional manifests: credentials + backup schedule
+    - repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
+      targetRevision: main
+      path: k8s/infra/velero
   destination:
     server: https://kubernetes.default.svc
     namespace: velero

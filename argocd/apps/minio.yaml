@@ -1,31 +1,28 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: monitoring
+  name: minio
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "5"
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   project: infra
   sources:
-    # Helm chart source
-    - chart: kube-prometheus-stack
-      repoURL: https://prometheus-community.github.io/helm-charts
-      targetRevision: "69.6.0"
+    - chart: minio
+      repoURL: https://charts.min.io/
+      targetRevision: "5.4.0"
       helm:
         valueFiles:
-          - $values/k8s/infra/monitoring/values.yaml
-    # Values file source (this repo)
+          - $values/k8s/infra/minio/values.yaml
     - repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
       targetRevision: main
       ref: values
   destination:
     server: https://kubernetes.default.svc
-    namespace: monitoring
+    namespace: minio
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
-      - ServerSideApply=true
-      - PrunePropagationPolicy=foreground
+      - CreateNamespace=true

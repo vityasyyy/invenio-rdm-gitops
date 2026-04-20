@@ -5,6 +5,8 @@ resources:
   - network-policies/default-deny.yaml
   - network-policies/argocd-allow.yaml
   - network-policies/cloudflared-allow.yaml
+  - network-policies/monitoring-allow.yaml
+  - network-policies/minio-allow.yaml
   - network-policies/invenio-netpol.yaml
   - limit-ranges/default-limits.yaml
   - resource-quotas/argocd-quota.yaml
