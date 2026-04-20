@@ -1,26 +1,18 @@
-# Allow Velero namespace to reach MinIO on port 9000 (S3 API)
----
+# Allow MinIO to accept traffic from all namespaces
+# Also allow MinIO to make outbound connections
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-velero-to-minio
+  name: minio-all-allow
   namespace: minio
 spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: minio
+  podSelector: {}
   policyTypes:
     - Ingress
+    - Egress
   ingress:
     - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: velero
-      ports:
-        - port: 9000
-          protocol: TCP
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: minio
-      # Allow inter-pod communication within minio namespace
+        - namespaceSelector: {}
+  egress:
+    - to:
+        - namespaceSelector: {}
