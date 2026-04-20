@@ -41,6 +41,12 @@ spec:
         - protocol: TCP
           port: 80
     - to:
+        - ipBlock:
+            cidr: 10.43.0.1/32
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
         - podSelector:
             matchLabels:
               k8s-app: kube-dns

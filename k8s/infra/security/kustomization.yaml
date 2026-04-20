@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - pod-security-admission.yaml
   - traefik-full-egress.yaml
+  - monitoring-egress.yaml
   - network-policies/default-deny.yaml
   - network-policies/argocd-allow.yaml
   - network-policies/cloudflared-allow.yaml
