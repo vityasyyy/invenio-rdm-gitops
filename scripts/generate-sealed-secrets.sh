@@ -63,7 +63,7 @@ GRAFANA_ADMIN_PASSWORD="grafana-$(openssl rand -base64 24 | tr -d '=+/' | cut -c
 echo "$GRAFANA_ADMIN_USER" >"$SECRETS_DIR/grafana-admin-user.txt"
 echo "$GRAFANA_ADMIN_PASSWORD" >"$SECRETS_DIR/grafana-admin-password.txt"
 
-kubectl create secret generic grafana-admin-credentials \
+kubectl create secret generic monitoring-grafana \
   --namespace monitoring \
   --from-literal=admin-user="$GRAFANA_ADMIN_USER" \
   --from-literal=admin-password="$GRAFANA_ADMIN_PASSWORD" \
