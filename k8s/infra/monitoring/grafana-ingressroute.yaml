@@ -7,7 +7,7 @@ spec:
   entryPoints:
     - web
   routes:
-    - match: Host(`grafana.btd.smkn1baturaden.sch.id`)
+    - match: Host(`grafana.vityasy.me`)
       kind: Rule
       services:
         - name: monitoring-grafana
