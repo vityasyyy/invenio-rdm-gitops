@@ -5,9 +5,9 @@ metadata:
   namespace: argocd
 spec:
   hard:
-    requests.cpu: "2"
+    requests.cpu: "3"
     requests.memory: "4Gi"
-    limits.cpu: "4"
+    limits.cpu: "5"
     limits.memory: "8Gi"
     pods: "20"
     services: "10"
