@@ -8,13 +8,9 @@
 
 mode: standalone
 
-rootUser: minioadmin
-rootPassword: minioadmin123
+existingSecret: minio-credentials
 
-buckets:
-  - name: velero-backups
-    policy: none
-    purge: false
+buckets: []
 
 resources:
   requests:

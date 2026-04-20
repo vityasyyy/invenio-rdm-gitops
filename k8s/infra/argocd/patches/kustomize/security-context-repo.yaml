@@ -20,10 +20,21 @@ spec:
             capabilities:
               drop:
                 - ALL
+            readOnlyRootFilesystem: true
           resources:
             requests:
-              cpu: "100m"
-              memory: "128Mi"
+              cpu: "200m"
+              memory: "256Mi"
             limits:
-              cpu: "500m"
-              memory: "512Mi"
+              cpu: "1000m"
+              memory: "1Gi"
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
+            - name: home-dir
+              mountPath: /home/argocd
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}
+        - name: home-dir
+          emptyDir: {}

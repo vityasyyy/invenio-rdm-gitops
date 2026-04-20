@@ -19,8 +19,77 @@ spec:
       ports:
         - port: 80
           protocol: TCP
+---
+# Allow all monitoring components to communicate internally
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-monitoring-internal
+  namespace: monitoring
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
-      # Allow inter-pod communication within monitoring namespace
+---
+# Allow Prometheus to scrape targets across all namespaces + DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-egress
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 9090
+          protocol: TCP
+        - port: 9100
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
+        - port: 8081
+          protocol: TCP
+    - to: []
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# Allow Grafana to query Prometheus + DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-grafana-egress
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 9090
+          protocol: TCP
+    - to: []
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

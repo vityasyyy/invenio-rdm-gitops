@@ -1,15 +1,13 @@
 # Cloudflare Tunnel DaemonSet
-# Wave -4: Deployed alongside Traefik (tunnel needs Traefik to route to)
-# NOTE: The tunnel token secret (cloudflared-credentials) is created manually
-#       via bootstrap-dev.sh because it requires dynamic API calls to Cloudflare.
-#       Only the DaemonSet is ArgoCD-managed.
+# Wave -1: Deployed AFTER sealed-secrets (wave -3) so credentials can be unsealed
+# Credentials are managed via SealedSecret in this kustomization
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: cloudflared
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "-4"
+    argocd.argoproj.io/sync-wave: "-1"
   labels:
     app.kubernetes.io/name: infra
     app.kubernetes.io/component: cloudflared

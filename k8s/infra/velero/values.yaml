@@ -19,8 +19,8 @@ resources:
 metrics:
   enabled: true
 
-# Enable volume snapshots
-snapshotsEnabled: true
+# Disable volume snapshots - using file-level backup via restic instead
+snapshotsEnabled: false
 
 # Deploy node agent for backup/restore
 deployNodeAgent: true
@@ -40,11 +40,6 @@ configuration:
         region: minio
         s3ForcePathStyle: true
         s3Url: http://minio.minio.svc.cluster.local:9000
-  volumeSnapshotLocation:
-    - name: default
-      provider: aws
-      config:
-        region: minio
 
 # Init container for AWS plugin (needed for S3-compatible storage)
 initContainers:

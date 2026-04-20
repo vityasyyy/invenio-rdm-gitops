@@ -17,7 +17,6 @@ spec:
       - invenio
       - velero
       - cert-manager
-    snapshotVolumes: true
+    defaultVolumesToFsBackup: true
+    snapshotVolumes: false
     storageLocation: default
-    volumeSnapshotLocations:
-      - default
