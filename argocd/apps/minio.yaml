@@ -19,7 +19,7 @@ spec:
       ref: values
     - repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
       targetRevision: main
-      path: k8s/infra/minio/create-bucket-job.yaml
+      path: k8s/infra/minio
   destination:
     server: https://kubernetes.default.svc
     namespace: minio
