@@ -1,18 +1,45 @@
-# Allow MinIO to accept traffic from all namespaces
-# Also allow MinIO to make outbound connections
+# Allow only required traffic to MinIO:
+# - MinIO namespace (internal jobs/tools)
+# - Velero namespace (S3 API on 9000)
+# - Invenio namespace (S3 API on 9000)
+# - Traefik namespace (console route on 9001)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: minio-all-allow
+  name: allow-minio-required-ingress
   namespace: minio
 spec:
   podSelector: {}
   policyTypes:
     - Ingress
-    - Egress
   ingress:
     - from:
-        - namespaceSelector: {}
-  egress:
-    - to:
-        - namespaceSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+      ports:
+        - port: 9000
+          protocol: TCP
+        - port: 9001
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: velero
+      ports:
+        - port: 9000
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: invenio
+      ports:
+        - port: 9000
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - port: 9001
+          protocol: TCP

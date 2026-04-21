@@ -17,7 +17,9 @@ metadata:
   name: invenio-allow-traefik
   namespace: invenio
 spec:
-  podSelector: {}
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: invenio-web
   policyTypes:
     - Ingress
   ingress:
@@ -25,6 +27,29 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: traefik
+      ports:
+        - port: 8000
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: invenio-allow-monitoring-scrape
+  namespace: invenio
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: invenio-web
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8000
+          protocol: TCP
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -45,6 +70,88 @@ spec:
         - port: 53
           protocol: UDP
         - port: 53
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: invenio-allow-egress-postgresql
+  namespace: invenio
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: invenio-web
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: database
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: invenio-allow-egress-redis
+  namespace: invenio
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: invenio-web
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: invenio-allow-egress-search
+  namespace: invenio
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: invenio-web
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: search
+      ports:
+        - port: 9200
+          protocol: TCP
+        - port: 9300
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: invenio-allow-egress-minio
+  namespace: invenio
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: invenio-web
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+      ports:
+        - port: 9000
           protocol: TCP
 ---
 apiVersion: networking.k8s.io/v1

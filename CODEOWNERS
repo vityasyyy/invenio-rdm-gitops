@@ -1,0 +1,32 @@
+# Codeowners for Invenio RDM GitOps
+
+# Global admins - own everything
+* @vityasyyy
+
+# Infrastructure components
+argocd/ @vityasyyy
+k8s/infra/ @vityasyyy
+
+# ArgoCD applications
+argocd/apps/ @vityasyyy
+
+# Security policies
+k8s/infra/security/ @vityasyyy
+
+# Monitoring stack
+k8s/infra/monitoring/ @vityasyyy
+
+# Sealed secrets (requires rotation if changed)
+k8s/**/*secret*.yaml @vityasyyy
+
+# CI/CD workflows
+.github/workflows/ @vityasyyy
+
+# Bootstrap and utility scripts
+scripts/ @vityasyyy
+
+# External load balancer
+external-lb/ @vityasyyy
+
+# Application manifests
+k8s/apps/ @vityasyyy

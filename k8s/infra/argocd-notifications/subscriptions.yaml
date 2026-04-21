@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-notifications-cm
+  namespace: argocd
+data:
+  subscriptions: |
+    - recipients:
+      - slack:test-channel
+      triggers:
+      - on-sync-succeeded
+      - on-sync-failed
+      - on-health-degraded

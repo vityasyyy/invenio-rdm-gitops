@@ -29,8 +29,8 @@ Traefik Controller (traefik namespace)
 | Image | docker.io/traefik:v3.6.11 |
 | Replicas | 1 |
 | Service Type | ClusterIP |
-| Watched Namespaces (CRD) | traefik, argocd, monitoring |
-| Watched Namespaces (Ingress) | traefik, argocd, monitoring |
+| Watched Namespaces (CRD) | traefik, argocd, monitoring, minio |
+| Watched Namespaces (Ingress) | traefik, argocd, monitoring, minio |
 | Default IngressClass | traefik |
 
 ## Architecture
@@ -40,7 +40,8 @@ Cloudflare Tunnel → traefik:8000 (web entryPoint)
                            │
                            ├─ IngressRoute: argocd.vityasy.me → argocd-server:8080
                            ├─ IngressRoute: *.vityasy.me → (future services)
-                           └─ IngressRoute: grafana.vityasy.me → grafana (monitoring)
+                           ├─ IngressRoute: grafana.vityasy.me → grafana (monitoring)
+                           └─ IngressRoute: minio-console.vityasy.me → minio-console:9001 (minio)
 ```
 
 ## Key Configuration Notes

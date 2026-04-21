@@ -4,3 +4,4 @@ kind: Kustomization
 resources:
   - minio-credentials-secret.yaml
   - create-bucket-job.yaml
+  - minio-console-ingressroute.yaml

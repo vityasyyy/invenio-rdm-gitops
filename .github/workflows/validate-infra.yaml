@@ -9,6 +9,8 @@ on:
       - 'external-lb/**'
       - 'scripts/**'
       - '.github/workflows/**'
+  schedule:
+    - cron: '0 6 * * 1'
 
 permissions:
   contents: read
@@ -20,13 +22,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('.pre-commit-config.yaml') }}
+
       - name: Install yamllint
         run: pip install yamllint
 
       - name: Lint YAML files
-        run: |
-          yamllint -d '{extends: relaxed, rules: {line-length: {max: 120}}}' \
-            argocd/ k8s/ external-lb/k8s/
+        run: yamllint argocd/ k8s/ external-lb/k8s/
 
   validate-kustomize:
     name: Validate Kustomize Builds
@@ -34,30 +40,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache kustomize
+        uses: actions/cache@v4
+        with:
+          path: kustomize
+          key: ${{ runner.os }}-kustomize-v5.4.1
+
       - name: Install kustomize
         run: |
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-          sudo mv kustomize /usr/local/bin/
+          if [ ! -f kustomize/kustomize ]; then
+            wget https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.4.1/kustomize_v5.4.1_linux_amd64.tar.gz
+            tar xzf kustomize_v5.4.1_linux_amd64.tar.gz
+            mkdir -p kustomize
+            mv kustomize kustomize/
+          fi
+          sudo ln -sf $(pwd)/kustomize/kustomize /usr/local/bin/kustomize
+          kustomize version
 
       - name: Validate ArgoCD kustomize
-        run: |
-          kustomize build k8s/infra/argocd/ > /dev/null
-          echo "✓ k8s/infra/argocd/ builds successfully"
+        run: kustomize build k8s/infra/argocd/ > /dev/null && echo "✓ k8s/infra/argocd/ builds successfully"
 
       - name: Validate Sealed Secrets kustomize
-        run: |
-          kustomize build k8s/infra/sealed-secrets/ > /dev/null
-          echo "✓ k8s/infra/sealed-secrets/ builds successfully"
+        run: kustomize build k8s/infra/sealed-secrets/ > /dev/null && echo "✓ k8s/infra/sealed-secrets/ builds successfully"
 
       - name: Validate Security kustomize
-        run: |
-          kustomize build k8s/infra/security/ > /dev/null
-          echo "✓ k8s/infra/security/ builds successfully"
+        run: kustomize build k8s/infra/security/ > /dev/null && echo "✓ k8s/infra/security/ builds successfully"
 
       - name: Validate Cloudflared kustomize
-        run: |
-          kustomize build external-lb/k8s/ > /dev/null
-          echo "✓ external-lb/k8s/ builds successfully"
+        run: kustomize build external-lb/k8s/ > /dev/null && echo "✓ external-lb/k8s/ builds successfully"
+
+      - name: Validate Monitoring kustomize
+        run: kustomize build k8s/infra/monitoring/ > /dev/null && echo "✓ k8s/infra/monitoring/ builds successfully"
+
+      - name: Validate MinIO kustomize
+        run: kustomize build k8s/infra/minio/ > /dev/null && echo "✓ k8s/infra/minio/ builds successfully"
+
+      - name: Validate Velero kustomize
+        run: kustomize build k8s/infra/velero/ > /dev/null && echo "✓ k8s/infra/velero/ builds successfully"
+
+      - name: Validate Invenio kustomize
+        run: kustomize build k8s/apps/invenio/ > /dev/null && echo "✓ k8s/apps/invenio/ builds successfully"
+
+      - name: Validate secret generator syntax
+        run: bash -n scripts/generate-sealed-secrets.sh
 
   validate-terraform:
     name: Validate Terraform
@@ -65,13 +90,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: hashicorp/setup-terraform@v3
+      - name: Cache Terraform providers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.terraform.d/plugin-cache
+            .terraform
+          key: ${{ runner.os }}-terraform-${{ hashFiles('external-lb/terraform/**/*.tf') }}
 
-      - name: Terraform Init
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init (dev)
         working-directory: external-lb/terraform/envs/dev
         run: terraform init -input=false
 
-      - name: Terraform Validate
+      - name: Terraform Validate (dev)
         working-directory: external-lb/terraform/envs/dev
         run: terraform validate
 
@@ -81,18 +115,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install kubeval
-        run: |
-          curl -L https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz | tar xz
-          sudo mv kubeval /usr/local/bin/
-
-      - name: Validate ArgoCD app manifests
-        run: |
-          for f in argocd/apps/*.yaml argocd/projects/*.yaml; do
-            echo "Validating $f..."
-            kubeval --strict "$f"
-          done
-        continue-on-error: true
+      - name: Run kube-linter
+        uses: stackrox/kube-linter-action@v2.0.0
+        with:
+          directory: argocd/
 
       - name: Check all apps reference valid paths
         run: |
@@ -101,7 +127,8 @@ jobs:
             path=$(grep 'path:' "$f" | head -1 | awk '{print $2}' || true)
             if [ -n "$path" ]; then
               if [ ! -d "$path" ] && [ ! -f "$path" ]; then
-                echo "WARNING: $f references path '$path' which does not exist"
+                echo "ERROR: $f references path '$path' which does not exist"
+                exit 1
               else
                 echo "✓ $f → $path exists"
               fi
@@ -125,3 +152,17 @@ jobs:
           done
           echo ""
           echo "Expected order: security(-5) → traefik/cloudflared(-4) → sealed-secrets/argocd-self(-3) → cert-manager(-2) → velero(2) → monitoring(5)"
+
+  scan-secrets:
+    name: Scan for Secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
