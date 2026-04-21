@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: invenio-app-config
+  namespace: invenio
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+data:
+  INVENIO_SITE_NAME: "Invenio RDM"
+  INVENIO_SITE_UI_URL: "https://invenio.vityasy.me"
+  INVENIO_SITE_API_URL: "https://api.invenio.vityasy.me"
+  INVENIO_DB_HOST: "invenio-postgresql.invenio.svc.cluster.local"
+  INVENIO_DB_PORT: "5432"
+  INVENIO_REDIS_HOST: "invenio-redis.invenio.svc.cluster.local"
+  INVENIO_REDIS_PORT: "6379"
+  INVENIO_SEARCH_HOST: "invenio-search.invenio.svc.cluster.local"
+  INVENIO_SEARCH_PORT: "9200"
+  INVENIO_S3_ENDPOINT: "http://minio.minio.svc.cluster.local:9000"
+  INVENIO_S3_BUCKET: "invenio-rdm"

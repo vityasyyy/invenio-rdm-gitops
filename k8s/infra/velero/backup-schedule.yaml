@@ -5,6 +5,8 @@ kind: Schedule
 metadata:
   name: weekly-infra-backup
   namespace: velero
+  labels:
+    backup-scope: infra-and-invenio
 spec:
   schedule: "0 3 * * 0"
   template:
@@ -14,7 +16,7 @@ spec:
       - traefik
       - monitoring
       - minio
-      - invenio
+      - invenio # explicit InvenioRDM application namespace coverage
       - velero
       - cert-manager
     defaultVolumesToFsBackup: true

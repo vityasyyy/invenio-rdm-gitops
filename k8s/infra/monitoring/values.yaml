@@ -55,6 +55,15 @@ grafana:
         - ALL
   initChownData:
     enabled: false
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: monitoring
+      folderAnnotation: grafana_folder
+    providers:
+      enabled: true
 
 # Alertmanager configuration
 alertmanager:
