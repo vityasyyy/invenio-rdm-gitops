@@ -130,6 +130,7 @@ argocd account update-password
 | `cert-manager` | -2 | Cert-manager for TLS (Helm chart) |
 | `velero` | 2 | Velero for cluster backups (Helm chart) |
 | `monitoring` | 5 | Prometheus/Grafana stack (Helm chart) |
+| `invenio-bootstrap` | 7 | Invenio bootstrap stack (config scaffold, external deps wiring, sealed secret template, ingress routes) |
 
 **Note:** ArgoCD itself is initially installed via `bootstrap-infra.sh`, then manages its own lifecycle via `argocd-self` (wave -3). After bootstrap, changes to `k8s/infra/argocd/` are synced by ArgoCD automatically.
 
@@ -174,30 +175,31 @@ kubectl create secret tls sealed-secrets-key \
 
 ### Generating New Sealed Secrets
 
-When you're ready to deploy an application that needs secrets:
+Use the centralized generator instead of hand-writing `kubectl create secret | kubeseal` pipelines:
 
 ```bash
-# 1. Create a secret locally
-cat > my-secret.yaml <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: my-app-credentials
-type: Opaque
-stringData:
-  password: "my-secure-password"
-  api-key: "my-api-key"
-EOF
+# Rotate everything managed by the generator
+./scripts/generate-sealed-secrets.sh
 
-# 2. Seal it with the cluster's public key
-kubeseal --cert secrets/sealed-secrets-public.pem < my-secret.yaml > sealed-secret.yaml
+# Rotate only Invenio
+./scripts/generate-sealed-secrets.sh invenio
 
-# 3. The output is a SealedSecret CRD - SAFE to commit to Git
-# 4. Commit to your repo
-git add sealed-secret.yaml
-git commit -m "Add sealed secret for my-app"
-git push
+# Override one value and reseal only Invenio
+INVENIO_SECRET_KEY="$(openssl rand -hex 32)" \
+  ./scripts/generate-sealed-secrets.sh invenio
+
+# Seal Cloudflare tunnel token if you have a new token from Cloudflare
+CLOUDFLARE_TUNNEL_TOKEN="$TOKEN" ./scripts/generate-sealed-secrets.sh cloudflared
 ```
+
+### Secrets policy
+
+- `k8s/apps/invenio/app-sealed-secret.yaml` contains ciphertext only under `spec.encryptedData`; the plaintext is generated locally when the script runs and stays under the gitignored `secrets/` directory.
+- Current Invenio sealed keys are `SQLALCHEMY_DATABASE_URI`, `CACHE_REDIS_URL`, `OPENSEARCH_URL`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and `INVENIO_SECRET_KEY`.
+- MinIO is a shared instance for this cluster, so the generator reuses the current MinIO credential pair for Velero and Invenio by default; override `INVENIO_S3_ACCESS_KEY_ID` / `INVENIO_S3_SECRET_ACCESS_KEY` if you add a narrower MinIO user later.
+- ArgoCD's Redis is control-plane storage only and must not be reused by Invenio.
+- Rotation workflow: update the relevant env vars, rerun `./scripts/generate-sealed-secrets.sh <component>`, review the sealed YAML diff, commit only the sealed file(s), then let ArgoCD sync the change.
+- Invenio dependency wiring currently uses `ExternalName` services; Redis resolves to `redis-master.redis.svc.cluster.local` via `k8s/apps/invenio/dependencies-external-services.yaml`.
 
 ---
 
@@ -312,6 +314,27 @@ argocd app sync sealed-secrets
 argocd app get sealed-secrets --watch
 ```
 
+### Velero backup is stale/failed or restore drill is needed
+
+```bash
+# Verify schedule and storage location are healthy
+kubectl -n velero get schedule weekly-infra-backup
+kubectl -n velero get backupstoragelocation default -o jsonpath='{.status.phase}{"\n"}'
+
+# Check latest scheduled backup results
+kubectl -n velero get backups \
+  -l velero.io/schedule-name=weekly-infra-backup \
+  --sort-by=.status.completionTimestamp \
+  -o custom-columns=NAME:.metadata.name,PHASE:.status.phase,COMPLETED:.status.completionTimestamp,ERRORS:.status.errors,WARNINGS:.status.warnings
+
+# Investigate a failed backup
+velero backup describe <backup-name> --details
+velero backup logs <backup-name>
+```
+
+For this weekly schedule, alert if no `Completed` backup exists in ~8 days.
+Use the README Velero runbook for manual backup trigger and canary restore drill.
+
 ---
 
 ## Security Checklist
@@ -322,6 +345,81 @@ argocd app get sealed-secrets --watch
 - [ ] ArgoCD admin password changed from default
 - [ ] Cloudflare API token has minimal permissions (Zone:Edit, Account:Edit)
 - [ ] ArgoCD is not publicly accessible except via tunnel
+
+---
+
+## Invenio RDM Prerequisite Dependency Design
+
+This section defines the concrete dependency architecture for deploying InvenioRDM into the existing cluster foundation.
+
+### 1) Dependency mapping to current infrastructure
+
+| Invenio dependency | Required for | Cluster mapping | Current state |
+|---|---|---|---|
+| PostgreSQL | Metadata DB, accounts, records | Deploy new Postgres service reachable from `invenio` namespace (`5432/TCP`) | **Not deployed yet** in this repo |
+| Redis | Cache + Celery broker/result backend | Deploy new Redis service reachable from `invenio` namespace (`6379/TCP`) | **Not deployed yet** in this repo |
+| OpenSearch/Elasticsearch | Search index backend | Deploy new search service reachable from `invenio` namespace (`9200/TCP`) | **Not deployed yet** in this repo |
+| S3 object storage buckets | File/object payloads | Use existing in-cluster MinIO (`minio.minio.svc.cluster.local:9000`) | **Available**; Invenio-specific buckets still need creation |
+| Ingress + TLS | UI/API exposure | Existing Cloudflare Tunnel → Traefik ingress (`traefik` namespace); cert-manager for in-cluster TLS if needed | **Available** |
+| Secrets | Credentials/config injection | Existing SealedSecrets controller (`kube-system`) with Git-safe encrypted secrets | **Available** |
+| Monitoring | Metrics/alerts | Existing Prometheus/Grafana stack (`monitoring` namespace) | **Available** |
+| Backup/DR | Namespace backup and object storage backup target | Existing Velero setup already includes `invenio` namespace in schedule | **Available** |
+
+### 2) Object storage plan (MinIO)
+
+Use MinIO as the only S3 endpoint for InvenioRDM:
+
+- Endpoint: `http://minio.minio.svc.cluster.local:9000`
+- Credentials source: SealedSecret in `invenio` namespace (do not reuse plain secrets)
+- Required buckets (minimum):
+  - `invenio-rdm-files` (primary records/files bucket)
+  - `invenio-rdm-uploads` (multipart/staging uploads)
+
+Implementation note: the existing MinIO post-sync job only creates `velero-backups`; add equivalent bucket bootstrap for Invenio buckets before Invenio app rollout.
+
+### 3) `invenio` namespace resource and storage strategy
+
+The namespace already exists with governance (`k8s/infra/namespaces/invenio.yaml`):
+
+- ResourceQuota: `requests.cpu=4`, `requests.memory=8Gi`, `limits.cpu=8`, `limits.memory=16Gi`, `persistentvolumeclaims=20`
+- LimitRange defaults: request `100m/128Mi`, limit `500m/512Mi`, max `2 CPU / 4Gi`
+
+Deployment strategy in this namespace:
+
+1. Keep Invenio web/worker pods in `invenio` namespace.
+2. Prefer externalized stateful dependencies (Postgres/Redis/Search) in dedicated namespaces or managed services; consume over ClusterIP/service DNS.
+3. Use PVCs in `invenio` only for app-local needs (if any), with `btd-nfs` and `Retain` reclaim policy expectations.
+4. Keep object payloads in MinIO buckets (not on app PVCs) so Velero + object storage cover DR.
+
+### 4) Network policy implications (critical for bootstrap)
+
+Current `invenio` policies enforce default deny ingress+egress and only allow:
+
+- ingress from `traefik` namespace
+- egress to DNS (`53/TCP+UDP`)
+- egress to internet HTTPS (`443/TCP`)
+
+Before Invenio starts, add explicit egress allows from `invenio` to:
+
+- Postgres service (`5432/TCP`)
+- Redis service (`6379/TCP`)
+- Search service (`9200/TCP`)
+- MinIO service in `minio` namespace (`9000/TCP`)
+
+Without these rules, app pods will fail dependency readiness checks despite services being healthy.
+
+### 5) Rollout dependency order (for GitOps bootstrap todo)
+
+Use this strict order:
+
+1. **Foundation already synced**: security policies, Traefik/cloudflared, SealedSecrets, cert-manager, Velero, monitoring.
+2. **Data plane dependencies**: Postgres, Redis, Search (plus PVC provisioning/health checks).
+3. **Object storage prep**: create Invenio MinIO buckets and validate access with sealed credentials.
+4. **Network policy expansion**: add `invenio` egress allows to DB/Redis/Search/MinIO.
+5. **Invenio secrets/config**: apply SealedSecrets for DB URI, Redis URI, search endpoint, S3 creds, app secret keys.
+6. **Invenio application manifests**: web, workers, jobs/migrations with startup probes tied to dependency readiness.
+7. **Ingress routes**: add Traefik routes for Invenio hostnames and verify Cloudflare tunnel path.
+8. **Post-deploy validation**: smoke test UI/API, worker queue processing, indexing, file upload/download, and metrics visibility.
 
 ---
 

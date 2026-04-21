@@ -1,0 +1,31 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: minio-console
+  namespace: minio
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`minio-console.vityasy.me`)
+      kind: Rule
+      services:
+        - name: minio-console
+          port: 9001
+      middlewares:
+        - name: minio-console-headers
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: minio-console-headers
+  namespace: minio
+spec:
+  headers:
+    frameDeny: true
+    contentSecurityPolicy: "frame-ancestors 'self'"
+    browserXssFilter: true
+    contentTypeNosniff: true
+    stsSeconds: 31536000
+    stsIncludeSubdomains: true
+    forceSTSHeader: true
