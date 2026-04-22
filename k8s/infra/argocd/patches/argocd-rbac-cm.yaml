@@ -5,4 +5,5 @@ metadata:
 data:
   policy.csv: |
     g, vityasyyy, role:admin
+    g, github-actions, role:readonly
   policy.default: role:readonly

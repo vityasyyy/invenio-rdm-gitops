@@ -146,7 +146,7 @@ See [SETUP.md](SETUP.md) for detailed recovery procedures.
   - `minio.minio.svc.cluster.local:9000` → `minio/minio:9000` (S3 API for in-cluster clients like Velero)
 - **Invenio routes (bootstrap scaffold):**
   - `invenio.vityasy.me` → `invenio/invenio-web:8000`
-  - `api.invenio.vityasy.me` → `invenio/invenio-web:8000`
+  - `api-invenio.vityasy.me` → `invenio/invenio-web:8000`
 
 ## Invenio Bootstrap (GitOps scaffold)
 
