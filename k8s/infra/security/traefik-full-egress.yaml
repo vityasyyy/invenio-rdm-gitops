@@ -27,12 +27,27 @@ spec:
         - protocol: TCP
           port: 8080
     - to:
-        - namespaceSelector: {}
+        - ipBlock:
+            cidr: 0.0.0.0/0
       ports:
         - protocol: TCP
           port: 443
         - protocol: TCP
           port: 80
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+      ports:
+        - protocol: TCP
+          port: 9001
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: invenio
+      ports:
+        - protocol: TCP
+          port: 8000
     - to:
         - podSelector:
             matchLabels:
