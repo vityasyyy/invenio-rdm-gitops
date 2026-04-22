@@ -35,6 +35,12 @@ spec:
         - protocol: TCP
           port: 80
     - to:
+        - ipBlock:
+            cidr: 10.17.117.41/32
+      ports:
+        - protocol: TCP
+          port: 6443
+    - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: minio
