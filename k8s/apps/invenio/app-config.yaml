@@ -8,7 +8,7 @@ metadata:
 data:
   INVENIO_SITE_NAME: "Invenio RDM"
   INVENIO_SITE_UI_URL: "https://invenio.vityasy.me"
-  INVENIO_SITE_API_URL: "https://api.invenio.vityasy.me"
+  INVENIO_SITE_API_URL: "https://api-invenio.vityasy.me"
   INVENIO_DB_HOST: "invenio-postgresql.invenio.svc.cluster.local"
   INVENIO_DB_PORT: "5432"
   INVENIO_REDIS_HOST: "invenio-redis.invenio.svc.cluster.local"

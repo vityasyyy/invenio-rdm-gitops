@@ -7,3 +7,4 @@ data:
   "users.anonymous.enabled": "false"
   "statusbadge.enabled": "true"
   "account.anonymous.enabled": "false"
+  "accounts.github-actions": "apiKey"
