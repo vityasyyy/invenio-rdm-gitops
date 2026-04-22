@@ -115,3 +115,19 @@ spec:
       kind: '*'
     - group: autoscaling
       kind: HorizontalPodAutoscaler
+  roles:
+    - name: admin
+      description: Full administrative access to all applications in this project
+      policies:
+        - p, proj:infra:admin, applications, *, infra/*, allow
+        - p, proj:infra:admin, clusters, get, infra/*, allow
+        - p, proj:infra:admin, repositories, *, infra/*, allow
+      groups:
+        - github:vityasyyy:admins
+    - name: read-only
+      description: Read-only access to view applications in this project
+      policies:
+        - p, proj:infra:read-only, applications, get, infra/*, allow
+        - p, proj:infra:read-only, applications, list, infra/*, allow
+      groups:
+        - github:vityasyyy:developers

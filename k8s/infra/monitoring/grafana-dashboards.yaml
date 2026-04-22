@@ -1,0 +1,204 @@
+# yamllint disable-file
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-cluster-health
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Kubernetes
+data:
+  cluster-health.json: |
+    {
+      "annotations": {"list":[{"builtIn":1,"datasource":{"type":"grafana","uid":"-- Grafana --"},"enable":true,"hide":true,"iconColor":"rgba(0, 211, 255, 1)","name":"Annotations & Alerts","type":"dashboard"}]},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"red","value":80}]}},"overrides":[]},"gridPos":{"h":4,"w":6,"x":0,"y":0},"id":1,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)","legendFormat":"CPU %","refId":"A"}],"title":"Avg Node CPU Used %","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"orange","value":70},{"color":"red","value":90}]}},"overrides":[]},"gridPos":{"h":4,"w":6,"x":6,"y":0},"id":2,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"100 * (1 - (sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes)))","legendFormat":"Memory %","refId":"A"}],"title":"Cluster Memory Used %","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"red","value":null},{"color":"green","value":1}]}},"overrides":[]},"gridPos":{"h":4,"w":6,"x":12,"y":0},"id":3,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"sum(up{job=~\"kubelet|node-exporter|kube-state-metrics\"})","legendFormat":"Targets Up","refId":"A"}],"title":"Core Targets Up","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"red","value":1}]}},"overrides":[]},"gridPos":{"h":4,"w":6,"x":18,"y":0},"id":4,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"sum(kube_pod_status_phase{phase=~\"Pending|Failed|Unknown\"})","legendFormat":"Unhealthy Pods","refId":"A"}],"title":"Unhealthy Pods","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"palette-classic"},"custom":{"drawStyle":"line","lineInterpolation":"linear","lineWidth":1,"showPoints":"never","spanNulls":false}},"overrides":[]},"gridPos":{"h":8,"w":12,"x":0,"y":4},"id":5,"options":{"legend":{"calcs":[],"displayMode":"table","placement":"bottom"},"tooltip":{"mode":"multi","sort":"none"}},"targets":[{"editorMode":"code","expr":"sum by (namespace) (kube_pod_container_resource_requests{resource=\"cpu\",unit=\"core\"})","legendFormat":"{{namespace}}","refId":"A"}],"title":"CPU Requests by Namespace (cores)","type":"timeseries"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"palette-classic"},"custom":{"drawStyle":"line","lineInterpolation":"linear","lineWidth":1,"showPoints":"never","spanNulls":false}},"overrides":[]},"gridPos":{"h":8,"w":12,"x":12,"y":4},"id":6,"options":{"legend":{"calcs":[],"displayMode":"table","placement":"bottom"},"tooltip":{"mode":"multi","sort":"none"}},"targets":[{"editorMode":"code","expr":"sum by (namespace) (kube_pod_container_resource_requests{resource=\"memory\",unit=\"byte\"})","legendFormat":"{{namespace}}","refId":"A"}],"title":"Memory Requests by Namespace (bytes)","type":"timeseries"}
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "style": "dark",
+      "tags": ["cluster","kubernetes"],
+      "templating": {"list":[{"current":{"selected":true,"text":"Prometheus","value":"Prometheus"},"hide":0,"includeAll":false,"label":"Datasource","multi":false,"name":"datasource","options":[],"query":"prometheus","refresh":1,"regex":"","skipUrlSync":false,"type":"datasource"}]},
+      "time": {"from":"now-6h","to":"now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "Cluster Health Overview",
+      "uid": "cluster-health-overview",
+      "version": 1,
+      "weekStart": ""
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-traefik
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Traefik
+data:
+  traefik-traffic-errors.json: |
+    {
+      "annotations": {"list":[{"builtIn":1,"datasource":{"type":"grafana","uid":"-- Grafana --"},"enable":true,"hide":true,"iconColor":"rgba(0, 211, 255, 1)","name":"Annotations & Alerts","type":"dashboard"}]},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"palette-classic"},"custom":{"drawStyle":"line","lineInterpolation":"linear","lineWidth":1,"showPoints":"never","spanNulls":false}},"overrides":[]},"gridPos":{"h":8,"w":12,"x":0,"y":0},"id":1,"options":{"legend":{"calcs":["lastNotNull"],"displayMode":"table","placement":"bottom"},"tooltip":{"mode":"multi","sort":"none"}},"targets":[{"editorMode":"code","expr":"sum(rate(traefik_service_requests_total[5m]))","legendFormat":"RPS","refId":"A"}],"title":"Traefik Request Rate (req/s)","type":"timeseries"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"palette-classic"},"custom":{"drawStyle":"line","lineInterpolation":"linear","lineWidth":1,"showPoints":"never","spanNulls":false}},"overrides":[]},"gridPos":{"h":8,"w":12,"x":12,"y":0},"id":2,"options":{"legend":{"calcs":["lastNotNull"],"displayMode":"table","placement":"bottom"},"tooltip":{"mode":"multi","sort":"none"}},"targets":[{"editorMode":"code","expr":"sum(rate(traefik_service_requests_total{code=~\"4..|5..\"}[5m]))","legendFormat":"4xx/5xx","refId":"A"}],"title":"Traefik Error Rate (req/s)","type":"timeseries"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"orange","value":1},{"color":"red","value":5}]}},"overrides":[]},"gridPos":{"h":4,"w":8,"x":0,"y":8},"id":3,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"100 * sum(rate(traefik_service_requests_total{code=~\"5..\"}[5m])) / clamp_min(sum(rate(traefik_service_requests_total[5m])), 0.001)","legendFormat":"5xx %","refId":"A"}],"title":"5xx Error %","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"orange","value":0.5},{"color":"red","value":1}]}},"overrides":[]},"gridPos":{"h":4,"w":8,"x":8,"y":8},"id":4,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"100 * sum(rate(traefik_service_requests_total{code=~\"4..\"}[5m])) / clamp_min(sum(rate(traefik_service_requests_total[5m])), 0.001)","legendFormat":"4xx %","refId":"A"}],"title":"4xx Error %","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"orange","value":0.2},{"color":"red","value":0.5}]}},"overrides":[]},"gridPos":{"h":4,"w":8,"x":16,"y":8},"id":5,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"histogram_quantile(0.95, sum by (le) (rate(traefik_service_request_duration_seconds_bucket[5m])))","legendFormat":"p95","refId":"A"}],"title":"p95 Request Duration (s)","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"palette-classic"},"custom":{"drawStyle":"line","lineInterpolation":"linear","lineWidth":1,"showPoints":"never","spanNulls":false}},"overrides":[]},"gridPos":{"h":8,"w":24,"x":0,"y":12},"id":6,"options":{"legend":{"calcs":[],"displayMode":"table","placement":"bottom"},"tooltip":{"mode":"multi","sort":"none"}},"targets":[{"editorMode":"code","expr":"sum by (code) (rate(traefik_service_requests_total[5m]))","legendFormat":"HTTP {{code}}","refId":"A"}],"title":"Requests by HTTP Status Code","type":"timeseries"}
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "style": "dark",
+      "tags": ["traefik","ingress"],
+      "templating": {"list":[{"current":{"selected":true,"text":"Prometheus","value":"Prometheus"},"hide":0,"includeAll":false,"label":"Datasource","multi":false,"name":"datasource","options":[],"query":"prometheus","refresh":1,"regex":"","skipUrlSync":false,"type":"datasource"}]},
+      "time": {"from":"now-6h","to":"now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "Traefik Traffic & Errors",
+      "uid": "traefik-traffic-errors",
+      "version": 1,
+      "weekStart": ""
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-velero
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Velero
+data:
+  velero-backups.json: |
+    {
+      "annotations": {"list":[{"builtIn":1,"datasource":{"type":"grafana","uid":"-- Grafana --"},"enable":true,"hide":true,"iconColor":"rgba(0, 211, 255, 1)","name":"Annotations & Alerts","type":"dashboard"}]},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"red","value":null},{"color":"green","value":1}]}},"overrides":[]},"gridPos":{"h":4,"w":6,"x":0,"y":0},"id":1,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"sum(up{namespace=\"velero\"})","legendFormat":"Velero Targets Up","refId":"A"}],"title":"Velero Targets Up","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"red","value":null},{"color":"green","value":1}]}},"overrides":[]},"gridPos":{"h":4,"w":6,"x":6,"y":0},"id":2,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"sum(velero_backup_total{schedule!=\"\"})","legendFormat":"Backups (all outcomes)","refId":"A"}],"title":"Scheduled Backups Seen","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"orange","value":1},{"color":"red","value":3}]}},"overrides":[]},"gridPos":{"h":4,"w":6,"x":12,"y":0},"id":3,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"sum(rate(velero_backup_failure_total[1h])) * 3600","legendFormat":"Failures/hour","refId":"A"}],"title":"Backup Failures per Hour","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"red","value":null},{"color":"green","value":1}]}},"overrides":[]},"gridPos":{"h":4,"w":6,"x":18,"y":0},"id":4,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"sum(velero_backup_attempt_total)","legendFormat":"Attempts","refId":"A"}],"title":"Backup Attempts","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"palette-classic"},"custom":{"drawStyle":"line","lineInterpolation":"linear","lineWidth":1,"showPoints":"never","spanNulls":false}},"overrides":[]},"gridPos":{"h":8,"w":12,"x":0,"y":4},"id":5,"options":{"legend":{"calcs":[],"displayMode":"table","placement":"bottom"},"tooltip":{"mode":"multi","sort":"none"}},"targets":[{"editorMode":"code","expr":"sum by (schedule) (increase(velero_backup_success_total[24h]))","legendFormat":"{{schedule}}","refId":"A"}],"title":"Successful Backups by Schedule (24h)","type":"timeseries"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"palette-classic"},"custom":{"drawStyle":"line","lineInterpolation":"linear","lineWidth":1,"showPoints":"never","spanNulls":false}},"overrides":[]},"gridPos":{"h":8,"w":12,"x":12,"y":4},"id":6,"options":{"legend":{"calcs":[],"displayMode":"table","placement":"bottom"},"tooltip":{"mode":"multi","sort":"none"}},"targets":[{"editorMode":"code","expr":"sum by (schedule) (increase(velero_backup_failure_total[24h]))","legendFormat":"{{schedule}}","refId":"A"}],"title":"Failed Backups by Schedule (24h)","type":"timeseries"}
+      ],
+      "refresh": "1m",
+      "schemaVersion": 39,
+      "style": "dark",
+      "tags": ["velero","backup"],
+      "templating": {"list":[{"current":{"selected":true,"text":"Prometheus","value":"Prometheus"},"hide":0,"includeAll":false,"label":"Datasource","multi":false,"name":"datasource","options":[],"query":"prometheus","refresh":1,"regex":"","skipUrlSync":false,"type":"datasource"}]},
+      "time": {"from":"now-24h","to":"now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "Velero Backups",
+      "uid": "velero-backups",
+      "version": 1,
+      "weekStart": ""
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-minio
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: MinIO
+data:
+  minio-capacity-availability.json: |
+    {
+      "annotations": {"list":[{"builtIn":1,"datasource":{"type":"grafana","uid":"-- Grafana --"},"enable":true,"hide":true,"iconColor":"rgba(0, 211, 255, 1)","name":"Annotations & Alerts","type":"dashboard"}]},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"orange","value":70},{"color":"red","value":85}]}},"overrides":[]},"gridPos":{"h":4,"w":8,"x":0,"y":0},"id":1,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"100 * (1 - (sum(minio_cluster_capacity_usable_free_bytes) / clamp_min(sum(minio_cluster_capacity_usable_total_bytes), 1)))","legendFormat":"Used %","refId":"A"}],"title":"MinIO Capacity Used %","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"red","value":null},{"color":"green","value":1}]}},"overrides":[]},"gridPos":{"h":4,"w":8,"x":8,"y":0},"id":2,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"sum(up{namespace=\"minio\"})","legendFormat":"Targets Up","refId":"A"}],"title":"MinIO Targets Up","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"orange","value":0.01},{"color":"red","value":0.05}]}},"overrides":[]},"gridPos":{"h":4,"w":8,"x":16,"y":0},"id":3,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"sum(rate(minio_s3_requests_errors_total[5m])) / clamp_min(sum(rate(minio_s3_requests_total[5m])), 0.001)","legendFormat":"Error Ratio","refId":"A"}],"title":"S3 Error Ratio","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"palette-classic"},"custom":{"drawStyle":"line","lineInterpolation":"linear","lineWidth":1,"showPoints":"never","spanNulls":false}},"overrides":[]},"gridPos":{"h":8,"w":12,"x":0,"y":4},"id":4,"options":{"legend":{"calcs":[],"displayMode":"table","placement":"bottom"},"tooltip":{"mode":"multi","sort":"none"}},"targets":[{"editorMode":"code","expr":"sum(minio_cluster_capacity_usable_total_bytes)","legendFormat":"Total Bytes","refId":"A"},{"editorMode":"code","expr":"sum(minio_cluster_capacity_usable_free_bytes)","legendFormat":"Free Bytes","refId":"B"}],"title":"MinIO Capacity (bytes)","type":"timeseries"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"palette-classic"},"custom":{"drawStyle":"line","lineInterpolation":"linear","lineWidth":1,"showPoints":"never","spanNulls":false}},"overrides":[]},"gridPos":{"h":8,"w":12,"x":12,"y":4},"id":5,"options":{"legend":{"calcs":[],"displayMode":"table","placement":"bottom"},"tooltip":{"mode":"multi","sort":"none"}},"targets":[{"editorMode":"code","expr":"sum(rate(minio_s3_requests_total[5m]))","legendFormat":"Req/s","refId":"A"},{"editorMode":"code","expr":"sum(rate(minio_s3_requests_errors_total[5m]))","legendFormat":"Err/s","refId":"B"}],"title":"MinIO S3 Request Rate","type":"timeseries"}
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "style": "dark",
+      "tags": ["minio","storage"],
+      "templating": {"list":[{"current":{"selected":true,"text":"Prometheus","value":"Prometheus"},"hide":0,"includeAll":false,"label":"Datasource","multi":false,"name":"datasource","options":[],"query":"prometheus","refresh":1,"regex":"","skipUrlSync":false,"type":"datasource"}]},
+      "time": {"from":"now-6h","to":"now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "MinIO Capacity & Availability",
+      "uid": "minio-capacity-availability",
+      "version": 1,
+      "weekStart": ""
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-invenio
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Invenio
+data:
+  invenio-operations.json: |
+    {
+      "annotations": {"list":[{"builtIn":1,"datasource":{"type":"grafana","uid":"-- Grafana --"},"enable":true,"hide":true,"iconColor":"rgba(0, 211, 255, 1)","name":"Annotations & Alerts","type":"dashboard"}]},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"red","value":null},{"color":"green","value":1}]}},"overrides":[]},"gridPos":{"h":4,"w":6,"x":0,"y":0},"id":1,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"sum(up{namespace=\"invenio\",job=~\".*invenio-web.*\"})","legendFormat":"up","refId":"A"}],"title":"Invenio Metrics Target Up","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"red","value":null},{"color":"orange","value":1},{"color":"green","value":2}]}},"overrides":[]},"gridPos":{"h":4,"w":6,"x":6,"y":0},"id":2,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"kube_deployment_status_replicas_available{namespace=\"invenio\",deployment=\"invenio-web\"}","legendFormat":"available","refId":"A"}],"title":"Invenio Available Replicas","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"orange","value":1},{"color":"red","value":5}]}},"overrides":[]},"gridPos":{"h":4,"w":6,"x":12,"y":0},"id":3,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"sum(increase(kube_pod_container_status_restarts_total{namespace=\"invenio\"}[30m]))","legendFormat":"restarts","refId":"A"}],"title":"Restarts in Last 30m","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"mappings":[],"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"orange","value":1},{"color":"red","value":2}]}},"overrides":[]},"gridPos":{"h":4,"w":6,"x":18,"y":0},"id":4,"options":{"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"textMode":"value"},"pluginVersion":"11.0.0","targets":[{"editorMode":"code","expr":"100 * sum(rate(traefik_service_requests_total{service=~\"invenio-web.*\",code=~\"5..\"}[5m])) / clamp_min(sum(rate(traefik_service_requests_total{service=~\"invenio-web.*\"}[5m])), 0.001)","legendFormat":"5xx %","refId":"A"}],"title":"Invenio 5xx Ratio (%)","type":"stat"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"palette-classic"},"custom":{"drawStyle":"line","lineInterpolation":"linear","lineWidth":1,"showPoints":"never","spanNulls":false}},"overrides":[]},"gridPos":{"h":8,"w":12,"x":0,"y":4},"id":5,"options":{"legend":{"calcs":[],"displayMode":"table","placement":"bottom"},"tooltip":{"mode":"multi","sort":"none"}},"targets":[{"editorMode":"code","expr":"sum(rate(traefik_service_requests_total{service=~\"invenio-web.*\"}[5m]))","legendFormat":"req/s","refId":"A"},{"editorMode":"code","expr":"sum(rate(traefik_service_requests_total{service=~\"invenio-web.*\",code=~\"4..|5..\"}[5m]))","legendFormat":"errors/s","refId":"B"}],"title":"Invenio Proxy Traffic & Errors","type":"timeseries"},
+        {"datasource":{"type":"prometheus","uid":"$datasource"},"fieldConfig":{"defaults":{"color":{"mode":"palette-classic"},"custom":{"drawStyle":"line","lineInterpolation":"linear","lineWidth":1,"showPoints":"never","spanNulls":false}},"overrides":[]},"gridPos":{"h":8,"w":12,"x":12,"y":4},"id":6,"options":{"legend":{"calcs":[],"displayMode":"table","placement":"bottom"},"tooltip":{"mode":"multi","sort":"none"}},"targets":[{"editorMode":"code","expr":"100 * (1 - (sum(kubelet_volume_stats_available_bytes{namespace=\"invenio\"}) / clamp_min(sum(kubelet_volume_stats_capacity_bytes{namespace=\"invenio\"}), 1)))","legendFormat":"PVC used %","refId":"A"}],"title":"Invenio PVC Usage (%)","type":"timeseries"}
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "style": "dark",
+      "tags": ["invenio","operations"],
+      "templating": {"list":[{"current":{"selected":true,"text":"Prometheus","value":"Prometheus"},"hide":0,"includeAll":false,"label":"Datasource","multi":false,"name":"datasource","options":[],"query":"prometheus","refresh":1,"regex":"","skipUrlSync":false,"type":"datasource"}]},
+      "time": {"from":"now-6h","to":"now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "Invenio Operations",
+      "uid": "invenio-operations",
+      "version": 1,
+      "weekStart": ""
+    }

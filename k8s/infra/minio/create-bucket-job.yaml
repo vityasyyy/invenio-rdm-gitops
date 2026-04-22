@@ -37,7 +37,9 @@ spec:
               export HOME=/tmp
               echo "Waiting for MinIO to be ready..."
               for i in $(seq 1 30); do
-                if mc alias set minio http://minio.minio.svc.cluster.local:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" 2>/dev/null; then
+                if mc alias set minio \
+                   http://minio.minio.svc.cluster.local:9000 \
+                   "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" 2>/dev/null; then
                   echo "MinIO is ready!"
                   break
                 fi

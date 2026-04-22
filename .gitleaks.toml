@@ -1,0 +1,11 @@
+# Gitleaks configuration for Invenio RDM GitOps
+# SealedSecrets contain encrypted data, not plaintext secrets
+
+[allowlist]
+paths = [
+  '''k8s/.*sealed.*secret\.yaml''',
+  '''k8s/.*credentials.*secret\.yaml''',
+  '''k8s/.*cloudflared.*secret\.yaml''',
+  '''secrets/.*''',
+]
+description = "SealedSecrets contain encrypted data, not plaintext secrets"

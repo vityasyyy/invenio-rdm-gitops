@@ -1,0 +1,70 @@
+name: Deploy Verify
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'argocd/**'
+      - 'k8s/**'
+      - 'external-lb/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  verify-argocd-sync:
+    name: Verify ArgoCD Sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ArgoCD CLI
+        run: |
+          wget https://github.com/argoproj/argo-cd/releases/download/v2.10.0/argocd-linux-amd64
+          chmod +x argocd-linux-amd64
+          sudo mv argocd-linux-amd64 /usr/local/bin/argocd
+
+      - name: Login to ArgoCD
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        run: |
+          argocd login $ARGOCD_SERVER --auth-token $ARGOCD_AUTH_TOKEN --grpc-web
+
+      - name: Wait for sync and verify health
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        run: |
+          echo "Waiting up to 5 minutes for ArgoCD apps to sync and become healthy..."
+          timeout=300
+          interval=10
+          elapsed=0
+
+          while [ $elapsed -lt $timeout ]; do
+            echo "Checking ArgoCD app status (elapsed: ${elapsed}s)..."
+            unhealthy_apps=$(argocd app list -o json | \
+              jq -r '.[] | select(.health.status != "Healthy" or .sync.status != "Synced") | .metadata.name')
+
+            if [ -z "$unhealthy_apps" ]; then
+              echo "✓ All ArgoCD apps are synced and healthy!"
+              argocd app list
+              exit 0
+            fi
+
+            echo "Unhealthy/unsynced apps:"
+            argocd app list -o json | \
+              jq -r '.[] | select(.health.status != "Healthy" or .sync.status != "Synced") | "  - \(.metadata.name) (Health: \(.health.status), Sync: \(.sync.status))"'
+
+            sleep $interval
+            elapsed=$((elapsed + interval))
+          done
+
+          echo "❌ Timeout: Some apps are still unhealthy or unsynced after ${timeout}s"
+          echo "Final status:"
+          argocd app list
+          exit 1
