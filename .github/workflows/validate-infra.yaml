@@ -9,8 +9,6 @@ on:
       - 'external-lb/**'
       - 'scripts/**'
       - '.github/workflows/**'
-  schedule:
-    - cron: '0 6 * * 1'
 
 permissions:
   contents: read
@@ -21,12 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Install yamllint
         run: pip install yamllint
@@ -43,18 +35,18 @@ jobs:
       - name: Cache kustomize
         uses: actions/cache@v4
         with:
-          path: kustomize
+          path: .kustomize-cache
           key: ${{ runner.os }}-kustomize-v5.4.1
 
       - name: Install kustomize
         run: |
-          if [ ! -f kustomize/kustomize ]; then
+          if [ ! -f .kustomize-cache/kustomize ]; then
             wget https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.4.1/kustomize_v5.4.1_linux_amd64.tar.gz
             tar xzf kustomize_v5.4.1_linux_amd64.tar.gz
-            mkdir -p kustomize
-            mv kustomize kustomize/
+            mkdir -p .kustomize-cache
+            mv kustomize .kustomize-cache/
           fi
-          sudo ln -sf $(pwd)/kustomize/kustomize /usr/local/bin/kustomize
+          sudo ln -sf $(pwd)/.kustomize-cache/kustomize /usr/local/bin/kustomize
           kustomize version
 
       - name: Validate ArgoCD kustomize
@@ -90,22 +82,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache Terraform providers
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.terraform.d/plugin-cache
-            .terraform
-          key: ${{ runner.os }}-terraform-${{ hashFiles('external-lb/terraform/**/*.tf') }}
+      - uses: hashicorp/setup-terraform@v3
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform Init (dev)
+      - name: Terraform Init
         working-directory: external-lb/terraform/envs/dev
         run: terraform init -input=false
 
-      - name: Terraform Validate (dev)
+      - name: Terraform Validate
         working-directory: external-lb/terraform/envs/dev
         run: terraform validate
 
@@ -115,10 +98,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run kube-linter
-        uses: stackrox/kube-linter-action@v2.0.0
-        with:
-          directory: argocd/
+      - name: Install kube-linter
+        run: |
+          wget https://github.com/stackrox/kube-linter/releases/download/v0.6.4/kube-linter-linux.tar.gz
+          tar xzf kube-linter-linux.tar.gz
+          sudo mv kube-linter /usr/local/bin/
+
+      - name: Lint ArgoCD manifests
+        run: kube-linter lint argocd/
 
       - name: Check all apps reference valid paths
         run: |
@@ -166,3 +153,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        with:
+          config: .gitleaks.toml

@@ -1,0 +1,9 @@
+# Ignore SealedSecret encrypted data (encrypted by Bitnami kubeseal)
+# These are not plaintext secrets
+k8s/infra/minio/minio-credentials-secret.yaml
+k8s/infra/monitoring/alertmanager-sealed-secret.yaml
+k8s/infra/monitoring/grafana-sealed-secret.yaml
+k8s/apps/invenio/app-sealed-secret.yaml
+
+# Allow SealedSecret pattern across all files
+title="Sealed Secret"
