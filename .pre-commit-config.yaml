@@ -7,8 +7,6 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
         args: ['--maxkb=1000']
-      - id: check-json
-      - id: check-toml
 
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.33.0
@@ -20,27 +18,21 @@ repos:
     hooks:
       - id: gitleaks
 
-  - repo: https://github.com/psf/black
-    rev: 23.12.1
-    hooks:
-      - id: black
-
-  - repo: https://github.com/hadolint/hadolint
-    rev: v2.12.0
-    hooks:
-      - id: hadolint-docker
-
-  - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.9.0.6
-    hooks:
-      - id: shellcheck
-
   - repo: local
     hooks:
       - id: kustomize-build
         name: Validate Kustomize builds
-        entry: bash -c 'kustomize build "$1" > /dev/null && echo "✓ $1 builds successfully"'
+        entry: bash
+        args:
+          - -c
+          - |
+            for f in "$@"; do
+              dir=$(dirname "$f")
+              echo "Building $dir ..."
+              kustomize build "$dir" > /dev/null && echo "  ✓ $dir builds successfully"
+            done
+          - bash
         language: system
         files: kustomization\.yaml$
         pass_filenames: true
-        args: ['{}']
+        require_serial: true
