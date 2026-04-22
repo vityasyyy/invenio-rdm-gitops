@@ -48,23 +48,25 @@ service:
 providers:
   kubernetesCRD:
     enabled: true
-    # Watch traefik, argocd, monitoring, and minio namespaces for IngressRoute resources
+    # Watch traefik, argocd, monitoring, minio, and invenio namespaces for IngressRoute resources
     namespaces:
       - traefik
       - argocd
       - monitoring
       - minio
+      - invenio
     allowCrossNamespace: false
     allowEmptyServices: true
   kubernetesIngress:
     enabled: true
     allowEmptyServices: true
-    # Watch traefik, argocd, monitoring, and minio namespaces for standard Ingress resources
+    # Watch traefik, argocd, monitoring, minio, and invenio namespaces for standard Ingress resources
     namespaces:
       - traefik
       - argocd
       - monitoring
       - minio
+      - invenio
 
 # IngressClass - make Traefik the default ingress controller
 ingressClass:
