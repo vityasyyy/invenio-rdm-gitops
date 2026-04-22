@@ -32,7 +32,12 @@ spec:
     - name: invenio-operations
       rules:
         - alert: InvenioWebReplicasUnavailable
-          expr: kube_deployment_status_replicas_available{namespace="invenio",deployment="invenio-web"} < kube_deployment_spec_replicas{namespace="invenio",deployment="invenio-web"}
+          expr: |
+            kube_deployment_status_replicas_available{
+              namespace="invenio",deployment="invenio-web"
+            } < kube_deployment_spec_replicas{
+              namespace="invenio",deployment="invenio-web"
+            }
           for: 10m
           labels:
             severity: critical
@@ -40,7 +45,10 @@ spec:
             summary: "Invenio web replicas unavailable"
             description: "invenio/invenio-web has fewer available replicas than desired for more than 10m."
         - alert: InvenioPodRestartHigh
-          expr: increase(kube_pod_container_status_restarts_total{namespace="invenio"}[30m]) > 3
+          expr: |
+            increase(
+              kube_pod_container_status_restarts_total{namespace="invenio"}[30m]
+            ) > 3
           for: 5m
           labels:
             severity: warning
@@ -48,7 +56,20 @@ spec:
             summary: "Invenio pod restarts are elevated"
             description: "Container {{ $labels.container }} in pod {{ $labels.pod }} restarted more than 3 times in 30m."
         - alert: InvenioTraffic5xxRatioHigh
-          expr: 100 * sum(rate(traefik_service_requests_total{service=~"invenio-web.*",code=~"5.."}[10m])) / clamp_min(sum(rate(traefik_service_requests_total{service=~"invenio-web.*"}[10m])), 0.001) > 2
+          expr: |
+            100 * (
+              sum(rate(
+                traefik_service_requests_total{
+                  service=~"invenio-web.*",code=~"5.."
+                }[10m]
+              )) / clamp_min(
+                sum(rate(
+                  traefik_service_requests_total{
+                    service=~"invenio-web.*"
+                  }[10m]
+                )), 0.001
+              )
+            ) > 2
           for: 10m
           labels:
             severity: warning
@@ -56,7 +77,15 @@ spec:
             summary: "Invenio 5xx ratio is high"
             description: "Traefik reports more than 2% 5xx responses for invenio-web over the last 10m."
         - alert: InvenioPVCUsageHigh
-          expr: 100 * (1 - (sum(kubelet_volume_stats_available_bytes{namespace="invenio"}) / clamp_min(sum(kubelet_volume_stats_capacity_bytes{namespace="invenio"}), 1))) > 80
+          expr: |
+            100 * (
+              1 - (
+                sum(kubelet_volume_stats_available_bytes{namespace="invenio"}) /
+                clamp_min(
+                  sum(kubelet_volume_stats_capacity_bytes{namespace="invenio"}), 1
+                )
+              )
+            ) > 80
           for: 15m
           labels:
             severity: warning
