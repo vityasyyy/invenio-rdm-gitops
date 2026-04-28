@@ -26,6 +26,13 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: search
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jqPathExpressions:
+        - .spec.volumeClaimTemplates[]?.metadata.labels
+        - .spec.volumeClaimTemplates[]?.metadata.annotations
+        - .spec.template.metadata.annotations
   syncPolicy:
     automated:
       prune: true
