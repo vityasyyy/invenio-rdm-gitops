@@ -1,5 +1,5 @@
 # Redis Deployment for InvenioRDM
-# Uses the official Bitnami Redis image (non-root, stripped down).
+# Uses the official Redis image (non-root).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,23 +24,21 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1001
-        runAsGroup: 1001
-        fsGroup: 1001
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: redis
-          image: docker.io/bitnami/redis:7.4
+          image: docker.io/library/redis:8
           imagePullPolicy: IfNotPresent
           ports:
             - name: redis
               containerPort: 6379
-          env:
-            - name: ALLOW_EMPTY_PASSWORD
-              value: "yes"
-            - name: REDIS_DISABLE_COMMANDS
-              value: "FLUSHDB,FLUSHALL"
+          args:
+            - redis-server
+            - --appendonly yes
           resources:
             requests:
               cpu: 100m
@@ -59,7 +57,7 @@ spec:
               type: RuntimeDefault
           volumeMounts:
             - name: data
-              mountPath: /bitnami/redis/data
+              mountPath: /data
       volumes:
         - name: data
           persistentVolumeClaim:
