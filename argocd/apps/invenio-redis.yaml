@@ -11,7 +11,7 @@ spec:
     # Helm chart: Bitnami Redis
     - chart: redis
       repoURL: https://charts.bitnami.com/bitnami
-      targetRevision: "20.11.0"
+      targetRevision: "25.4.1"
       helm:
         valueFiles:
           - $values/k8s/apps/invenio-deps/redis/values.yaml
