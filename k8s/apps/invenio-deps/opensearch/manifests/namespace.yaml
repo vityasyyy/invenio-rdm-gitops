@@ -5,7 +5,7 @@ kind: Namespace
 metadata:
   name: search
   labels:
-    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce: baseline
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
     app.kubernetes.io/part-of: invenio-rdm
