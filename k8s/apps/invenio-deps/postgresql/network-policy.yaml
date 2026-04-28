@@ -1,15 +1,7 @@
 # Network policies for database namespace
-# Allow ingress from invenio namespace to PostgreSQL
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: database-default-deny-ingress
-  namespace: database
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
+# NOTE: No default-deny ingress because the CloudNativePG webhook must be reachable
+# from the Kubernetes API server (host network), which cannot be matched by namespaceSelector.
+# Individual pods are protected by specific ingress policies.
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
