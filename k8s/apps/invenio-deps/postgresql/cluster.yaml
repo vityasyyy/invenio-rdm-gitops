@@ -45,10 +45,9 @@ spec:
         compression: gzip
 
   monitoring:
-    enabled: true
     customQueriesConfigMap:
-      name: cnpg-default-monitoring
-      key: queries
+      - name: cnpg-default-monitoring
+        key: queries
 ---
 # Scheduled daily backup at 02:00
 apiVersion: postgresql.cnpg.io/v1
