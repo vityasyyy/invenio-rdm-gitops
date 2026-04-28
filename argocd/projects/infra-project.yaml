@@ -16,6 +16,9 @@ spec:
     - 'https://prometheus-community.github.io/helm-charts'
     - 'https://vmware-tanzu.github.io/helm-charts'
     - 'https://charts.min.io/'
+    - 'https://cloudnative-pg.github.io/charts'
+    - 'https://charts.bitnami.com/bitnami'
+    - 'https://opensearch-project.github.io/helm-charts/'
   destinations:
     - namespace: argocd
       server: https://kubernetes.default.svc
@@ -34,6 +37,12 @@ spec:
     - namespace: invenio
       server: https://kubernetes.default.svc
     - namespace: minio
+      server: https://kubernetes.default.svc
+    - namespace: database
+      server: https://kubernetes.default.svc
+    - namespace: redis
+      server: https://kubernetes.default.svc
+    - namespace: search
       server: https://kubernetes.default.svc
     - namespace: default
       server: https://kubernetes.default.svc
@@ -115,6 +124,10 @@ spec:
       kind: '*'
     - group: autoscaling
       kind: HorizontalPodAutoscaler
+    - group: postgresql.cnpg.io
+      kind: Cluster
+    - group: postgresql.cnpg.io
+      kind: ScheduledBackup
   roles:
     - name: admin
       description: Full administrative access to all applications in this project
