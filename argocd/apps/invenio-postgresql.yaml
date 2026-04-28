@@ -22,6 +22,14 @@ spec:
             requests:
               cpu: 100m
               memory: 128Mi
+          livenessProbe:
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 6
+          readinessProbe:
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
     # Raw manifests: namespace, cluster, netpols
     - repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
       targetRevision: main
