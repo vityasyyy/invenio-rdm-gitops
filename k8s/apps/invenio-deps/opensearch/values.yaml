@@ -1,0 +1,51 @@
+# OpenSearch Helm values for InvenioRDM
+# Single-node cluster with security plugin disabled for simplicity.
+clusterName: opensearch-cluster
+nodeGroup: master
+
+# Single replica for resource efficiency
+replicas: 1
+
+# Disable security plugin (HTTP only, in-cluster comms)
+config:
+  opensearch.yml: |
+    cluster.name: opensearch-cluster
+    network.host: 0.0.0.0
+    plugins.security.disabled: true
+    discovery.type: single-node
+
+# Resource limits
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+# Persistence
+persistence:
+  enabled: true
+  storageClass: btd-nfs
+  size: 10Gi
+
+# Security context for restricted PSA
+securityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+# No separate client/data nodes for single-instance
+roles:
+  - master
+  - ingest
+  - data
+
+# Metrics exporter
+metricsExporter:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+    labels:
+      release: monitoring

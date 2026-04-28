@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: invenio-redis
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "8"
+spec:
+  project: infra
+  sources:
+    # Helm chart: Bitnami Redis
+    - chart: redis
+      repoURL: https://charts.bitnami.com/bitnami
+      targetRevision: "20.11.0"
+      helm:
+        valueFiles:
+          - $values/k8s/apps/invenio-deps/redis/values.yaml
+    # Values file source (this repo)
+    - repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
+      targetRevision: main
+      ref: values
+    # Raw manifests: namespace, netpols
+    - repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
+      targetRevision: main
+      path: k8s/apps/invenio-deps/redis/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: redis
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - PrunePropagationPolicy=foreground

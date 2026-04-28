@@ -73,6 +73,7 @@ ensure_dirs() {
     "$INFRA_SECRETS_DIR/monitoring" \
     "$INFRA_SECRETS_DIR/velero" \
     "$APPS_SECRETS_DIR/invenio" \
+    "$REPO_ROOT/k8s/apps/invenio-deps/postgresql" \
     "$EXTERNAL_LB_SECRETS_DIR"
 }
 
@@ -246,6 +247,12 @@ EOF
   seal_env_file "invenio" "invenio-app-secrets" \
     "$invenio_env_file" \
     "$APPS_SECRETS_DIR/invenio/app-sealed-secret.yaml"
+
+  # Also seal the CloudNativePG app-user secret so the DB password matches
+  seal_literals "database" "postgres-invenio-app-user" \
+    "$REPO_ROOT/k8s/apps/invenio-deps/postgresql/app-user-sealed-secret.yaml" \
+    "password=$db_password"
+
   echo "done"
 }
 
@@ -332,6 +339,7 @@ main() {
   [[ "$want_grafana" -eq 1 ]] && echo "  - $INFRA_SECRETS_DIR/monitoring/grafana-admin-secret.yaml"
   [[ "$want_velero" -eq 1 ]] && echo "  - $INFRA_SECRETS_DIR/velero/velero-credentials-secret.yaml"
   [[ "$want_invenio" -eq 1 ]] && echo "  - $APPS_SECRETS_DIR/invenio/app-sealed-secret.yaml"
+  [[ "$want_invenio" -eq 1 ]] && echo "  - $REPO_ROOT/k8s/apps/invenio-deps/postgresql/app-user-sealed-secret.yaml"
   [[ "$want_cloudflared" -eq 1 ]] && echo "  - $EXTERNAL_LB_SECRETS_DIR/cloudflared-credentials-secret.yaml"
   echo ""
   echo "Plaintext files were written under: $LOCAL_SECRETS_DIR/"

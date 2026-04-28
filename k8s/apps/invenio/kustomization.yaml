@@ -7,4 +7,6 @@ resources:
   - dependencies-external-services.yaml
   - app-sealed-secret.yaml
   - invenio-deployment.yaml
+  - invenio-worker-deployment.yaml
+  - invenio-setup-job.yaml
   - invenio-ingressroute.yaml

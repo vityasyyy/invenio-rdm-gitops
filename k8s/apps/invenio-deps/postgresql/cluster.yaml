@@ -1,0 +1,65 @@
+# CloudNativePG Cluster for InvenioRDM
+# Single-instance cluster for development/small-scale production.
+# Can be scaled to HA (3 instances) later by increasing instances.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+  namespace: database
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+  postgresql:
+    pg_hba:
+      # Allow md5 authentication from all cluster pods (simplifies cross-namespace access)
+      - host all all all md5
+
+  storage:
+    size: 10Gi
+    storageClass: btd-nfs
+
+  bootstrap:
+    initdb:
+      database: invenio
+      owner: invenio
+      secret:
+        name: postgres-invenio-app-user
+
+  # Backup configuration: WAL archive to existing MinIO
+  backup:
+    retentionPolicy: "7d"
+    barmanObjectStore:
+      destinationPath: "s3://invenio-rdm-backups/postgres"
+      endpointURL: "http://minio.minio.svc.cluster.local:9000"
+      s3Credentials:
+        accessKeyId:
+          name: minio-credentials
+          key: rootUser
+        secretAccessKey:
+          name: minio-credentials
+          key: rootPassword
+      wal:
+        compression: gzip
+
+  monitoring:
+    enabled: true
+    customQueriesConfigMap:
+      name: cnpg-default-monitoring
+      key: queries
+---
+# Scheduled daily backup at 02:00
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: postgres-daily-backup
+  namespace: database
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  schedule: "0 2 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: postgres

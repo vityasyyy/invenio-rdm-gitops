@@ -1,0 +1,81 @@
+# MinIO Bucket Creation Job for InvenioRDM
+# Creates Invenio-specific buckets after MinIO is deployed.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-invenio-buckets
+  namespace: minio
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: minio-bucket-creator
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mc
+          image: quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              export HOME=/tmp
+              echo "Waiting for MinIO to be ready..."
+              for i in $(seq 1 30); do
+                if mc alias set minio \
+                   http://minio.minio.svc.cluster.local:9000 \
+                   "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" 2>/dev/null; then
+                  echo "MinIO is ready!"
+                  break
+                fi
+                echo "Attempt $i/30: MinIO not ready, waiting 5s..."
+                sleep 5
+              done
+
+              for BUCKET in invenio-rdm invenio-rdm-uploads invenio-rdm-backups; do
+                echo "Checking bucket $BUCKET..."
+                if mc ls minio/$BUCKET &>/dev/null; then
+                  echo "Bucket $BUCKET already exists, skipping."
+                else
+                  echo "Creating bucket $BUCKET..."
+                  mc mb minio/$BUCKET
+                  echo "Bucket $BUCKET created successfully!"
+                fi
+              done
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: rootPassword
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      restartPolicy: OnFailure

@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: invenio-postgresql
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "8"
+spec:
+  project: infra
+  sources:
+    # Helm chart: CloudNativePG operator
+    - chart: cloudnative-pg
+      repoURL: https://cloudnative-pg.github.io/charts
+      targetRevision: "0.23.0"
+      helm:
+        values: |
+          replicaCount: 1
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+    # Raw manifests: namespace, cluster, netpols
+    - repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
+      targetRevision: main
+      path: k8s/apps/invenio-deps/postgresql
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: database
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - PrunePropagationPolicy=foreground

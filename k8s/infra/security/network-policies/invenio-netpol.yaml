@@ -80,7 +80,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: invenio-web
+      app.kubernetes.io/part-of: invenio-rdm
   policyTypes:
     - Egress
   egress:
@@ -100,7 +100,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: invenio-web
+      app.kubernetes.io/part-of: invenio-rdm
   policyTypes:
     - Egress
   egress:
@@ -120,7 +120,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: invenio-web
+      app.kubernetes.io/part-of: invenio-rdm
   policyTypes:
     - Egress
   egress:
@@ -142,7 +142,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: invenio-web
+      app.kubernetes.io/part-of: invenio-rdm
   policyTypes:
     - Egress
   egress:

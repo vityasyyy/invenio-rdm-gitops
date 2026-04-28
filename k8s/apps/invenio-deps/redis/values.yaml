@@ -1,0 +1,48 @@
+# Bitnami Redis values for InvenioRDM
+# Standalone architecture with password authentication.
+architecture: standalone
+
+auth:
+  enabled: true
+  # Password will be auto-generated on first install and stored in a secret.
+  # To set a custom password, use the redis-password key in an existing secret
+  # or pass --set auth.password=... during Helm install.
+
+master:
+  persistence:
+    enabled: true
+    storageClass: btd-nfs
+    size: 5Gi
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  podSecurityContext:
+    enabled: true
+    fsGroup: 1001
+  containerSecurityContext:
+    enabled: true
+    runAsUser: 1001
+    runAsNonRoot: true
+    readOnlyRootFilesystem: false
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+
+# No replicas needed for standalone
+replica:
+  replicaCount: 0
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+    additionalLabels:
+      release: monitoring

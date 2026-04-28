@@ -1,0 +1,65 @@
+# InvenioRDM Celery worker deployment
+# Handles async tasks: indexing, file processing, email, etc.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: invenio-worker
+  namespace: invenio
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  labels:
+    app.kubernetes.io/name: invenio-worker
+    app.kubernetes.io/part-of: invenio-rdm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: invenio-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: invenio-worker
+        app.kubernetes.io/part-of: invenio-rdm
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: ghcr.io/inveniosoftware/invenio-rdm:v12
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -c
+            - |
+              exec celery -A invenio_app.celery worker \
+                --loglevel=INFO \
+                --concurrency=2 \
+                --prefetch-multiplier=1 \
+                --without-gossip \
+                --without-mingle \
+                --without-heartbeat
+          envFrom:
+            - configMapRef:
+                name: invenio-app-config
+            - secretRef:
+                name: invenio-app-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault

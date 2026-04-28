@@ -16,7 +16,10 @@ spec:
       - traefik
       - monitoring
       - minio
-      - invenio # explicit InvenioRDM application namespace coverage
+      - invenio
+      - database
+      - redis
+      - search
       - velero
       - cert-manager
     defaultVolumesToFsBackup: true
