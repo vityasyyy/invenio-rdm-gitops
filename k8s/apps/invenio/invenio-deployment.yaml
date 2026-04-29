@@ -36,6 +36,12 @@ spec:
             - /bin/bash
             - -c
             - |
+              # Write invenio.cfg to allow all hosts (Kubernetes probes use pod IPs)
+              mkdir -p /opt/invenio/var/instance
+              cat > /opt/invenio/var/instance/invenio.cfg <<'CFG'
+              TRUSTED_HOSTS = ['*']
+              CFG
+
               exec uwsgi --http 0.0.0.0:5000 \
                 --module invenio_app.wsgi \
                 --callable application \
