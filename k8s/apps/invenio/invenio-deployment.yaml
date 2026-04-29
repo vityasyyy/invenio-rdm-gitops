@@ -36,14 +36,14 @@ spec:
             - /bin/bash
             - -c
             - |
-              # Create a custom WSGI module that disables host validation for kubelet probes
+              # Create a custom WSGI module that disables Werkzeug host validation
               cat > /tmp/invenio_wsgi_patch.py <<'PYEOF'
-              import sys
+              import werkzeug.sansio.utils
+              # Monkey-patch to allow all hosts (Kubernetes probes use pod IPs)
+              werkzeug.sansio.utils.host_is_trusted = lambda hostname, trusted_list: True
+
               # Import the original Invenio WSGI app
               from invenio_app.wsgi import application
-              # Disable host validation - Werkzeug does not support '*' wildcard,
-              # only exact matches or subdomain suffixes.
-              application.config['TRUSTED_HOSTS'] = None
               PYEOF
 
               exec uwsgi --http 0.0.0.0:5000 \
