@@ -59,9 +59,9 @@ spec:
     - group: apps
       kind: StatefulSet
       jsonPointers:
-        - /metadata/annotations/majorVersion
-        - /spec/template/metadata/annotations/configchecksum
-        - /spec/volumeClaimTemplates/0/metadata/creationTimestamp
+        - /metadata/annotations
+        - /spec/volumeClaimTemplates
+        - /spec/template/metadata/annotations
   syncPolicy:
     automated:
       prune: true
