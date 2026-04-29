@@ -63,24 +63,21 @@ spec:
                 name: invenio-app-config
             - secretRef:
                 name: invenio-app-secrets
-          # Invenio startup can be slow on first run; use a generous startup probe
+          # Use tcpSocket probes to avoid HTTP->HTTPS redirect issues
           startupProbe:
-            httpGet:
-              path: /api/records
+            tcpSocket:
               port: http
             initialDelaySeconds: 30
             periodSeconds: 10
             failureThreshold: 30
           livenessProbe:
-            httpGet:
-              path: /api/records
+            tcpSocket:
               port: http
             initialDelaySeconds: 10
             periodSeconds: 30
             failureThreshold: 3
           readinessProbe:
-            httpGet:
-              path: /api/records
+            tcpSocket:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
