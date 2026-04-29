@@ -27,6 +27,9 @@ data:
   INVENIO_ACCOUNTS_SESSION_REDIS_URL: "redis://invenio-redis.invenio.svc.cluster.local:6379/1"
   INVENIO_COMMUNITIES_IDENTITIES_CACHE_REDIS_URL: "redis://invenio-redis.invenio.svc.cluster.local:6379/4"
   INVENIO_IIIF_CACHE_REDIS_URL: "redis://invenio-redis.invenio.svc.cluster.local:6379/0"
+  INVENIO_RATELIMIT_STORAGE_URI: "redis://invenio-redis.invenio.svc.cluster.local:6379/3"
+  # JSONSchemas host for external URL generation
+  INVENIO_JSONSCHEMAS_HOST: "invenio.vityasy.me"
   # Allow all hosts for Kubernetes health probes (pod IPs change)
   # Note: TRUSTED_HOSTS must be a Python list, set via invenio.cfg in deployment
   # Celery broker and result backend use Redis
