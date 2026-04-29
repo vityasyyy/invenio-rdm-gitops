@@ -62,6 +62,8 @@ grafana:
       labelValue: "1"
       searchNamespace: monitoring
       folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
     providers:
       enabled: true
 
@@ -76,10 +78,38 @@ alertmanager:
       limits:
         cpu: 200m
         memory: 128Mi
+  config:
+    global:
+      smtp_smarthost: 'smtp.gmail.com:587'
+      smtp_from: 'alerts@example.com'
+      smtp_auth_username: ''
+      # IMPORTANT: Set SMTP password via one of the methods below.
+      # Option 1 (kubectl patch): After deployment, run:
+      #   kubectl -n monitoring patch secret alertmanager-monitoring-kube-prometheus-alertmanager --type=merge -p '{"data":{"alertmanager.yaml":"<base64-of-full-config>"}}'
+      # Option 2 (SealedSecret): Create a SealedSecret for alertmanager.yaml and apply it.
+      # Option 3 (Helm values - less secure): Set smtp_auth_password directly here (NOT recommended for Git).
+    route:
+      receiver: 'email'
+      group_by: ['alertname', 'severity']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+    receivers:
+      - name: 'email'
+        email_configs:
+          - to: 'your-email@example.com'
+            send_resolved: true
+            headers:
+              Subject: 'Kubernetes Alert: {{ .GroupLabels.alertname }}'
 
 # Default alerting rules
 defaultRules:
   create: true
+  rules:
+    etcd: false
+    kubeScheduler: false
+    kubeProxy: false
+    kubeControllerManager: false
 
 # Kube State Metrics
 kubeStateMetrics:
