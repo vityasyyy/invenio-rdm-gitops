@@ -6,3 +6,4 @@ resources:
   - grafana-admin-secret.yaml
   - grafana-dashboards.yaml
   - invenio-servicemonitor.yaml
+  - networkpolicy-kube-api.yaml
