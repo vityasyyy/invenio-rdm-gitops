@@ -370,12 +370,9 @@ This section defines the concrete dependency architecture for deploying InvenioR
 Use MinIO as the only S3 endpoint for InvenioRDM:
 
 - Endpoint: `http://minio.minio.svc.cluster.local:9000`
-- Credentials source: SealedSecret in `invenio` namespace (do not reuse plain secrets)
-- Required buckets (minimum):
-  - `invenio-rdm-files` (primary records/files bucket)
-  - `invenio-rdm-uploads` (multipart/staging uploads)
-
-Implementation note: the existing MinIO post-sync job only creates `velero-backups`; add equivalent bucket bootstrap for Invenio buckets before Invenio app rollout.
+- Credentials source: SealedSecret in `invenio` namespace
+- Required buckets: `invenio-rdm`, `invenio-rdm-uploads`, `invenio-rdm-backups`
+- Bucket creation: handled automatically by `invenio-setup-job` (sync-wave 2)
 
 ### 3) `invenio` namespace resource and storage strategy
 
