@@ -58,10 +58,10 @@ spec:
   ignoreDifferences:
     - group: apps
       kind: StatefulSet
-      jqPathExpressions:
-        - .spec.volumeClaimTemplates[]?.metadata.labels
-        - .spec.volumeClaimTemplates[]?.metadata.annotations
-        - .spec.template.metadata.annotations
+      jsonPointers:
+        - /metadata/annotations/majorVersion
+        - /spec/template/metadata/annotations/configchecksum
+        - /spec/volumeClaimTemplates/0/metadata/creationTimestamp
   syncPolicy:
     automated:
       prune: true
