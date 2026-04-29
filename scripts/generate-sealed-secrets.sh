@@ -28,6 +28,7 @@ Components:
   velero       Regenerate Velero S3 credentials
   invenio      Regenerate Invenio app secret bundle
   cloudflared  Seal cloudflared tunnel token if CLOUDFLARE_TUNNEL_TOKEN is set
+  ghcr         Seal GHCR pull secret if GHCR_PAT and GHCR_USERNAME are set
 
 Examples:
   ./scripts/generate-sealed-secrets.sh
@@ -272,12 +273,53 @@ generate_cloudflared() {
   echo "done"
 }
 
+load_ghcr_creds() {
+  local ghcr_username=""
+  local ghcr_pat=""
+
+  if [[ -f "$LOCAL_SECRETS_DIR/ghcr/username.txt" ]]; then
+    ghcr_username="$(<"$LOCAL_SECRETS_DIR/ghcr/username.txt")"
+  fi
+  if [[ -f "$LOCAL_SECRETS_DIR/ghcr/pat.txt" ]]; then
+    ghcr_pat="$(<"$LOCAL_SECRETS_DIR/ghcr/pat.txt")"
+  fi
+
+  if [[ -z "$ghcr_username" || -z "$ghcr_pat" ]]; then
+    echo "skipped (place GHCR username in secrets/ghcr/username.txt and PAT in secrets/ghcr/pat.txt)"
+    return 1
+  fi
+
+  GHCR_USERNAME="$ghcr_username"
+  GHCR_PAT="$ghcr_pat"
+}
+
+generate_ghcr() {
+  echo -n "GHCR pull secret... "
+  if ! load_ghcr_creds; then
+    echo "skipped"
+    return 0
+  fi
+
+  kubectl create secret docker-registry ghcr-pull-secret \
+    --namespace invenio \
+    --docker-server=ghcr.io \
+    --docker-username="$GHCR_USERNAME" \
+    --docker-password="$GHCR_PAT" \
+    --docker-email="noreply@example.com" \
+    --dry-run=client -o yaml |
+    kubeseal --controller-namespace kube-system \
+      --controller-name sealed-secrets-controller \
+      -o yaml >"$APPS_SECRETS_DIR/invenio/ghcr-pull-secret.yaml"
+  echo "done"
+}
+
 main() {
   local want_minio=0
   local want_grafana=0
   local want_velero=0
   local want_invenio=0
   local want_cloudflared=0
+  local want_ghcr=0
   local component
 
   if [[ $# -eq 0 ]]; then
@@ -296,14 +338,16 @@ main() {
         want_velero=1
         want_invenio=1
         want_cloudflared=1
+        want_ghcr=1
         ;;
-      minio|grafana|velero|invenio|cloudflared)
+      minio|grafana|velero|invenio|cloudflared|ghcr)
         case "$component" in
           minio) want_minio=1 ;;
           grafana) want_grafana=1 ;;
           velero) want_velero=1 ;;
           invenio) want_invenio=1 ;;
           cloudflared) want_cloudflared=1 ;;
+          ghcr) want_ghcr=1 ;;
         esac
         ;;
       *)
@@ -332,6 +376,9 @@ main() {
   if [[ "$want_cloudflared" -eq 1 ]]; then
     generate_cloudflared
   fi
+  if [[ "$want_ghcr" -eq 1 ]]; then
+    generate_ghcr
+  fi
 
   echo ""
   echo "Generated sealed secret files:"
@@ -341,6 +388,7 @@ main() {
   [[ "$want_invenio" -eq 1 ]] && echo "  - $APPS_SECRETS_DIR/invenio/app-sealed-secret.yaml"
   [[ "$want_invenio" -eq 1 ]] && echo "  - $REPO_ROOT/k8s/apps/invenio-deps/postgresql/app-user-sealed-secret.yaml"
   [[ "$want_cloudflared" -eq 1 ]] && echo "  - $EXTERNAL_LB_SECRETS_DIR/cloudflared-credentials-secret.yaml"
+  [[ "$want_ghcr" -eq 1 ]] && echo "  - $APPS_SECRETS_DIR/invenio/ghcr-pull-secret.yaml"
   echo ""
   echo "Plaintext files were written under: $LOCAL_SECRETS_DIR/"
   echo "Commit only the sealed YAML files; keep $LOCAL_SECRETS_DIR/ untracked."

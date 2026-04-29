@@ -6,6 +6,8 @@ resources:
   - namespace-governance.yaml
   - dependencies-external-services.yaml
   - app-sealed-secret.yaml
+  - ghcr-pull-secret.yaml
+  - serviceaccount.yaml
   - invenio-deployment.yaml
   - invenio-worker-deployment.yaml
   - invenio-setup-job.yaml
