@@ -47,3 +47,14 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/args/-
         value: --insecure
+
+  # --- Increase repo-server timeout for slow GitHub fetches ---
+  - target:
+      kind: Deployment
+      name: argocd-repo-server
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: ARGOCD_EXEC_TIMEOUT
+          value: "300s"
