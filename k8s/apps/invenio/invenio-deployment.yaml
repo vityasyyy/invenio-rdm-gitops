@@ -36,14 +36,18 @@ spec:
             - /bin/bash
             - -c
             - |
-              # Write invenio.cfg to allow all hosts (Kubernetes probes use pod IPs)
-              mkdir -p /opt/invenio/var/instance
-              cat > /opt/invenio/var/instance/invenio.cfg <<'CFG'
-              TRUSTED_HOSTS = ['*']
-              CFG
+              # Create a custom WSGI module that patches TRUSTED_HOSTS for kubelet probes
+              cat > /tmp/invenio_wsgi_patch.py <<'PYEOF'
+              import sys
+              # Import the original Invenio WSGI app
+              from invenio_app.wsgi import application
+              # Allow all hosts for Kubernetes health probes
+              application.config['TRUSTED_HOSTS'] = ['*']
+              PYEOF
 
               exec uwsgi --http 0.0.0.0:5000 \
-                --module invenio_app.wsgi \
+                --pythonpath /tmp \
+                --module invenio_wsgi_patch \
                 --callable application \
                 --processes 2 \
                 --threads 2 \
