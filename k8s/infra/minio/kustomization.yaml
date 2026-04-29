@@ -4,5 +4,4 @@ kind: Kustomization
 resources:
   - minio-credentials-secret.yaml
   - create-bucket-job.yaml
-  - invenio-buckets-job.yaml
   - minio-console-ingressroute.yaml
