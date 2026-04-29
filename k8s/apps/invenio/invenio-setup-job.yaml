@@ -27,7 +27,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: setup
-          image: ghcr.io/inveniosoftware/invenio-rdm:v12
+          image: ghcr.io/inveniosoftware/demo-inveniordm/demo-inveniordm:13.0.0-post1
           imagePullPolicy: IfNotPresent
           command:
             - /bin/bash
