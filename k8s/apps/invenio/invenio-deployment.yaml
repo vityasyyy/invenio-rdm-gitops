@@ -32,6 +32,18 @@ spec:
         - name: web
           image: ghcr.io/inveniosoftware/demo-inveniordm/demo-inveniordm:13.0.0-post1
           imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -c
+            - |
+              exec uwsgi --http 0.0.0.0:5000 \
+                --module invenio_app.wsgi \
+                --callable application \
+                --processes 2 \
+                --threads 2 \
+                --max-requests 1000 \
+                --harakiri 60 \
+                --logformat '%(addr) - %(user) [%(ltime)] "%(method) %(uri) %(proto)" %(status) %(size) %(msecs)ms'
           ports:
             - containerPort: 5000
               name: http
