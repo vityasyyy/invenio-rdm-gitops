@@ -20,6 +20,8 @@ data:
   INVENIO_SEARCH_PORT: "9200"
   INVENIO_S3_ENDPOINT: "http://minio.minio.svc.cluster.local:9000"
   INVENIO_S3_BUCKET: "invenio-rdm"
+  # Allow all hosts for Kubernetes health probes (pod IPs change)
+  INVENIO_APP_ALLOWED_HOSTS: "*"
   # Celery broker and result backend use Redis
   CELERY_BROKER_URL: "redis://invenio-redis.invenio.svc.cluster.local:6379/0"
   CELERY_RESULT_BACKEND: "redis://invenio-redis.invenio.svc.cluster.local:6379/0"
