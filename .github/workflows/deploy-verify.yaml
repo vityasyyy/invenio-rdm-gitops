@@ -44,7 +44,7 @@ jobs:
           while [ $elapsed -lt $timeout ]; do
             echo "Checking ArgoCD app status (elapsed: ${elapsed}s)..."
             unhealthy_apps=$(argocd app list $ARGOCD_OPTS -o json | \
-              jq -r '.[] | select(.health.status != "Healthy" or .sync.status != "Synced") | .metadata.name')
+              jq -r '.[] | select(.status.health.status != "Healthy" or .status.sync.status != "Synced") | .metadata.name')
 
             if [ -z "$unhealthy_apps" ]; then
               echo "✓ All ArgoCD apps are synced and healthy!"
@@ -54,7 +54,7 @@ jobs:
 
             echo "Unhealthy/unsynced apps:"
             argocd app list $ARGOCD_OPTS -o json | \
-              jq -r '.[] | select(.health.status != "Healthy" or .sync.status != "Synced") | "  - \(.metadata.name) (Health: \(.health.status), Sync: \(.sync.status))"'
+              jq -r '.[] | select(.status.health.status != "Healthy" or .status.sync.status != "Synced") | "  - \(.metadata.name) (Health: \(.status.health.status), Sync: \(.status.sync.status))"'
 
             sleep $interval
             elapsed=$((elapsed + interval))
