@@ -36,25 +36,34 @@ spec:
               set -e
               echo "Waiting for dependencies to be ready..."
 
-              # Wait for PostgreSQL
-              until nc -z invenio-postgresql.invenio.svc.cluster.local 5432; do
-                echo "Waiting for PostgreSQL..."
-                sleep 5
-              done
+              python3 -c "
+              import socket, time, urllib.request
 
-              # Wait for Redis
-              until nc -z invenio-redis.invenio.svc.cluster.local 6379; do
-                echo "Waiting for Redis..."
-                sleep 5
-              done
+              def wait_tcp(host, port, name):
+                  while True:
+                      try:
+                          socket.create_connection((host, port), timeout=2).close()
+                          print(f'{name} is ready')
+                          return
+                      except Exception:
+                          print(f'Waiting for {name}...')
+                          time.sleep(5)
 
-              # Wait for OpenSearch
-              until curl -sf http://invenio-search.invenio.svc.cluster.local:9200/_cluster/health >/dev/null; do
-                echo "Waiting for OpenSearch..."
-                sleep 5
-              done
+              def wait_http(url, name):
+                  while True:
+                      try:
+                          urllib.request.urlopen(url, timeout=2)
+                          print(f'{name} is ready')
+                          return
+                      except Exception:
+                          print(f'Waiting for {name}...')
+                          time.sleep(5)
 
-              echo "All dependencies ready. Running Invenio setup..."
+              wait_tcp('invenio-postgresql.invenio.svc.cluster.local', 5432, 'PostgreSQL')
+              wait_tcp('invenio-redis.invenio.svc.cluster.local', 6379, 'Redis')
+              wait_http('http://invenio-search.invenio.svc.cluster.local:9200/_cluster/health', 'OpenSearch')
+              print('All dependencies ready. Running Invenio setup...')
+              "
 
               # Initialize database (idempotent)
               invenio db create || true
