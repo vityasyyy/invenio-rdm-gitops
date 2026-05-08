@@ -7,7 +7,7 @@
 namespace: argocd
 
 resources:
-  - https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/stable/manifests/install.yaml
+  - https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/v1.2.0/config/install.yaml
 
 patches:
   # Configure Image Updater to use internal ArgoCD server
@@ -29,7 +29,7 @@ patches:
   # The secret should contain a GitHub personal access token with read:packages scope
   - target:
       kind: Deployment
-      name: argocd-image-updater
+      name: argocd-image-updater-controller
     patch: |-
       - op: add
         path: /spec/template/spec/containers/0/env
