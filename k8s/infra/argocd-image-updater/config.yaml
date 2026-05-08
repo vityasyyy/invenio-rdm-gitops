@@ -32,26 +32,3 @@ data:
         credentials: secret:argocd/ghcr-credentials
         defaultns: library
         default: true
----
-# Application-specific image update configuration
-# This is an ArgoCD Application annotation-based approach.
-# Add these annotations to the invenio-bootstrap Application manifest.
-#
-# Alternative: Use this ConfigMap for global defaults.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: argocd-image-updater-image-list
-  namespace: argocd
-data:
-  # Format: <alias>.image=<image>, <alias>.update-strategy=<strategy>
-  # These are examples for documentation purposes.
-  # The actual annotations are on the Application resource.
-  invenio-web.image: ghcr.io/vityasyyy/invenio-rdm-custom
-  invenio-web.update-strategy: semver
-  invenio-web.allow-tags: regexp:^[0-9a-f]{7,40}$
-  invenio-web.platforms: linux/amd64,linux/arm64
-  invenio-worker.image: ghcr.io/vityasyyy/invenio-rdm-custom
-  invenio-worker.update-strategy: semver
-  invenio-worker.allow-tags: regexp:^[0-9a-f]{7,40}$
-  invenio-worker.platforms: linux/amd64,linux/arm64

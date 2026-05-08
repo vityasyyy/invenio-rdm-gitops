@@ -1,12 +1,6 @@
 # Multi-stage Dockerfile for custom Invenio RDM image
 # Supports S3/MinIO storage, custom themes, and Kubernetes deployment
 #
-# Optimized for CI build speed:
-#  - Single-arch (linux/amd64) — no QEMU overhead
-#  - Combined layers to reduce image size and build time
-#  - Cache mounts for pip and npm
-#  - Invenio CLI commands gracefully skipped in build stage (no DB)
-#
 # Build context: repo root
 # Usage:
 #   docker buildx build --platform linux/amd64 -t ghcr.io/vityasyyy/invenio-rdm-custom:latest -f docker/invenio/Dockerfile .
@@ -23,7 +17,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=0 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    INVENIO_INSTANCE_PATH=/opt/invenio/var/instance
+    INVENIO_INSTANCE_PATH=/opt/invenio/var/instance \
+    PATH="/root/.local/bin:${PATH}"
 
 # Install build dependencies + Node.js (single layer)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -72,9 +67,30 @@ RUN if [ -d "site" ] && [ -f "site/setup.py" ] || [ -f "site/pyproject.toml" ]; 
         pip install --user --no-cache-dir -e ./site; \
     fi
 
-# --- Prepare instance directories ---
-# Invenio collect/webpack need a DB at runtime; skip in build stage
-RUN mkdir -p ${INVENIO_INSTANCE_PATH}/assets ${INVENIO_INSTANCE_PATH}/static
+# --- Build static assets ---
+# Invenio CLI commands need a Flask app context which requires SECRET_KEY
+# and a DB URI. We use a dummy in-memory SQLite so asset compilation works
+# in the build stage without a real database.
+RUN mkdir -p ${INVENIO_INSTANCE_PATH}
+COPY docker/invenio/invenio.cfg ${INVENIO_INSTANCE_PATH}/
+
+ENV INVENIO_SECRET_KEY=build-only-dummy-key-not-used-at-runtime \
+    SQLALCHEMY_DATABASE_URI=sqlite:///:memory: \
+    CACHE_REDIS_URL=redis://localhost:6379/0 \
+    OPENSEARCH_URL=http://localhost:9200
+
+# Collect static files from Python packages into the instance directory
+RUN invenio collect --verbose 2>/dev/null || true
+
+# Create the webpack project (generates package.json, webpack config, etc.)
+RUN invenio webpack create 2>/dev/null || true
+
+# Build the actual JS/CSS bundles (generates static/dist/manifest.json)
+RUN if [ -d "${INVENIO_INSTANCE_PATH}/assets" ]; then \
+        cd ${INVENIO_INSTANCE_PATH}/assets && \
+        npm install 2>/dev/null || true && \
+        npm run build 2>/dev/null || true; \
+    fi
 
 # =============================================================================
 # Stage 2: Runtime - Minimal image with only runtime dependencies
@@ -115,7 +131,7 @@ RUN mkdir -p ${INVENIO_INSTANCE_PATH} && \
 # Copy Python packages from builder
 COPY --from=builder --chown=invenio:invenio /root/.local /opt/invenio/.local
 
-# Copy static directories (may be empty if invenio CLI failed in build)
+# Copy static directories (built in builder stage)
 COPY --from=builder --chown=invenio:invenio /opt/invenio/var/instance/assets ${INVENIO_INSTANCE_PATH}/assets
 COPY --from=builder --chown=invenio:invenio /opt/invenio/var/instance/static ${INVENIO_INSTANCE_PATH}/static
 

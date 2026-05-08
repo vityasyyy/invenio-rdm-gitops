@@ -12,3 +12,9 @@ resources:
   - invenio-worker-deployment.yaml
   - invenio-setup-job.yaml
   - invenio-ingressroute.yaml
+
+# Image Updater will overwrite this block with a pinned digest
+# after detecting a new image on GHCR.
+images:
+  - name: ghcr.io/vityasyyy/invenio-rdm-custom
+    newTag: latest

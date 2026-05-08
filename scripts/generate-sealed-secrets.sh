@@ -30,6 +30,7 @@ Components:
   cloudflared  Seal cloudflared tunnel token if CLOUDFLARE_TUNNEL_TOKEN is set
   ghcr         Seal GHCR pull secret if GHCR_PAT and GHCR_USERNAME are set
   image-updater  Seal GHCR credentials for ArgoCD Image Updater
+  git-credentials  Seal git write-back credentials for ArgoCD Image Updater
 
 Examples:
   ./scripts/generate-sealed-secrets.sh
