@@ -1,0 +1,57 @@
+# ArgoCD Image Updater Configuration
+# Watches the GHCR registry for new invenio-rdm-custom images
+# and automatically updates deployment manifests.
+#
+# Installation:
+#   kubectl apply -n argocd -f k8s/infra/argocd-image-updater/
+#
+# This creates a ConfigMap that Image Updater reads to know
+# which images to watch and how to write back updates.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-image-updater-config
+  namespace: argocd
+data:
+  # Log level: trace, debug, info, warn, error
+  log.level: info
+
+  # ArgoCD server address
+  argocd.server_addr: argocd-server.argocd.svc.cluster.local:443
+
+  # Disable auto tls verification for internal server
+  argocd.insecure: "true"
+
+  # Registry configuration for GitHub Container Registry
+  registries.conf: |
+    registries:
+      - name: GitHub Container Registry
+        prefix: ghcr.io
+        api_url: https://ghcr.io
+        credentials: secret:argocd/ghcr-credentials
+        defaultns: library
+        default: true
+---
+# Application-specific image update configuration
+# This is an ArgoCD Application annotation-based approach.
+# Add these annotations to the invenio-bootstrap Application manifest.
+#
+# Alternative: Use this ConfigMap for global defaults.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-image-updater-image-list
+  namespace: argocd
+data:
+  # Format: <alias>.image=<image>, <alias>.update-strategy=<strategy>
+  # These are examples for documentation purposes.
+  # The actual annotations are on the Application resource.
+  invenio-web.image: ghcr.io/vityasyyy/invenio-rdm-custom
+  invenio-web.update-strategy: semver
+  invenio-web.allow-tags: regexp:^[0-9a-f]{7,40}$
+  invenio-web.platforms: linux/amd64,linux/arm64
+  invenio-worker.image: ghcr.io/vityasyyy/invenio-rdm-custom
+  invenio-worker.update-strategy: semver
+  invenio-worker.allow-tags: regexp:^[0-9a-f]{7,40}$
+  invenio-worker.platforms: linux/amd64,linux/arm64

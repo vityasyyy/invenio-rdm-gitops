@@ -19,24 +19,21 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
+        runAsUser: 1654
+        runAsGroup: 1654
+        fsGroup: 1654
         seccompProfile:
           type: RuntimeDefault
       restartPolicy: OnFailure
       containers:
         - name: setup
-          image: ghcr.io/inveniosoftware/demo-inveniordm/demo-inveniordm:13.0.0-post1
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/vityasyyy/invenio-rdm-custom:latest
+          imagePullPolicy: Always
           command:
             - /bin/bash
             - -c
             - |
               set -e
-
-              # Install boto3 for S3 bucket operations
-              pip install --quiet boto3 botocore
 
               echo "Waiting for dependencies to be ready..."
 

@@ -1,0 +1,25 @@
+# InvenioRDM Python dependencies
+# These are installed during the Docker build
+
+# Core InvenioRDM with OpenSearch 2 support
+invenio-app-rdm>=13.0.8,<14.0.0
+invenio-search[opensearch2]>=3.0.0
+
+# S3 storage support (MinIO compatible)
+invenio-s3>=3.0.2
+
+# Previewer for file rendering
+invenio-previewer>=3.3.0,<3.4.0
+
+# WSGI server
+gunicorn~=23.0.0
+
+# Database
+invenio-db[postgresql]>=1.1.0
+
+# Setuptools (required but pin to avoid deprecation)
+setuptools<81
+
+# Additional utilities
+boto3>=1.34.0
+botocore>=1.34.0

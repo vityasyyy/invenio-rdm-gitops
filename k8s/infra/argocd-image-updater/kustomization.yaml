@@ -1,0 +1,42 @@
+# ArgoCD Image Updater Installation
+# Watches container registries for new images and auto-updates ArgoCD apps
+# https://argocd-image-updater.readthedocs.io/
+#
+# Install: kubectl apply -k k8s/infra/argocd-image-updater/
+
+namespace: argocd
+
+resources:
+  - https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/stable/manifests/install.yaml
+
+patches:
+  # Configure Image Updater to use internal ArgoCD server
+  - target:
+      kind: ConfigMap
+      name: argocd-image-updater-config
+    patch: |-
+      - op: replace
+        path: /data/argocd.server_addr
+        value: argocd-server.argocd.svc.cluster.local:443
+      - op: replace
+        path: /data/argocd.insecure
+        value: "true"
+      - op: replace
+        path: /data/log.level
+        value: info
+
+  # Add GHCR registry credentials
+  # The secret should contain a GitHub personal access token with read:packages scope
+  - target:
+      kind: Deployment
+      name: argocd-image-updater
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: ARGOCD_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: argocd-image-updater-secret
+                key: argocd.token
+                optional: true

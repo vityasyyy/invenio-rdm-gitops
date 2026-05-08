@@ -23,9 +23,9 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
+        runAsUser: 1654
+        runAsGroup: 1654
+        fsGroup: 1654
         seccompProfile:
           type: RuntimeDefault
       initContainers:
@@ -60,31 +60,23 @@ spec:
               type: RuntimeDefault
       containers:
         - name: web
-          image: ghcr.io/inveniosoftware/demo-inveniordm/demo-inveniordm:13.0.0-post1
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/vityasyyy/invenio-rdm-custom:latest
+          imagePullPolicy: Always
           command:
-            - /bin/bash
-            - -c
-            - |
-              # Create a custom WSGI module that disables Werkzeug host validation
-              cat > /tmp/invenio_wsgi_patch.py <<'PYEOF'
-              import werkzeug.sansio.utils
-              # Monkey-patch to allow all hosts (Kubernetes probes use pod IPs)
-              werkzeug.sansio.utils.host_is_trusted = lambda hostname, trusted_list: True
-
-              # Import the original Invenio WSGI app
-              from invenio_app.wsgi import application
-              PYEOF
-
-              exec uwsgi --http 0.0.0.0:5000 \
-                --pythonpath /tmp \
-                --module invenio_wsgi_patch \
-                --callable application \
-                --processes 2 \
-                --threads 2 \
-                --max-requests 1000 \
-                --harakiri 60 \
-                --logformat '%(addr) - %(user) [%(ltime)] "%(method) %(uri) %(proto)" %(status) %(size) %(msecs)ms'
+            - gunicorn
+            - invenio_app.wsgi:application
+            - --bind
+            - 0.0.0.0:5000
+            - --workers
+            - "2"
+            - --threads
+            - "2"
+            - --access-logfile
+            - "-"
+            - --error-logfile
+            - "-"
+            - --log-level
+            - INFO
           ports:
             - containerPort: 5000
               name: http
