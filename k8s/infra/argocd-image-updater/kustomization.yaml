@@ -10,33 +10,24 @@ resources:
   - https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/v1.2.0/config/install.yaml
 
 patches:
-  # Configure Image Updater to use internal ArgoCD server
+  # The v1.2.0 install.yaml ships an empty argocd-image-updater-config ConfigMap.
+  # We add the data section with our settings.
   - target:
       kind: ConfigMap
       name: argocd-image-updater-config
     patch: |-
-      - op: replace
-        path: /data/argocd.server_addr
-        value: argocd-server.argocd.svc.cluster.local:443
-      - op: replace
-        path: /data/argocd.insecure
-        value: "true"
-      - op: replace
-        path: /data/log.level
-        value: info
-
-  # Add GHCR registry credentials
-  # The secret should contain a GitHub personal access token with read:packages scope
-  - target:
-      kind: Deployment
-      name: argocd-image-updater-controller
-    patch: |-
       - op: add
-        path: /spec/template/spec/containers/0/env
+        path: /data
         value:
-          - name: ARGOCD_TOKEN
-            valueFrom:
-              secretKeyRef:
-                name: argocd-image-updater-secret
-                key: argocd.token
-                optional: true
+          log.level: info
+          argocd.server_addr: argocd-server.argocd.svc.cluster.local:443
+          argocd.insecure: "true"
+          # Registry configuration for GitHub Container Registry
+          registries.conf: |
+            registries:
+              - name: GitHub Container Registry
+                prefix: ghcr.io
+                api_url: https://ghcr.io
+                credentials: secret:argocd/ghcr-credentials
+                defaultns: library
+                default: true
