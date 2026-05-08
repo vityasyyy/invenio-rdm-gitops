@@ -8,6 +8,7 @@ metadata:
   namespace: invenio
   annotations:
     argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-options: Replace=true
 spec:
   backoffLimit: 3
   activeDeadlineSeconds: 1800
@@ -17,6 +18,7 @@ spec:
         app.kubernetes.io/name: invenio-setup
         app.kubernetes.io/part-of: invenio-rdm
     spec:
+      serviceAccountName: default
       securityContext:
         runAsNonRoot: true
         runAsUser: 1654

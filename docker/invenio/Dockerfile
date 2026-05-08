@@ -59,19 +59,19 @@ RUN pip install --user --no-cache-dir \
 
 # --- Copy application code ---
 # Custom site code (Python modules)
-COPY site/ ./site/ 2>/dev/null || true
+COPY site/ ./site/
 
 # Custom templates
-COPY templates/ ./templates/ 2>/dev/null || true
+COPY templates/ ./templates/
 
 # Custom static assets (CSS, JS, images)
-COPY static/ ./static/ 2>/dev/null || true
+COPY static/ ./static/
 
 # Custom translations
-COPY translations/ ./translations/ 2>/dev/null || true
+COPY translations/ ./translations/
 
 # App data (fixtures, vocabularies, etc.)
-COPY app_data/ ./app_data/ 2>/dev/null || true
+COPY app_data/ ./app_data/
 
 # Invenio config
 COPY docker/invenio/invenio.cfg ./invenio.cfg
@@ -146,10 +146,10 @@ COPY --from=builder --chown=invenio:invenio /opt/invenio/var/instance/static ${I
 COPY --from=builder --chown=invenio:invenio /opt/invenio/invenio.cfg ${INVENIO_INSTANCE_PATH}/invenio.cfg
 
 # Copy custom files from builder
-COPY --from=builder --chown=invenio:invenio /opt/invenio/site ${INVENIO_INSTANCE_PATH}/site 2>/dev/null || true
-COPY --from=builder --chown=invenio:invenio /opt/invenio/templates ${INVENIO_INSTANCE_PATH}/templates 2>/dev/null || true
-COPY --from=builder --chown=invenio:invenio /opt/invenio/translations ${INVENIO_INSTANCE_PATH}/translations 2>/dev/null || true
-COPY --from=builder --chown=invenio:invenio /opt/invenio/app_data ${INVENIO_INSTANCE_PATH}/app_data 2>/dev/null || true
+COPY --from=builder --chown=invenio:invenio /opt/invenio/site ${INVENIO_INSTANCE_PATH}/site
+COPY --from=builder --chown=invenio:invenio /opt/invenio/templates ${INVENIO_INSTANCE_PATH}/templates
+COPY --from=builder --chown=invenio:invenio /opt/invenio/translations ${INVENIO_INSTANCE_PATH}/translations
+COPY --from=builder --chown=invenio:invenio /opt/invenio/app_data ${INVENIO_INSTANCE_PATH}/app_data
 
 # Copy entrypoint script
 COPY --chown=invenio:invenio docker/invenio/entrypoint.sh /entrypoint.sh
