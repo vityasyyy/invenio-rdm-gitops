@@ -89,7 +89,11 @@ RUN if [ -d "site" ] && [ -f "site/setup.py" -o -f "site/pyproject.toml" ]; then
         pip install --user --no-cache-dir -e ./site; \
     fi
 
-# Collect and build static assets
+# Create instance directories (invenio collect/ webpack may fail in build stage
+# without a DB; ensure dirs exist so runtime doesn't crash)
+RUN mkdir -p ${INVENIO_INSTANCE_PATH}/assets ${INVENIO_INSTANCE_PATH}/static
+
+# Collect and build static assets (best-effort; may need DB at runtime)
 RUN invenio collect --verbose 2>/dev/null || true
 RUN invenio webpack create 2>/dev/null || true
 
