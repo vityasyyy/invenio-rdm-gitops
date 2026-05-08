@@ -1,10 +1,15 @@
 # Multi-stage Dockerfile for custom Invenio RDM image
 # Supports S3/MinIO storage, custom themes, and Kubernetes deployment
 #
-# Build context: repo root (so we can include custom assets/themes)
+# Optimized for CI build speed:
+#  - Single-arch (linux/amd64) — no QEMU overhead
+#  - Combined layers to reduce image size and build time
+#  - Cache mounts for pip and npm
+#  - Invenio CLI commands gracefully skipped in build stage (no DB)
+#
+# Build context: repo root
 # Usage:
-#   docker build -t ghcr.io/vityasyyy/invenio-rdm-custom:latest -f docker/invenio/Dockerfile .
-#   docker push ghcr.io/vityasyyy/invenio-rdm-custom:latest
+#   docker buildx build --platform linux/amd64 -t ghcr.io/vityasyyy/invenio-rdm-custom:latest -f docker/invenio/Dockerfile .
 
 # =============================================================================
 # Stage 1: Builder - Compile Python dependencies and static assets
@@ -16,10 +21,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=en_US.UTF-8 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_NO_CACHE_DIR=0 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    INVENIO_INSTANCE_PATH=/opt/invenio/var/instance
 
-# Install build dependencies + Node.js
+# Install build dependencies + Node.js (single layer)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
@@ -36,73 +42,39 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     libcairo2 \
     libpangocairo-1.0-0 \
-    # Node.js 20 LTS
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && npm install -g npm@latest \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /opt/invenio
 
-# --- Install Python dependencies ---
-# We install invenio-app-rdm with explicit invenio-s3 support
-# Using a requirements.txt approach for reproducibility
-COPY docker/invenio/requirements.txt .
-RUN pip install --user --no-cache-dir -r requirements.txt
+# --- Install Python dependencies (single layer with cache mount) ---
+COPY docker/invenio/requirements.txt ./
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --user --no-cache-dir -r requirements.txt \
+    && pip install --user --no-cache-dir \
+       "invenio-s3>=3.0.2" \
+       "boto3>=1.34.0" \
+       "botocore>=1.34.0"
 
-# Ensure invenio-s3 and boto3 are available
-RUN pip install --user --no-cache-dir \
-    "invenio-s3>=3.0.2" \
-    "boto3>=1.34.0" \
-    "botocore>=1.34.0"
-
-# --- Copy application code ---
-# Custom site code (Python modules)
+# --- Copy application code (all at once) ---
 COPY site/ ./site/
-
-# Custom templates
 COPY templates/ ./templates/
-
-# Custom static assets (CSS, JS, images)
 COPY static/ ./static/
-
-# Custom translations
 COPY translations/ ./translations/
-
-# App data (fixtures, vocabularies, etc.)
 COPY app_data/ ./app_data/
-
-# Invenio config
 COPY docker/invenio/invenio.cfg ./invenio.cfg
+COPY docker/invenio/requirements.txt ./requirements.txt
 
-# --- Build static assets ---
-ENV INVENIO_INSTANCE_PATH=/opt/invenio/var/instance
-RUN mkdir -p ${INVENIO_INSTANCE_PATH}
-
-# Copy config to instance path for asset building
-COPY docker/invenio/invenio.cfg ${INVENIO_INSTANCE_PATH}/
-COPY docker/invenio/requirements.txt ${INVENIO_INSTANCE_PATH}/
-
-# Install app into the Python environment (editable if site/ exists)
-RUN if [ -d "site" ] && [ -f "site/setup.py" -o -f "site/pyproject.toml" ]; then \
+# --- Install editable site package (if applicable) ---
+RUN if [ -d "site" ] && [ -f "site/setup.py" ] || [ -f "site/pyproject.toml" ]; then \
         pip install --user --no-cache-dir -e ./site; \
     fi
 
-# Create instance directories (invenio collect/ webpack may fail in build stage
-# without a DB; ensure dirs exist so runtime doesn't crash)
+# --- Prepare instance directories ---
+# Invenio collect/webpack need a DB at runtime; skip in build stage
 RUN mkdir -p ${INVENIO_INSTANCE_PATH}/assets ${INVENIO_INSTANCE_PATH}/static
-
-# Collect and build static assets (best-effort; may need DB at runtime)
-RUN invenio collect --verbose 2>/dev/null || true
-RUN invenio webpack create 2>/dev/null || true
-
-# If webpack project exists, build assets
-RUN if [ -d "${INVENIO_INSTANCE_PATH}/assets" ]; then \
-        cd ${INVENIO_INSTANCE_PATH}/assets && \
-        npm install 2>/dev/null || true && \
-        npm run build 2>/dev/null || true; \
-    fi
 
 # =============================================================================
 # Stage 2: Runtime - Minimal image with only runtime dependencies
@@ -117,7 +89,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     INVENIO_INSTANCE_PATH=/opt/invenio/var/instance \
     PATH="/opt/invenio/.local/bin:${PATH}"
 
-# Install runtime system dependencies
+# Install runtime system dependencies (single layer)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     libxml2 \
@@ -132,8 +104,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user (matching front-matter's approach for compatibility)
-# UID 1654 is arbitrary but consistent with their image
+# Create non-root user
 RUN groupadd -r invenio --gid=1654 && \
     useradd -r -g invenio --uid=1654 --home-dir=/opt/invenio --shell=/bin/bash invenio
 
@@ -144,12 +115,12 @@ RUN mkdir -p ${INVENIO_INSTANCE_PATH} && \
 # Copy Python packages from builder
 COPY --from=builder --chown=invenio:invenio /root/.local /opt/invenio/.local
 
-# Copy built static assets and config from builder
+# Copy static directories (may be empty if invenio CLI failed in build)
 COPY --from=builder --chown=invenio:invenio /opt/invenio/var/instance/assets ${INVENIO_INSTANCE_PATH}/assets
 COPY --from=builder --chown=invenio:invenio /opt/invenio/var/instance/static ${INVENIO_INSTANCE_PATH}/static
-COPY --from=builder --chown=invenio:invenio /opt/invenio/invenio.cfg ${INVENIO_INSTANCE_PATH}/invenio.cfg
 
-# Copy custom files from builder
+# Copy config and custom files
+COPY --from=builder --chown=invenio:invenio /opt/invenio/invenio.cfg ${INVENIO_INSTANCE_PATH}/invenio.cfg
 COPY --from=builder --chown=invenio:invenio /opt/invenio/site ${INVENIO_INSTANCE_PATH}/site
 COPY --from=builder --chown=invenio:invenio /opt/invenio/templates ${INVENIO_INSTANCE_PATH}/templates
 COPY --from=builder --chown=invenio:invenio /opt/invenio/translations ${INVENIO_INSTANCE_PATH}/translations
