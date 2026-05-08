@@ -29,6 +29,7 @@ Components:
   invenio      Regenerate Invenio app secret bundle
   cloudflared  Seal cloudflared tunnel token if CLOUDFLARE_TUNNEL_TOKEN is set
   ghcr         Seal GHCR pull secret if GHCR_PAT and GHCR_USERNAME are set
+  image-updater  Seal GHCR credentials for ArgoCD Image Updater
 
 Examples:
   ./scripts/generate-sealed-secrets.sh
@@ -313,6 +314,24 @@ generate_ghcr() {
   echo "done"
 }
 
+generate_image_updater_ghcr() {
+  echo -n "GHCR credentials for ArgoCD Image Updater... "
+  if ! load_ghcr_creds; then
+    echo "skipped"
+    return 0
+  fi
+
+  kubectl create secret generic ghcr-credentials \
+    --namespace argocd \
+    --from-literal="username=$GHCR_USERNAME" \
+    --from-literal="password=$GHCR_PAT" \
+    --dry-run=client -o yaml |
+    kubeseal --controller-namespace kube-system \
+      --controller-name sealed-secrets-controller \
+      -o yaml >"$INFRA_SECRETS_DIR/argocd-image-updater/ghcr-credentials-secret.yaml"
+  echo "done"
+}
+
 main() {
   local want_minio=0
   local want_grafana=0
@@ -339,8 +358,9 @@ main() {
         want_invenio=1
         want_cloudflared=1
         want_ghcr=1
+        want_image_updater=1
         ;;
-      minio|grafana|velero|invenio|cloudflared|ghcr)
+      minio|grafana|velero|invenio|cloudflared|ghcr|image-updater)
         case "$component" in
           minio) want_minio=1 ;;
           grafana) want_grafana=1 ;;
@@ -348,6 +368,7 @@ main() {
           invenio) want_invenio=1 ;;
           cloudflared) want_cloudflared=1 ;;
           ghcr) want_ghcr=1 ;;
+          image-updater) want_image_updater=1 ;;
         esac
         ;;
       *)
@@ -379,6 +400,9 @@ main() {
   if [[ "$want_ghcr" -eq 1 ]]; then
     generate_ghcr
   fi
+  if [[ "$want_image_updater" -eq 1 ]]; then
+    generate_image_updater_ghcr
+  fi
 
   echo ""
   echo "Generated sealed secret files:"
@@ -389,6 +413,7 @@ main() {
   [[ "$want_invenio" -eq 1 ]] && echo "  - $REPO_ROOT/k8s/apps/invenio-deps/postgresql/app-user-sealed-secret.yaml"
   [[ "$want_cloudflared" -eq 1 ]] && echo "  - $EXTERNAL_LB_SECRETS_DIR/cloudflared-credentials-secret.yaml"
   [[ "$want_ghcr" -eq 1 ]] && echo "  - $APPS_SECRETS_DIR/invenio/ghcr-pull-secret.yaml"
+  [[ "$want_image_updater" -eq 1 ]] && echo "  - $INFRA_SECRETS_DIR/argocd-image-updater/ghcr-credentials-secret.yaml"
   echo ""
   echo "Plaintext files were written under: $LOCAL_SECRETS_DIR/"
   echo "Commit only the sealed YAML files; keep $LOCAL_SECRETS_DIR/ untracked."

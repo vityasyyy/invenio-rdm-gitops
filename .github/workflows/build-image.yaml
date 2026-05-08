@@ -106,8 +106,13 @@ jobs:
 
       - name: Pull and inspect image
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          docker pull $IMAGE
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo "Pulling $IMAGE..."
+          for i in 1 2 3 4 5; do
+            docker pull $IMAGE && break
+            echo "Pull failed, retrying in 10s ($i/5)..."
+            sleep 10
+          done
           echo "=== Image Info ==="
           docker inspect $IMAGE --format='{{.Id}}'
           echo "=== Layers ==="
@@ -117,7 +122,7 @@ jobs:
 
       - name: Test image starts
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
           # Run a quick smoke test to verify the image can start
           docker run --rm $IMAGE python -c \
             "import invenio_app; print('Invenio app imported successfully'); \
