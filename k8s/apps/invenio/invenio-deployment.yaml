@@ -87,12 +87,14 @@ spec:
             - secretRef:
                 name: invenio-app-secrets
           # Use tcpSocket probes to avoid HTTP->HTTPS redirect issues
+          # Startup probe needs a long timeout: the entrypoint runs
+          # npm install + webpack build (~5-8 min) before gunicorn starts.
           startupProbe:
             tcpSocket:
               port: http
-            initialDelaySeconds: 30
+            initialDelaySeconds: 60
             periodSeconds: 10
-            failureThreshold: 30
+            failureThreshold: 60
           livenessProbe:
             tcpSocket:
               port: http
@@ -120,6 +122,16 @@ spec:
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
+          volumeMounts:
+            - name: instance-data
+              mountPath: /opt/invenio/var/instance/static
+              subPath: static
+            - name: instance-data
+              mountPath: /opt/invenio/var/instance/assets
+              subPath: assets
+      volumes:
+        - name: instance-data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

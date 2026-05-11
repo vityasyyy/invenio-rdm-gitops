@@ -8,9 +8,9 @@ spec:
     - namePattern: invenio-bootstrap
       images:
         - alias: invenio
-          imageName: ghcr.io/vityasyyy/invenio-rdm-custom:latest
+          imageName: ghcr.io/vityasyyy/invenio-rdm-custom
           commonUpdateSettings:
-            updateStrategy: latest
+            updateStrategy: newest-build
             allowTags: "^latest$"
           manifestTargets:
             kustomize:
