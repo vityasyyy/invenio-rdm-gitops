@@ -14,17 +14,27 @@ echo "===================================="
 mkdir -p ${INVENIO_INSTANCE_PATH}/data
 mkdir -p ${INVENIO_INSTANCE_PATH}/archive
 
-# Build static assets if manifest.json doesn't exist.
-# This is the critical step that was missing — Invenio's webpack bundles
-# (theme.css, manifest.json, etc.) must be compiled at runtime because
-# the build requires a fully initialized Flask app with DB/cache access.
-#
-# This is idempotent: if the assets were already built (e.g., from a
-# previous pod restart with the same image), npm build is skipped.
+# Build static assets if manifest.json doesn't contain real built assets.
+# `invenio webpack create` writes a placeholder manifest with "status": "compile"
+# and empty assets/chunks. A successful npm build overwrites it with real entries.
+# We must re-run the build whenever the manifest is incomplete, not just absent.
 MANIFEST_PATH="${INVENIO_INSTANCE_PATH}/static/dist/manifest.json"
+NEEDS_BUILD=true
 
-if [ ! -f "$MANIFEST_PATH" ]; then
-    echo "Building static assets (first start or upgrade)..."
+if [ -f "$MANIFEST_PATH" ]; then
+    # Check if manifest contains real built assets (not just the placeholder)
+    if grep -q '"status".*:"compile"' "$MANIFEST_PATH" 2>/dev/null || \
+       ! grep -q '"theme.css"' "$MANIFEST_PATH" 2>/dev/null; then
+        echo "manifest.json exists but is incomplete (placeholder), rebuilding..."
+        rm -f "$MANIFEST_PATH"
+    else
+        echo "Static assets already built, skipping build."
+        NEEDS_BUILD=false
+    fi
+fi
+
+if [ "$NEEDS_BUILD" = true ]; then
+    echo "Building static assets..."
 
     echo "  [1/3] Collecting static files..."
     invenio collect -v 2>/dev/null || { echo "WARNING: invenio collect failed"; }
@@ -43,15 +53,12 @@ if [ ! -f "$MANIFEST_PATH" ]; then
         echo "  [3/3] Skipped — no webpack project found at $ASSETS_DIR"
     fi
 
-    if [ -f "$MANIFEST_PATH" ]; then
+    if [ -f "$MANIFEST_PATH" ] && ! grep -q '"status".*:"compile"' "$MANIFEST_PATH" 2>/dev/null; then
         echo "Static assets built successfully."
     else
-        echo "WARNING: manifest.json not found after build. Invenio may return 500 errors."
-        echo "  This can happen if DB/Redis/Search are not fully ready yet."
-        echo "  The pod will restart and retry on next startup."
+        echo "WARNING: manifest.json is still incomplete after build."
+        echo "  Invenio may return 500 errors until the next restart retries the build."
     fi
-else
-    echo "Static assets already exist, skipping build."
 fi
 
 # Check if we're running in a Kubernetes environment
