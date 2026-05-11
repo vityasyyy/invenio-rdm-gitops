@@ -1,12 +1,17 @@
 # Multi-stage Dockerfile for custom Invenio RDM image
 # Supports S3/MinIO storage, custom themes, and Kubernetes deployment
 #
+# Static assets (CSS/JS bundles) are built at container startup via the
+# entrypoint script, NOT at Docker build time. Invenio's webpack pipeline
+# requires a fully initialized Flask app with DB/Redis/Search connections
+# which are only available at runtime.
+#
 # Build context: repo root
 # Usage:
 #   docker buildx build --platform linux/amd64 -t ghcr.io/vityasyyy/invenio-rdm-custom:latest -f docker/invenio/Dockerfile .
 
 # =============================================================================
-# Stage 1: Builder - Compile Python dependencies and static assets
+# Stage 1: Builder - Install Python dependencies
 # =============================================================================
 FROM python:3.12-slim-bookworm AS builder
 
@@ -20,7 +25,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     INVENIO_INSTANCE_PATH=/opt/invenio/var/instance \
     PATH="/root/.local/bin:${PATH}"
 
-# Install build dependencies + Node.js (single layer)
+# Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
@@ -37,14 +42,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     libcairo2 \
     libpangocairo-1.0-0 \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g npm@latest \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/invenio
 
-# --- Install Python dependencies (single layer with cache mount) ---
+# --- Install Python dependencies (with cache mount) ---
 COPY docker/invenio/requirements.txt ./
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --user --no-cache-dir -r requirements.txt \
@@ -53,47 +55,24 @@ RUN --mount=type=cache,target=/root/.cache/pip \
        "boto3>=1.34.0" \
        "botocore>=1.34.0"
 
-# --- Copy application code (all at once) ---
+# --- Copy application code ---
 COPY site/ ./site/
 COPY templates/ ./templates/
 COPY static/ ./static/
 COPY translations/ ./translations/
 COPY app_data/ ./app_data/
 COPY docker/invenio/invenio.cfg ./invenio.cfg
-COPY docker/invenio/requirements.txt ./requirements.txt
 
 # --- Install editable site package (if applicable) ---
 RUN if [ -d "site" ] && [ -f "site/setup.py" ] || [ -f "site/pyproject.toml" ]; then \
         pip install --user --no-cache-dir -e ./site; \
     fi
 
-# --- Build static assets ---
-# Invenio CLI commands need a Flask app context which requires SECRET_KEY
-# and a DB URI. We use a dummy in-memory SQLite so asset compilation works
-# in the build stage without a real database.
-RUN mkdir -p ${INVENIO_INSTANCE_PATH}
-COPY docker/invenio/invenio.cfg ${INVENIO_INSTANCE_PATH}/
-
-ENV INVENIO_SECRET_KEY=build-only-dummy-key-not-used-at-runtime \
-    SQLALCHEMY_DATABASE_URI=sqlite:///:memory: \
-    CACHE_REDIS_URL=redis://localhost:6379/0 \
-    OPENSEARCH_URL=http://localhost:9200
-
-# Collect static files from Python packages into the instance directory
-RUN invenio collect --verbose 2>/dev/null || true
-
-# Create the webpack project (generates package.json, webpack config, etc.)
-RUN invenio webpack create 2>/dev/null || true
-
-# Build the actual JS/CSS bundles (generates static/dist/manifest.json)
-RUN if [ -d "${INVENIO_INSTANCE_PATH}/assets" ]; then \
-        cd ${INVENIO_INSTANCE_PATH}/assets && \
-        npm install 2>/dev/null || true && \
-        npm run build 2>/dev/null || true; \
-    fi
+# --- Prepare instance directories ---
+RUN mkdir -p ${INVENIO_INSTANCE_PATH}/assets ${INVENIO_INSTANCE_PATH}/static
 
 # =============================================================================
-# Stage 2: Runtime - Minimal image with only runtime dependencies
+# Stage 2: Runtime - Includes Node.js for asset compilation at startup
 # =============================================================================
 FROM python:3.12-slim-bookworm AS runtime
 
@@ -105,7 +84,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     INVENIO_INSTANCE_PATH=/opt/invenio/var/instance \
     PATH="/opt/invenio/.local/bin:${PATH}"
 
-# Install runtime system dependencies (single layer)
+# Install runtime system dependencies + Node.js (needed for webpack build at startup)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     libxml2 \
@@ -118,6 +97,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfontconfig1 \
     libfreetype6 \
     curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -131,7 +112,7 @@ RUN mkdir -p ${INVENIO_INSTANCE_PATH} && \
 # Copy Python packages from builder
 COPY --from=builder --chown=invenio:invenio /root/.local /opt/invenio/.local
 
-# Copy static directories (built in builder stage)
+# Copy instance directories (may be empty — assets built at runtime)
 COPY --from=builder --chown=invenio:invenio /opt/invenio/var/instance/assets ${INVENIO_INSTANCE_PATH}/assets
 COPY --from=builder --chown=invenio:invenio /opt/invenio/var/instance/static ${INVENIO_INSTANCE_PATH}/static
 
