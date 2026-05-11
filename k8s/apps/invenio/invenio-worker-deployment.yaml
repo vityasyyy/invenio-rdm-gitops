@@ -94,3 +94,13 @@ spec:
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
+          volumeMounts:
+            - name: instance-data
+              mountPath: /opt/invenio/var/instance/static
+              subPath: static
+            - name: instance-data
+              mountPath: /opt/invenio/var/instance/assets
+              subPath: assets
+      volumes:
+        - name: instance-data
+          emptyDir: {}
