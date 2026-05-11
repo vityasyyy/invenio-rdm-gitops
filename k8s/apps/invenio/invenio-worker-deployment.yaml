@@ -67,6 +67,8 @@ spec:
             - -c
             - |
               echo "=== Building Invenio static assets ==="
+              echo "Creating templates directory for webpack resolution..."
+              mkdir -p ${INVENIO_INSTANCE_PATH}/assets/templates/custom_fields
               MANIFEST_PATH="${INVENIO_INSTANCE_PATH}/static/dist/manifest.json"
               NEEDS_BUILD=true
 
@@ -99,11 +101,13 @@ spec:
                   echo "  [3/3] Skipped — no webpack project found"
                 fi
 
-                if [ -f "$MANIFEST_PATH" ] && ! grep -q '"status".*:"compile"' "$MANIFEST_PATH" 2>/dev/null; then
+                if [ -f "$MANIFEST_PATH" ] && grep -q '"theme.css"' "$MANIFEST_PATH" 2>/dev/null; then
                   echo "=== Asset build complete ==="
                 else
                   echo "WARNING: manifest.json still incomplete after build."
+                  cat "$MANIFEST_PATH"
                   exit 1
+                fi
                 fi
               fi
           envFrom:

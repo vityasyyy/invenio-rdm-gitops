@@ -11,6 +11,7 @@ echo "===================================="
 # Ensure instance directories exist
 mkdir -p ${INVENIO_INSTANCE_PATH}/data
 mkdir -p ${INVENIO_INSTANCE_PATH}/archive
+mkdir -p ${INVENIO_INSTANCE_PATH}/assets/templates/custom_fields
 
 # Validate that static assets were built by the init container
 MANIFEST_PATH="${INVENIO_INSTANCE_PATH}/static/dist/manifest.json"
