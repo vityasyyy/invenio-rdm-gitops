@@ -65,6 +65,22 @@ securityContext:
   runAsUser: 1000
   runAsGroup: 1000
 
+# Extra init containers — clear stale lock files left by previous
+# pod instances (common when using NFS-backed PVCs and force-delete).
+extraInitContainers:
+  - name: remove-stale-lock
+    image: busybox:latest
+    command:
+      - sh
+      - -c
+      - |
+        rm -f /usr/share/opensearch/data/nodes/0/node.lock
+        rm -f /usr/share/opensearch/data/nodes/0/_state/write.lock
+        echo "Stale locks removed if present."
+    volumeMounts:
+      - name: opensearch-cluster-master
+        mountPath: /usr/share/opensearch/data
+
 # No separate client/data nodes for single-instance
 roles:
   - master

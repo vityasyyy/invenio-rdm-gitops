@@ -124,6 +124,8 @@ spec:
       kind: '*'
     - group: autoscaling
       kind: HorizontalPodAutoscaler
+    - group: argocd-image-updater.argoproj.io
+      kind: ImageUpdater
     - group: postgresql.cnpg.io
       kind: Cluster
     - group: postgresql.cnpg.io
