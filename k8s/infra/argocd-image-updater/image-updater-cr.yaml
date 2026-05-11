@@ -3,6 +3,8 @@ kind: ImageUpdater
 metadata:
   name: invenio-rdm-image-updater
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-options: ServerSideApply=true
 spec:
   applicationRefs:
     - namePattern: invenio-bootstrap
