@@ -5,12 +5,6 @@ metadata:
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "7"
-    # ArgoCD Image Updater: watches GHCR for new digests on :latest,
-    # then patches this Application's kustomize.images so ArgoCD syncs
-    # invenio-bootstrap only after the image actually exists on GHCR.
-    argocd-image-updater.argoproj.io/image-list: ghcr.io/vityasyyy/invenio-rdm-custom
-    argocd-image-updater.argoproj.io/write-back-method: argocd
-    argocd-image-updater.argoproj.io/ghcr.io-vityasyyy-invenio-rdm-custom.update-strategy: latest
 spec:
   project: infra
   source:

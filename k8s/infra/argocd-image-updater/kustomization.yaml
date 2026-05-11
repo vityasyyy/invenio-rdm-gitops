@@ -9,6 +9,7 @@ namespace: argocd
 resources:
   - https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/v1.2.0/config/install.yaml
   - ghcr-credentials-secret.yaml
+  - image-updater-cr.yaml
 
 patches:
   # The v1.2.0 install.yaml ships an empty argocd-image-updater-config ConfigMap.

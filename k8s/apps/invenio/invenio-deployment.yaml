@@ -63,7 +63,7 @@ spec:
         - name: web
           image: ghcr.io/vityasyyy/invenio-rdm-custom:latest
           imagePullPolicy: Always
-          command:
+          args:
             - gunicorn
             - invenio_app.wsgi:application
             - --bind

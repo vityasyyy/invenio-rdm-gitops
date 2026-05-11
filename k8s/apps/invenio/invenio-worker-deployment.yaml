@@ -63,7 +63,7 @@ spec:
         - name: worker
           image: ghcr.io/vityasyyy/invenio-rdm-custom:latest
           imagePullPolicy: Always
-          command:
+          args:
             - celery
             - -A
             - invenio_app.celery

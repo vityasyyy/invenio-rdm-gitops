@@ -1,0 +1,19 @@
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: invenio-rdm-image-updater
+  namespace: argocd
+spec:
+  applicationRefs:
+    - namePattern: invenio-bootstrap
+      images:
+        - alias: invenio
+          imageName: ghcr.io/vityasyyy/invenio-rdm-custom:latest
+          commonUpdateSettings:
+            updateStrategy: latest
+            allowTags: "^latest$"
+          manifestTargets:
+            kustomize:
+              name: ghcr.io/vityasyyy/invenio-rdm-custom
+  writeBackConfig:
+    method: argocd
