@@ -20,9 +20,8 @@ if [ ! -f "$MANIFEST_PATH" ]; then
     echo "WARNING: manifest.json not found. Static assets were not built."
     echo "  The build-assets init container may have failed."
     echo "  Invenio may return 500 errors."
-elif grep -q '"status".*:"compile"' "$MANIFEST_PATH" 2>/dev/null; then
-    echo "WARNING: manifest.json is a placeholder (status: compile)."
-    echo "  The webpack build did not complete successfully."
+elif grep -qE '"status".*:"(compile|error)"' "$MANIFEST_PATH" 2>/dev/null; then
+    echo "WARNING: manifest.json indicates incomplete build."
     echo "  Invenio may return 500 errors."
 else
     echo "Static assets OK, starting application."

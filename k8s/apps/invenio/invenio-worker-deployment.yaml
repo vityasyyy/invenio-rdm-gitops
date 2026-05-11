@@ -104,7 +104,7 @@ spec:
                   echo "  [4/4] Skipped — no webpack project found"
                 fi
 
-                if [ -f "$MANIFEST_PATH" ] && grep -q '"theme.css"' "$MANIFEST_PATH" 2>/dev/null; then
+                if [ -f "$MANIFEST_PATH" ] && ! grep -q '"status".*:"compile"' "$MANIFEST_PATH" 2>/dev/null; then
                   echo "=== Asset build complete ==="
                 else
                   echo "WARNING: manifest.json still incomplete after build."
