@@ -81,6 +81,15 @@ spec:
                 invenio index init || true
               fi
 
+              # Set up RDM records module (creates roles, communities templates,
+              # default community, deposit workflow — idempotent)
+              echo "Setting up RDM records..."
+              invenio rdm-records setup || true
+
+              # Set up communities module
+              echo "Setting up communities..."
+              invenio communities setup || true
+
               # Create default file location if it doesn't exist
               invenio files location create --default default-location \
                 s3://invenio-rdm/files/ || true
