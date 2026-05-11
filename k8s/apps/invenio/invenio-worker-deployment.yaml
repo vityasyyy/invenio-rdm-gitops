@@ -73,9 +73,8 @@ spec:
               NEEDS_BUILD=true
 
               if [ -f "$MANIFEST_PATH" ]; then
-                if grep -q '"status".*:"compile"' "$MANIFEST_PATH" 2>/dev/null || \
-                   ! grep -q '"theme.css"' "$MANIFEST_PATH" 2>/dev/null; then
-                  echo "manifest.json is a placeholder, rebuilding..."
+                if grep -qE '"status".*:"(compile|error)"' "$MANIFEST_PATH" 2>/dev/null; then
+                  echo "manifest.json is a placeholder or has errors, rebuilding..."
                   rm -f "$MANIFEST_PATH"
                 else
                   echo "Static assets already built, skipping."
@@ -104,7 +103,7 @@ spec:
                   echo "  [4/4] Skipped — no webpack project found"
                 fi
 
-                if [ -f "$MANIFEST_PATH" ] && ! grep -q '"status".*:"compile"' "$MANIFEST_PATH" 2>/dev/null; then
+                if [ -f "$MANIFEST_PATH" ] && ! grep -qE '"status".*:"(compile|error)"' "$MANIFEST_PATH" 2>/dev/null; then
                   echo "=== Asset build complete ==="
                 else
                   echo "WARNING: manifest.json still incomplete after build."
