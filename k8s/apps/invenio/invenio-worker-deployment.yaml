@@ -110,7 +110,6 @@ spec:
                   cat "$MANIFEST_PATH"
                   exit 1
                 fi
-                fi
               fi
           envFrom:
             - configMapRef:
