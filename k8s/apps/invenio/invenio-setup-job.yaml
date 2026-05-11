@@ -10,6 +10,11 @@ metadata:
     argocd.argoproj.io/sync-wave: "2"
     argocd.argoproj.io/sync-options: Replace=true
 spec:
+  manualSelector: true
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: invenio-setup
+      app.kubernetes.io/part-of: invenio-rdm
   backoffLimit: 3
   activeDeadlineSeconds: 1800
   template:
