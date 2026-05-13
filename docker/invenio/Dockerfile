@@ -1,10 +1,9 @@
 # Multi-stage Dockerfile for custom Invenio RDM image
 # Supports S3/MinIO storage, custom themes, and Kubernetes deployment
 #
-# Static assets (CSS/JS bundles) are built at container startup via the
-# entrypoint script, NOT at Docker build time. Invenio's webpack pipeline
-# requires a fully initialized Flask app with DB/Redis/Search connections
-# which are only available at runtime.
+# Static assets (CSS/JS bundles) are built at Docker build time in the assets
+# stage below. The runtime stage copies pre-built assets so pods only need
+# to verify/copy them at startup, avoiding heavy npm builds in init containers.
 #
 # Build context: repo root
 # Usage:
@@ -72,7 +71,60 @@ RUN if [ -d "site" ] && [ -f "site/setup.py" ] || [ -f "site/pyproject.toml" ]; 
 RUN mkdir -p ${INVENIO_INSTANCE_PATH}/assets ${INVENIO_INSTANCE_PATH}/static
 
 # =============================================================================
-# Stage 2: Runtime - Includes Node.js for asset compilation at startup
+# Stage 2: Assets - Build static assets (CSS/JS bundles) at image build time
+# =============================================================================
+FROM builder AS assets
+
+# Install Node.js for webpack build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set build-time env vars so Flask app can initialize without live services
+ENV INVENIO_INSTANCE_PATH=/opt/invenio/var/instance \
+    INVENIO_DB_HOST=localhost \
+    INVENIO_DB_PORT=5432 \
+    INVENIO_DB_NAME=invenio \
+    INVENIO_DB_USER=app-user \
+    INVENIO_DB_PASSWORD=dummy \
+    INVENIO_REDIS_URL=redis://localhost:6379/0 \
+    INVENIO_CACHE_REDIS_URL=redis://localhost:6379/0 \
+    INVENIO_ACCOUNTS_SESSION_REDIS_URL=redis://localhost:6379/1 \
+    INVENIO_SEARCH_HOST=localhost \
+    INVENIO_SEARCH_PORT=9200 \
+    INVENIO_S3_ENDPOINT=http://localhost:9000 \
+    INVENIO_S3_ACCESS_KEY_ID=dummy \
+    INVENIO_S3_SECRET_ACCESS_KEY=dummy \
+    INVENIO_SITE_UI_URL=https://localhost \
+    INVENIO_SITE_API_URL=https://localhost/api \
+    CELERY_BROKER_URL=redis://localhost:6379/0 \
+    CELERY_RESULT_BACKEND=redis://localhost:6379/0 \
+    INVENIO_SECRET_KEY=dummy-secret-key-for-build-only
+
+# Copy theme.config for webpack
+COPY docker/invenio/theme.config /opt/invenio/theme.config
+
+# Create instance directories
+RUN mkdir -p ${INVENIO_INSTANCE_PATH}/assets ${INVENIO_INSTANCE_PATH}/static
+
+# Build static assets
+RUN set -e; \
+    echo "[1/4] Collecting static files..."; \
+    invenio collect -v; \
+    echo "[2/4] Creating webpack project..."; \
+    invenio webpack create; \
+    echo "[3/4] Installing theme.config..."; \
+    cp /opt/invenio/theme.config ${INVENIO_INSTANCE_PATH}/assets/less/theme.config; \
+    echo "[4/4] Installing dependencies and building webpack bundles..."; \
+    cd ${INVENIO_INSTANCE_PATH}/assets; \
+    npm install --production=false; \
+    npm run build; \
+    echo "Asset build complete."
+
+# =============================================================================
+# Stage 3: Runtime - Includes Node.js for asset compilation at startup
 # =============================================================================
 FROM python:3.12-slim-bookworm AS runtime
 
@@ -112,9 +164,9 @@ RUN mkdir -p ${INVENIO_INSTANCE_PATH} && \
 # Copy Python packages from builder
 COPY --from=builder --chown=invenio:invenio /root/.local /opt/invenio/.local
 
-# Copy instance directories (may be empty — assets built at runtime)
-COPY --from=builder --chown=invenio:invenio /opt/invenio/var/instance/assets ${INVENIO_INSTANCE_PATH}/assets
-COPY --from=builder --chown=invenio:invenio /opt/invenio/var/instance/static ${INVENIO_INSTANCE_PATH}/static
+# Copy instance directories with pre-built assets
+COPY --from=assets --chown=invenio:invenio /opt/invenio/var/instance/static ${INVENIO_INSTANCE_PATH}/static
+COPY --from=assets --chown=invenio:invenio /opt/invenio/var/instance/assets ${INVENIO_INSTANCE_PATH}/assets
 
 # Copy config and custom files
 COPY --from=builder --chown=invenio:invenio /opt/invenio/invenio.cfg ${INVENIO_INSTANCE_PATH}/invenio.cfg
