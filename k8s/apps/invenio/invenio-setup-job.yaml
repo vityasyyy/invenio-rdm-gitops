@@ -74,13 +74,13 @@ spec:
               "
 
               # Initialize database (idempotent)
-              echo "[1/5] Creating database tables..."
+              echo "[1/7] Creating database tables..."
               if ! invenio db create 2>&1; then
                 echo "WARNING: invenio db create failed (may already exist)"
               fi
 
               # Initialize search indices (skip if already exist)
-              echo "[2/5] Initializing search indices..."
+              echo "[2/7] Initializing search indices..."
               if ! invenio index list --json 2>/dev/null | grep -q '"aliases"'; then
                 if ! invenio index init 2>&1; then
                   echo "WARNING: invenio index init failed (may already exist)"
@@ -89,19 +89,25 @@ spec:
                 echo "Search indices already exist, skipping."
               fi
 
-              # Create RDM fixtures (roles, permissions, vocabularies,
-              # default community, deposit workflow — idempotent)
-              echo "[3/5] Creating RDM fixtures..."
+              # Create admin role and assign superuser-access (required before
+              # fixtures — the fixtures user references the admin role)
+              echo "[3/7] Creating admin role..."
+              invenio roles create admin 2>&1 || echo "Role may already exist, continuing."
+              echo "[4/7] Assigning superuser-access to admin role..."
+              invenio access allow superuser-access role admin 2>&1 || echo "Permission may already exist, continuing."
+
+              # Create RDM fixtures (vocabularies, admin user, default community)
+              echo "[5/7] Creating RDM fixtures..."
               invenio rdm-records fixtures
 
               # Create default file location if it doesn't exist
-              echo "[4/5] Creating default file location..."
+              echo "[6/7] Creating default file location..."
               if ! invenio files location create --default default-location s3://invenio-rdm/files/ 2>&1; then
                 echo "File location may already exist, continuing."
               fi
 
               # Create MinIO buckets if they don't exist
-              echo "[5/5] Ensuring MinIO buckets exist..."
+              echo "[7/7] Ensuring MinIO buckets exist..."
               python3 -c "
               import boto3
               from botocore.config import Config
