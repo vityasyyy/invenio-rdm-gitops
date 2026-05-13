@@ -74,28 +74,34 @@ spec:
               "
 
               # Initialize database (idempotent)
-              invenio db create || true
-
-              # Initialize search indices (skip if already exist)
-              if ! invenio index list --json 2>/dev/null | grep -q '"aliases"'; then
-                invenio index init || true
+              echo "[1/5] Creating database tables..."
+              if ! invenio db create 2>&1; then
+                echo "WARNING: invenio db create failed (may already exist)"
               fi
 
-              # Set up RDM records module (creates roles, communities templates,
-              # default community, deposit workflow — idempotent)
-              echo "Setting up RDM records..."
-              invenio rdm-records setup || true
+              # Initialize search indices (skip if already exist)
+              echo "[2/5] Initializing search indices..."
+              if ! invenio index list --json 2>/dev/null | grep -q '"aliases"'; then
+                if ! invenio index init 2>&1; then
+                  echo "WARNING: invenio index init failed (may already exist)"
+                fi
+              else
+                echo "Search indices already exist, skipping."
+              fi
 
-              # Set up communities module
-              echo "Setting up communities..."
-              invenio communities setup || true
+              # Create RDM fixtures (roles, permissions, vocabularies,
+              # default community, deposit workflow — idempotent)
+              echo "[3/5] Creating RDM fixtures..."
+              invenio rdm-records fixtures
 
               # Create default file location if it doesn't exist
-              invenio files location create --default default-location \
-                s3://invenio-rdm/files/ || true
+              echo "[4/5] Creating default file location..."
+              if ! invenio files location create --default default-location s3://invenio-rdm/files/ 2>&1; then
+                echo "File location may already exist, continuing."
+              fi
 
               # Create MinIO buckets if they don't exist
-              echo "Ensuring MinIO buckets exist..."
+              echo "[5/5] Ensuring MinIO buckets exist..."
               python3 -c "
               import boto3
               from botocore.config import Config
@@ -122,7 +128,7 @@ spec:
                           s3.create_bucket(Bucket=bucket)
                           print(f'Bucket {bucket} created')
                       else:
-                          print(f'Error checking bucket {bucket}: {e}')
+                          print(f'ERROR: Failed to check bucket {bucket}: {e}')
                           raise
 
               print('All buckets verified')
