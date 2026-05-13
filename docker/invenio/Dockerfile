@@ -106,18 +106,20 @@ ENV INVENIO_INSTANCE_PATH=/opt/invenio/var/instance \
 # Copy theme.config for webpack
 COPY docker/invenio/theme.config /opt/invenio/theme.config
 
-# Create instance directories
-RUN mkdir -p ${INVENIO_INSTANCE_PATH}/assets ${INVENIO_INSTANCE_PATH}/static
+# Create instance directories (including templates/custom_fields for webpack)
+RUN mkdir -p ${INVENIO_INSTANCE_PATH}/assets/templates/custom_fields ${INVENIO_INSTANCE_PATH}/static
 
 # Build static assets
 RUN set -e; \
-    echo "[1/4] Collecting static files..."; \
+    echo "[1/5] Collecting static files..."; \
     invenio collect -v; \
-    echo "[2/4] Creating webpack project..."; \
+    echo "[2/5] Creating webpack project..."; \
     invenio webpack create; \
-    echo "[3/4] Installing theme.config..."; \
+    echo "[3/5] Installing theme.config..."; \
     cp /opt/invenio/theme.config ${INVENIO_INSTANCE_PATH}/assets/less/theme.config; \
-    echo "[4/4] Installing dependencies and building webpack bundles..."; \
+    echo "[4/5] Creating custom_fields entry point..."; \
+    echo "export default {};" > ${INVENIO_INSTANCE_PATH}/assets/templates/custom_fields/index.js; \
+    echo "[5/5] Installing dependencies and building webpack bundles..."; \
     cd ${INVENIO_INSTANCE_PATH}/assets; \
     npm install --production=false; \
     npm run build; \
