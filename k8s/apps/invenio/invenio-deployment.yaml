@@ -59,89 +59,7 @@ spec:
             runAsUser: 65534
             seccompProfile:
               type: RuntimeDefault
-        - name: build-assets
-          image: ghcr.io/vityasyyy/invenio-rdm-custom:latest
-          imagePullPolicy: Always
-          command:
-            - /bin/bash
-            - -c
-            - |
-              echo "=== Building Invenio static assets ==="
-              echo "Creating templates directory for webpack resolution..."
-              mkdir -p ${INVENIO_INSTANCE_PATH}/assets/templates/custom_fields
-              MANIFEST_PATH="${INVENIO_INSTANCE_PATH}/static/dist/manifest.json"
-              NEEDS_BUILD=true
 
-              if [ -f "$MANIFEST_PATH" ]; then
-                if grep -qE '"status".*:"(compile|error)"' "$MANIFEST_PATH" 2>/dev/null; then
-                  echo "manifest.json is a placeholder or has errors, rebuilding..."
-                  rm -f "$MANIFEST_PATH"
-                else
-                  echo "Static assets already built, skipping."
-                  NEEDS_BUILD=false
-                fi
-              fi
-
-              if [ "$NEEDS_BUILD" = true ]; then
-                echo "  [1/4] Collecting static files..."
-                invenio collect -v 2>/dev/null || echo "WARNING: invenio collect failed"
-
-                echo "  [2/4] Creating webpack project..."
-                invenio webpack create 2>/dev/null || echo "WARNING: invenio webpack create failed"
-
-                echo "  [3/4] Installing theme.config..."
-                cp /etc/invenio-theme-config/theme.config ${INVENIO_INSTANCE_PATH}/assets/less/theme.config
-
-                ASSETS_DIR="${INVENIO_INSTANCE_PATH}/assets"
-                if [ -d "$ASSETS_DIR" ] && [ -f "$ASSETS_DIR/package.json" ]; then
-                  echo "  [4/4] Installing dependencies and building webpack bundles..."
-                  cd "$ASSETS_DIR"
-                  npm install --production=false 2>&1 | tail -5
-                  npm run build 2>&1 | tail -10
-                  cd /opt/invenio
-                else
-                  echo "  [4/4] Skipped — no webpack project found"
-                fi
-
-                if [ -f "$MANIFEST_PATH" ] && ! grep -qE '"status".*:"(compile|error)"' "$MANIFEST_PATH" 2>/dev/null; then
-                  echo "=== Asset build complete ==="
-                else
-                  echo "WARNING: manifest.json still incomplete after build."
-                  cat "$MANIFEST_PATH"
-                  exit 1
-                fi
-              fi
-          envFrom:
-            - configMapRef:
-                name: invenio-app-config
-            - secretRef:
-                name: invenio-app-secrets
-          resources:
-            requests:
-              cpu: 250m
-              memory: 512Mi
-            limits:
-              cpu: 1000m
-              memory: 4Gi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
-            runAsUser: 1654
-            runAsGroup: 1654
-            seccompProfile:
-              type: RuntimeDefault
-          volumeMounts:
-            - name: instance-data
-              mountPath: /opt/invenio/var/instance/static
-              subPath: static
-            - name: instance-data
-              mountPath: /opt/invenio/var/instance/assets
-              subPath: assets
-            - name: theme-config
-              mountPath: /etc/invenio-theme-config
       containers:
         - name: web
           image: ghcr.io/vityasyyy/invenio-rdm-custom:latest
@@ -169,8 +87,8 @@ spec:
                 name: invenio-app-config
             - secretRef:
                 name: invenio-app-secrets
-          # Startup probe: main container just starts gunicorn (asset build
-          # is done by the build-assets init container).
+          # Startup probe: main container just starts gunicorn.
+          # Pre-built static assets are baked into the image (Task 2).
           startupProbe:
             tcpSocket:
               port: http
@@ -204,19 +122,7 @@ spec:
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
-          volumeMounts:
-            - name: instance-data
-              mountPath: /opt/invenio/var/instance/static
-              subPath: static
-            - name: instance-data
-              mountPath: /opt/invenio/var/instance/assets
-              subPath: assets
-      volumes:
-        - name: instance-data
-          emptyDir: {}
-        - name: theme-config
-          configMap:
-            name: invenio-theme-config
+
 ---
 apiVersion: v1
 kind: Service
