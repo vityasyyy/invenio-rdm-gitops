@@ -124,7 +124,7 @@ RUN set -e; \
     echo "Asset build complete."
 
 # =============================================================================
-# Stage 3: Runtime - Includes Node.js for asset compilation at startup
+# Stage 3: Runtime - Copies pre-built assets; no Node.js needed at startup
 # =============================================================================
 FROM python:3.12-slim-bookworm AS runtime
 
@@ -136,7 +136,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     INVENIO_INSTANCE_PATH=/opt/invenio/var/instance \
     PATH="/opt/invenio/.local/bin:${PATH}"
 
-# Install runtime system dependencies + Node.js (needed for webpack build at startup)
+# Install runtime system dependencies (no Node.js needed; assets are pre-built)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     libxml2 \
@@ -149,8 +149,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfontconfig1 \
     libfreetype6 \
     curl \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
