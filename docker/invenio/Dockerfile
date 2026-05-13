@@ -2,8 +2,8 @@
 # Supports S3/MinIO storage, custom themes, and Kubernetes deployment
 #
 # Static assets (CSS/JS bundles) are built at Docker build time in the assets
-# stage below. The runtime stage copies pre-built assets so pods only need
-# to verify/copy them at startup, avoiding heavy npm builds in init containers.
+# stage below. The runtime stage includes pre-built assets in the image;
+# init containers copy them to emptyDir volumes at startup.
 #
 # Build context: repo root
 # Usage:
@@ -122,6 +122,12 @@ RUN set -e; \
     npm install --production=false; \
     npm run build; \
     echo "Asset build complete."
+
+# Validate that the webpack build produced a complete manifest
+RUN test -f ${INVENIO_INSTANCE_PATH}/static/dist/manifest.json && \
+    ! grep -qE '"status".*:"(compile|error)"' ${INVENIO_INSTANCE_PATH}/static/dist/manifest.json && \
+    echo "Webpack manifest validation passed." || \
+    (echo "ERROR: Webpack manifest is incomplete or indicates a failed build." && exit 1)
 
 # =============================================================================
 # Stage 3: Runtime - Copies pre-built assets; no Node.js needed at startup
