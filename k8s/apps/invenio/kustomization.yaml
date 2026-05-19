@@ -13,6 +13,8 @@ resources:
   - invenio-worker-deployment.yaml
   - invenio-setup-job.yaml
   - invenio-ingressroute.yaml
+  - invenio-hpa.yaml
+  - invenio-pdb.yaml
 
 # Image Updater will overwrite this block with a pinned digest
 # after detecting a new image on GHCR.
