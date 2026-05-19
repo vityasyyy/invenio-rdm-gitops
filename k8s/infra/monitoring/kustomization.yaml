@@ -11,3 +11,4 @@ resources:
   - alertmanager-discord-deployment.yaml
   - alertmanager-discord-service.yaml
   - alertmanager-discord-netpol.yaml
+  - loki-networkpolicy.yaml

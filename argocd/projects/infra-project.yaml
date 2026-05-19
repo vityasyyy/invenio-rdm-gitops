@@ -19,6 +19,7 @@ spec:
     - 'https://cloudnative-pg.github.io/charts'
     - 'https://charts.bitnami.com/bitnami'
     - 'https://opensearch-project.github.io/helm-charts/'
+    - 'https://grafana.github.io/helm-charts'
   destinations:
     - namespace: argocd
       server: https://kubernetes.default.svc

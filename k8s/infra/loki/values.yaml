@@ -1,0 +1,77 @@
+loki:
+  commonConfig:
+    replication_factor: 1
+  storage:
+    type: filesystem
+  storage_config:
+    filesystem:
+      directory: /loki/storage
+  auth_enabled: false
+  analytic:
+    reporting_enabled: false
+
+singleBinary:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClassName: btd-nfs
+
+chunksCache:
+  allocated_memory: 256Mi
+
+resultsCache:
+  allocated_memory: 256Mi
+
+gateway:
+  enabled: false
+
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
+
+monitoring:
+  selfMonitoring:
+    enabled: false
+    grafana:
+      dashboards:
+        enabled: false
+  lokiCanary:
+    enabled: false
+
+test:
+  enabled: false
+
+promtail:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      effect: NoSchedule
+      operator: Equal
+    - key: node-role.kubernetes.io/etcd
+      effect: NoSchedule
+      operator: Equal
+  extraArgs:
+    - -config.expand-env=true
+  config:
+    clients:
+      - url: http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
+        external_labels:
+          cluster: invenio-rdm
