@@ -21,9 +21,21 @@ spec:
   clusterResourceWhitelist:
     - group: ''
       kind: Namespace
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
   namespaceResourceWhitelist:
     - group: 'apps'
       kind: 'Deployment'
+    - group: 'apps'
+      kind: 'StatefulSet'
     - group: 'apps'
       kind: 'Job'
     - group: 'batch'
@@ -55,9 +67,11 @@ spec:
     - group: 'monitoring.coreos.com'
       kind: 'ServiceMonitor'
     - group: ''
-      kind: 'ResourceQuota'
+      kind: ResourceQuota
     - group: ''
       kind: 'LimitRange'
+    - group: ''
+      kind: 'PersistentVolumeClaim'
   roles:
     - name: admin
       description: Admin access to invenio project
