@@ -36,7 +36,7 @@ spec:
           port: 80
     - to:
         - ipBlock:
-            cidr: 10.17.117.41/32
+            cidr: 10.43.0.0/16
       ports:
         - protocol: TCP
           port: 6443
