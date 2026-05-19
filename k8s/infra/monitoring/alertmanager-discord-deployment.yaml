@@ -17,6 +17,9 @@ spec:
       labels:
         app: alertmanager-discord
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: alertmanager-discord
           image: benjojo/alertmanager-discord:latest
@@ -42,6 +45,7 @@ spec:
             runAsUser: 1000
             runAsGroup: 1000
             readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: false
             capabilities:
               drop:
                 - ALL
