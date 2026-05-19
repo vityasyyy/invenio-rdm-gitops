@@ -92,20 +92,20 @@ spec:
               command:
                 - /bin/sh
                 - -c
-                - celery -A invenio_app.celery inspect ping -d celery@$(hostname) --timeout 10
-            initialDelaySeconds: 60
+                - celery -A invenio_app.celery inspect ping -d celery@$(hostname) --timeout 30
+            initialDelaySeconds: 120
             periodSeconds: 60
-            timeoutSeconds: 15
+            timeoutSeconds: 45
             failureThreshold: 3
           readinessProbe:
             exec:
               command:
                 - /bin/sh
                 - -c
-                - celery -A invenio_app.celery inspect ping -d celery@$(hostname) --timeout 5
-            initialDelaySeconds: 30
+                - celery -A invenio_app.celery inspect ping -d celery@$(hostname) --timeout 15
+            initialDelaySeconds: 60
             periodSeconds: 30
-            timeoutSeconds: 10
+            timeoutSeconds: 20
             failureThreshold: 3
           securityContext:
             allowPrivilegeEscalation: false
