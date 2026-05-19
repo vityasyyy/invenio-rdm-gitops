@@ -92,3 +92,51 @@ spec:
           annotations:
             summary: "Invenio PVC usage is high"
             description: "Persistent volume usage in namespace invenio is above 80%."
+    - name: velero.rules
+      rules:
+        - alert: VeleroBackupFailed
+          expr: velero_backup_attempt_total - velero_backup_success_total > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Velero backup failed"
+            description: "Velero backup has failed attempts. Check velero backup logs."
+        - alert: VeleroBackupStale
+          expr: time() - velero_backup_timestamp > 8 * 24 * 3600
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "No Velero backup in over 8 days"
+            description: "The last successful Velero backup was more than 8 days ago."
+    - name: database.rules
+      rules:
+        - alert: PostgreSQLHighConnections
+          expr: cnpg_collection_connections_total / cnpg_collection_connections_max > 0.8
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PostgreSQL connection usage above 80%"
+            description: "Cluster {{ $labels.cluster_name }} is using more than 80% of available connections."
+    - name: minio.rules
+      rules:
+        - alert: MinIOHighDiskUsage
+          expr: minio_cluster_disk_free_bytes / minio_cluster_disk_total_bytes < 0.2
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "MinIO disk usage above 80%"
+            description: "MinIO has less than 20% free disk space."
+    - name: opensearch.rules
+      rules:
+        - alert: OpenSearchClusterRed
+          expr: opensearch_cluster_status == 2
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "OpenSearch cluster status is red"
+            description: "OpenSearch cluster is in RED state. Some shards are unavailable."

@@ -45,6 +45,7 @@ spec:
         compression: gzip
 
   monitoring:
+    enablePodMonitor: true
     customQueriesConfigMap:
       - name: cnpg-default-monitoring
         key: queries

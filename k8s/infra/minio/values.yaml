@@ -53,3 +53,7 @@ job:
 
 postJob:
   enabled: false
+
+metrics:
+  serviceMonitor:
+    enabled: true
