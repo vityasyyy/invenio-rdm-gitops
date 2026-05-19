@@ -6,7 +6,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "7"
 spec:
-  project: infra
+  project: invenio
   sources:
     # Helm chart: CloudNativePG operator
     - chart: cloudnative-pg

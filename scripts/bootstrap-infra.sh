@@ -175,6 +175,7 @@ fi
 echo ""
 echo "==> Applying ArgoCD project (infra)"
 kubectl apply -f "$REPO_ROOT/argocd/projects/infra-project.yaml"
+kubectl apply -f "$REPO_ROOT/argocd/projects/invenio-project.yaml"
 
 # --- Summary ---
 echo ""

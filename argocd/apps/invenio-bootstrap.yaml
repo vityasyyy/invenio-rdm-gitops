@@ -6,7 +6,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "9"
 spec:
-  project: infra
+  project: invenio
   source:
     repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
     targetRevision: main

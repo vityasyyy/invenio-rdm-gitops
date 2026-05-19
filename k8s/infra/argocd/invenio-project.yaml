@@ -1,0 +1,68 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: invenio
+  namespace: argocd
+spec:
+  description: "InvenioRDM application workloads"
+  sourceRepos:
+    - 'https://github.com/vityasyyy/invenio-rdm-gitops.git'
+    - 'https://charts.cloudnative-pg.io'
+    - 'https://opensearch-project.github.io/helm-charts'
+  destinations:
+    - namespace: invenio
+      server: https://kubernetes.default.svc
+    - namespace: database
+      server: https://kubernetes.default.svc
+    - namespace: redis
+      server: https://kubernetes.default.svc
+    - namespace: search
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: 'apps'
+      kind: 'Deployment'
+    - group: 'apps'
+      kind: 'Job'
+    - group: 'batch'
+      kind: 'Job'
+    - group: ''
+      kind: 'Service'
+    - group: ''
+      kind: 'ConfigMap'
+    - group: ''
+      kind: 'Secret'
+    - group: 'bitnami.com'
+      kind: 'SealedSecret'
+    - group: ''
+      kind: 'ServiceAccount'
+    - group: 'networking.k8s.io'
+      kind: 'NetworkPolicy'
+    - group: 'traefik.io'
+      kind: 'IngressRoute'
+    - group: 'traefik.io'
+      kind: 'Middleware'
+    - group: 'postgresql.cnpg.io'
+      kind: 'Cluster'
+    - group: 'postgresql.cnpg.io'
+      kind: 'ScheduledBackup'
+    - group: 'autoscaling'
+      kind: 'HorizontalPodAutoscaler'
+    - group: 'policy'
+      kind: 'PodDisruptionBudget'
+    - group: 'monitoring.coreos.com'
+      kind: 'ServiceMonitor'
+  roles:
+    - name: admin
+      description: Admin access to invenio project
+      policies:
+        - "p, proj:invenio:admin, applications, get, invenio/*, allow"
+        - "p, proj:invenio:admin, applications, create, invenio/*, allow"
+        - "p, proj:invenio:admin, applications, update, invenio/*, allow"
+        - "p, proj:invenio:admin, applications, delete, invenio/*, allow"
+        - "p, proj:invenio:admin, applications, sync, invenio/*, allow"
+        - "p, proj:invenio:admin, applications, override, invenio/*, allow"
+      groups:
+        - github:vityasyyy:admins
