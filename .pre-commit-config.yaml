@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v5.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -9,12 +9,13 @@ repos:
         args: ['--maxkb=1000']
 
   - repo: https://github.com/adrienverge/yamllint
-    rev: v1.33.0
+    rev: v1.35.1
     hooks:
       - id: yamllint
+        args: ['-c', '.yamllint']
 
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.18.0
+    rev: v8.22.1
     hooks:
       - id: gitleaks
 
@@ -26,6 +27,10 @@ repos:
         args:
           - -c
           - |
+            if ! command -v kustomize &>/dev/null; then
+              echo "Skipping kustomize validation: kustomize not found in PATH"
+              exit 0
+            fi
             for f in "$@"; do
               dir=$(dirname "$f")
               echo "Building $dir ..."
@@ -36,3 +41,22 @@ repos:
         files: kustomization\.yaml$
         pass_filenames: true
         require_serial: true
+
+      - id: check-sealed-secret-placeholders
+        name: Check SealedSecret placeholders
+        entry: bash
+        args:
+          - -c
+          - |
+            found=0
+            for f in "$@"; do
+              if grep -iE 'PLACEHOLDER|TODO|FIXME|changeme' "$f"; then
+                echo "::error file=$f::Placeholder value found in SealedSecret"
+                found=1
+              fi
+            done
+            exit $found
+          - bash
+        language: system
+        files: '.*\.yaml$'
+        pass_filenames: true

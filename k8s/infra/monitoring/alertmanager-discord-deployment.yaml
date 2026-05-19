@@ -19,15 +19,15 @@ spec:
     spec:
       containers:
         - name: alertmanager-discord
-          image: ghcr.io/sergelogvinov/alertmanager-discord:latest
-          args:
-            - -web.listen-address=0.0.0.0:9093
+          image: benjojo/alertmanager-discord:latest
           env:
-            - name: DISCORD_WEBHOOK_URL
+            - name: DISCORD_WEBHOOK
               valueFrom:
                 secretKeyRef:
                   name: alertmanager-discord-webhook
                   key: DISCORD_WEBHOOK_URL
+            - name: LISTEN_ADDRESS
+              value: "0.0.0.0:9093"
           ports:
             - containerPort: 9093
           resources:

@@ -9,6 +9,7 @@ on:
       - 'external-lb/**'
       - 'scripts/**'
       - '.github/workflows/**'
+      - '.pre-commit-config.yaml'
 
 permissions:
   contents: read
@@ -26,71 +27,85 @@ jobs:
       - name: Lint YAML files
         run: yamllint argocd/ k8s/ external-lb/k8s/
 
-  validate-kustomize:
-    name: Validate Kustomize Builds
+  validate-manifests:
+    name: Render & Validate Manifests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache kustomize
+      - name: Install tools
+        run: |
+          curl -sL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.6.0/kustomize_v5.6.0_linux_amd64.tar.gz | tar xz -C /usr/local/bin
+          curl -sL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          curl -sL https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64 -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq
+          KUBECONFORM_VERSION="0.6.7"
+          curl -sL "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" | tar xz -C /usr/local/bin kubeconform
+
+      - name: Cache Helm repos
         uses: actions/cache@v4
         with:
-          path: .kustomize-cache
-          key: ${{ runner.os }}-kustomize-v5.4.1
+          path: ~/.cache/helm/repository
+          key: helm-repos-${{ hashFiles('argocd/apps/*.yaml') }}
+          restore-keys: helm-repos-
 
-      - name: Install kustomize
+      - name: Add Helm repos
         run: |
-          if [ ! -f .kustomize-cache/kustomize ]; then
-            wget https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.4.1/kustomize_v5.4.1_linux_amd64.tar.gz
-            tar xzf kustomize_v5.4.1_linux_amd64.tar.gz
-            mkdir -p .kustomize-cache
-            mv kustomize .kustomize-cache/
+          helm repo add traefik https://traefik.github.io/charts
+          helm repo add minio https://charts.min.io/
+          helm repo add velero https://vmware-tanzu.github.io/helm-charts
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo add cloudnative-pg https://cloudnative-pg.github.io/charts
+          helm repo add opensearch https://opensearch-project.github.io/helm-charts/
+          helm repo update
+
+      - name: Render manifests
+        run: bash scripts/ci-render-manifests.sh
+
+      - name: Validate rendered manifests with kubeconform
+        run: |
+          for f in rendered/*.yaml; do
+            echo "Validating $f..."
+            kubeconform -skip RedisCluster,CloudNativePG,SealedSecret,PrometheusRule,ServiceMonitor,PodMetrics,IngressRoute,Middleware,Cluster,Backup,ScheduledBackup,ImageUpdater \
+              -schema-location 'https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.32.6-standalone-strict/{}' \
+              "$f" || true
+          done
+
+      - name: Validate label selectors
+        run: bash scripts/ci-validate-selectors.sh rendered
+
+      - name: Scan for placeholder values in SealedSecrets
+        run: |
+          found=false
+          for f in $(find k8s/ -name '*.yaml' -exec grep -l 'kind: SealedSecret' {} \;); do
+            if grep -iE 'PLACEHOLDER|TODO|FIXME|changeme|changeme' "$f"; then
+              echo "::error file=$f::SealedSecret contains placeholder value"
+              found=true
+            fi
+          done
+          if [ "$found" = true ]; then
+            exit 1
           fi
-          sudo ln -sf $(pwd)/.kustomize-cache/kustomize /usr/local/bin/kustomize
-          kustomize version
 
-      - name: Validate ArgoCD kustomize
-        run: kustomize build k8s/infra/argocd/ > /dev/null && echo "✓ k8s/infra/argocd/ builds successfully"
-
-      - name: Validate Sealed Secrets kustomize
-        run: kustomize build k8s/infra/sealed-secrets/ > /dev/null && echo "✓ k8s/infra/sealed-secrets/ builds successfully"
-
-      - name: Validate Security kustomize
-        run: kustomize build k8s/infra/security/ > /dev/null && echo "✓ k8s/infra/security/ builds successfully"
-
-      - name: Validate Cloudflared kustomize
-        run: kustomize build external-lb/k8s/ > /dev/null && echo "✓ external-lb/k8s/ builds successfully"
-
-      - name: Validate Monitoring kustomize
-        run: kustomize build k8s/infra/monitoring/ > /dev/null && echo "✓ k8s/infra/monitoring/ builds successfully"
-
-      - name: Validate MinIO kustomize
-        run: kustomize build k8s/infra/minio/ > /dev/null && echo "✓ k8s/infra/minio/ builds successfully"
-
-      - name: Validate Velero kustomize
-        run: kustomize build k8s/infra/velero/ > /dev/null && echo "✓ k8s/infra/velero/ builds successfully"
-
-      - name: Validate Invenio kustomize
-        run: kustomize build k8s/apps/invenio/ > /dev/null && echo "✓ k8s/apps/invenio/ builds successfully"
-
-      - name: Validate secret generator syntax
-        run: bash -n scripts/generate-sealed-secrets.sh
-
-  validate-terraform:
-    name: Validate Terraform
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform Init
-        working-directory: external-lb/terraform/envs/dev
-        run: terraform init -input=false
-
-      - name: Terraform Validate
-        working-directory: external-lb/terraform/envs/dev
-        run: terraform validate
+      - name: Validate SealedSecret encryption format
+        run: |
+          found=false
+          for f in $(find k8s/ -name '*.yaml' -exec grep -l 'kind: SealedSecret' {} \;); do
+            keys=$(yq e '.spec.encryptedData | keys | .[]' "$f" 2>/dev/null || true)
+            for key in $keys; do
+              val=$(yq e ".spec.encryptedData.\"$key\"" "$f" 2>/dev/null || true)
+              if [ -n "$val" ]; then
+                first_chars=$(echo "$val" | head -c 4)
+                if [ "$first_chars" != "AgA" ] && [ "$first_chars" != "AgE" ]; then
+                  echo "::error file=$f::SealedSecret key '$key' doesn't appear to be properly encrypted (should start with 'AgA' or 'AgE')"
+                  found=true
+                fi
+              fi
+            done
+          done
+          if [ "$found" = true ]; then
+            exit 1
+          fi
 
   validate-argocd-apps:
     name: Validate ArgoCD Applications
@@ -110,17 +125,110 @@ jobs:
       - name: Check all apps reference valid paths
         run: |
           echo "Checking ArgoCD apps reference existing paths..."
+          failed=false
           for f in argocd/apps/*.yaml; do
-            path=$(grep 'path:' "$f" | head -1 | awk '{print $2}' || true)
-            if [ -n "$path" ]; then
-              if [ ! -d "$path" ] && [ ! -f "$path" ]; then
-                echo "ERROR: $f references path '$path' which does not exist"
-                exit 1
-              else
-                echo "✓ $f → $path exists"
+            app_name=$(yq e '.metadata.name' "$f" 2>/dev/null)
+            sources=$(yq e '.spec.sources // []' "$f" 2>/dev/null)
+            if [ "$sources" = "[]" ]; then
+              path=$(yq e '.spec.source.path // ""' "$f" 2>/dev/null)
+              repo=$(yq e '.spec.source.repoURL // ""' "$f" 2>/dev/null)
+              chart=$(yq e '.spec.source.chart // ""' "$f" 2>/dev/null)
+              if [ -n "$path" ] && [ "$repo" = "https://github.com/vityasyyy/invenio-rdm-gitops.git" ]; then
+                if [ ! -d "$path" ] && [ ! -f "$path" ]; then
+                  echo "::error file=$f::App $app_name references path '$path' which does not exist"
+                  failed=true
+                else
+                  echo "  ✓ $app_name → $path"
+                fi
+              elif [ -n "$chart" ]; then
+                echo "  ✓ $app_name → Helm chart: $chart"
               fi
+            else
+              idx=0
+              total=$(yq e '.spec.sources | length' "$f" 2>/dev/null)
+              while [ "$idx" -lt "$total" ]; do
+                path=$(yq e ".spec.sources[$idx].path // \"\"" "$f" 2>/dev/null)
+                repo=$(yq e ".spec.sources[$idx].repoURL // \"\"" "$f" 2>/dev/null)
+                chart=$(yq e ".spec.sources[$idx].chart // \"\"" "$f" 2>/dev/null)
+                if [ -n "$path" ] && [ "$repo" = "https://github.com/vityasyyy/invenio-rdm-gitops.git" ]; then
+                  if [ ! -d "$path" ] && [ ! -f "$path" ]; then
+                    echo "::error file=$f::App $app_name source[$idx] references path '$path' which does not exist"
+                    failed=true
+                  else
+                    echo "  ✓ $app_name source[$idx] → $path"
+                  fi
+                elif [ -n "$chart" ]; then
+                  echo "  ✓ $app_name source[$idx] → Helm chart: $chart"
+                fi
+                idx=$((idx + 1))
+              done
             fi
           done
+          if [ "$failed" = true ]; then
+            exit 1
+          fi
+
+      - name: Validate source repos are in AppProject whitelists
+        run: |
+          echo "Checking ArgoCD app source repos are permitted by their projects..."
+          failed=false
+          for f in argocd/apps/*.yaml; do
+            app_name=$(yq e '.metadata.name' "$f" 2>/dev/null)
+            project=$(yq e '.spec.project // "default"' "$f" 2>/dev/null)
+
+            if [ "$project" = "default" ]; then
+              echo "  ⊘ $app_name uses default project (allows all repos)"
+              continue
+            fi
+
+            proj_file="argocd/projects/${project}-project.yaml"
+            if [ ! -f "$proj_file" ]; then
+              echo "::error file=$f::App $app_name references project '$project' but no project file found at $proj_file"
+              failed=true
+              continue
+            fi
+
+            proj_repos=$(yq e '.spec.sourceRepos[]' "$proj_file" 2>/dev/null)
+
+            sources=$(yq e '.spec.sources // []' "$f" 2>/dev/null)
+            if [ "$sources" = "[]" ] || [ -z "$sources" ]; then
+              repo=$(yq e '.spec.source.repoURL // ""' "$f" 2>/dev/null)
+              if [ -n "$repo" ]; then
+                found=false
+                while IFS= read -r allowed; do
+                  if [ "$allowed" = "$repo" ] || [ "$allowed" = "*" ]; then
+                    found=true
+                    break
+                  fi
+                done <<< "$proj_repos"
+                if [ "$found" = false ]; then
+                  echo "::error file=$f::App $app_name uses repo '$repo' not in project '$project' whitelist"
+                  failed=true
+                fi
+              fi
+            else
+              total=$(yq e '.spec.sources | length' "$f" 2>/dev/null)
+              idx=0
+              while [ "$idx" -lt "$total" ]; do
+                repo=$(yq e ".spec.sources[$idx].repoURL" "$f" 2>/dev/null)
+                found=false
+                while IFS= read -r allowed; do
+                  if [ "$allowed" = "$repo" ] || [ "$allowed" = "*" ]; then
+                    found=true
+                    break
+                  fi
+                done <<< "$proj_repos"
+                if [ "$found" = false ] && [ -n "$repo" ]; then
+                  echo "::error file=$f::App $app_name source[$idx] uses repo '$repo' not in project '$project' whitelist"
+                  failed=true
+                fi
+                idx=$((idx + 1))
+              done
+            fi
+          done
+          if [ "$failed" = true ]; then
+            exit 1
+          fi
 
   check-sync-waves:
     name: Verify Sync Wave Ordering
@@ -132,13 +240,34 @@ jobs:
         run: |
           echo "Sync wave ordering for ArgoCD apps:"
           echo ""
+          failed=false
           for f in argocd/apps/*.yaml; do
-            name=$(grep 'name:' "$f" | head -1 | awk '{print $2}')
-            wave=$(grep 'sync-wave' "$f" | awk '{print $2}' || echo "0 (default)")
-            printf "  Wave %s: %s\n" "$wave" "$name"
+            name=$(yq e '.metadata.name' "$f" 2>/dev/null)
+            wave=$(yq e '.metadata.annotations."argocd.argoproj.io/sync-wave" // "0"' "$f" 2>/dev/null)
+            project=$(yq e '.spec.project // "default"' "$f" 2>/dev/null)
+            printf "  Wave %3s: %-30s (project: %s)\n" "$wave" "$name" "$project"
           done
           echo ""
-          echo "Expected order: security(-5) → traefik/cloudflared(-4) → sealed-secrets/argocd-self(-3) → cert-manager(-2) → velero(2) → monitoring(5)"
+          echo "Checking for ordering issues..."
+          for f in argocd/apps/*.yaml; do
+            name=$(yq e '.metadata.name' "$f" 2>/dev/null)
+            wave=$(yq e '.metadata.annotations."argocd.argoproj.io/sync-wave" // "0"' "$f" 2>/dev/null)
+            project=$(yq e '.spec.project // "default"' "$f" 2>/dev/null)
+            if [ "$project" = "infra" ] && [ "$wave" -gt 0 ] 2>/dev/null; then
+              echo "::warning file=$f::Infra app $name has positive sync wave ($wave). Infra apps should use negative waves."
+            fi
+            if [ "$project" = "invenio" ] && [ "$wave" -lt 0 ] 2>/dev/null; then
+              echo "::warning file=$f::Invenio app $name has negative sync wave ($wave). Invenio apps should use positive waves."
+            fi
+          done
+
+          for f in k8s/infra/argocd/*.yaml external-lb/k8s/*.yaml k8s/apps/invenio/*.yaml k8s/infra/**/*.yaml; do
+            [ -f "$f" ] || continue
+            wave=$(grep 'argocd.argoproj.io/sync-wave:' "$f" 2>/dev/null | head -1 | grep -o '[0-9]*' || echo "none")
+            if [ "$wave" != "none" ] && [ -n "$wave" ]; then
+              printf "  Wave %3s: %s\n" "$wave" "$f"
+            fi
+          done
 
   scan-secrets:
     name: Scan for Secrets

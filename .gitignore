@@ -8,3 +8,4 @@ kubeconfig*
 .DS_Store
 *.log
 kustomize
+rendered/

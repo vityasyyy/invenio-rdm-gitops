@@ -67,6 +67,8 @@ spec:
       kind: ClusterRoleBindingList
     - group: networking.k8s.io
       kind: IngressClass
+    - group: argoproj.io
+      kind: AppProject
   namespaceResourceWhitelist:
     - group: ''
       kind: ConfigMap
