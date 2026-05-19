@@ -7,3 +7,7 @@ resources:
   - grafana-dashboards.yaml
   - invenio-servicemonitor.yaml
   - networkpolicy-kube-api.yaml
+  - alertmanager-discord-secret.yaml
+  - alertmanager-discord-deployment.yaml
+  - alertmanager-discord-service.yaml
+  - alertmanager-discord-netpol.yaml
