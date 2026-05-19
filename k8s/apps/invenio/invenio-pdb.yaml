@@ -1,0 +1,25 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: invenio-web-pdb
+  namespace: invenio
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: invenio-web
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: invenio-worker-pdb
+  namespace: invenio
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: invenio-worker
