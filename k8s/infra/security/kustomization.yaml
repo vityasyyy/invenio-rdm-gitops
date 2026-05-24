@@ -13,3 +13,6 @@ resources:
   - limit-ranges/default-limits.yaml
   - resource-quotas/argocd-quota.yaml
   - resource-quotas/default-quota.yaml
+  - resource-quotas/monitoring-quota.yaml
+  - resource-quotas/minio-quota.yaml
+  - resource-quotas/velero-quota.yaml

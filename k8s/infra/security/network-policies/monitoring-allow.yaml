@@ -58,9 +58,17 @@ spec:
           protocol: TCP
         - port: 9100
           protocol: TCP
+        - port: 5000
+          protocol: TCP
         - port: 8080
           protocol: TCP
         - port: 8081
+          protocol: TCP
+        - port: 9200
+          protocol: TCP
+        - port: 8000
+          protocol: TCP
+        - port: 6379
           protocol: TCP
     - to: []
       ports:

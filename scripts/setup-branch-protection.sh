@@ -11,7 +11,7 @@ if ! gh auth status &>/dev/null; then
   exit 1
 fi
 
-REPO=$(git remote get-url origin 2>/dev/null | sed -E 's|.*[:/]([^/]+/[^/]+)(\.git)?$|\1|' || echo "")
+REPO=$(git remote get-url origin 2>/dev/null | sed -E 's|.*[:/]([^/]+/[^/.]+)(\.git)?|\1|' || echo "")
 
 if [[ -z "$REPO" ]]; then
   REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo "")
@@ -33,7 +33,7 @@ gh api \
     "strict": false,
     "contexts": [
       "Validate YAML Syntax",
-      "Validate Kustomize Builds",
+      "Render & Validate Manifests",
       "Validate ArgoCD Applications"
     ]
   },
@@ -51,7 +51,7 @@ EOF
 
 echo "✓ Branch protection configured for main"
 echo "  - 1 required approval"
-echo "  - Status checks: Validate YAML Syntax, Validate Kustomize Builds, Validate ArgoCD Applications"
+echo "  - Status checks: Validate YAML Syntax, Render & Validate Manifests, Validate ArgoCD Applications"
 echo "  - Linear history required"
 echo "  - Force pushes disallowed"
 echo "  - Not requiring branch up-to-date before merging"
