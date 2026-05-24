@@ -12,7 +12,7 @@ metadata:
     app.kubernetes.io/name: invenio-worker
     app.kubernetes.io/part-of: invenio-rdm
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app.kubernetes.io/name: invenio-worker
@@ -87,13 +87,22 @@ spec:
             limits:
               cpu: 1000m
               memory: 2Gi
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - celery -A invenio_app.celery inspect ping -d celery@$(hostname) --timeout 30
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 12
           livenessProbe:
             exec:
               command:
                 - /bin/sh
                 - -c
                 - celery -A invenio_app.celery inspect ping -d celery@$(hostname) --timeout 30
-            initialDelaySeconds: 120
+            initialDelaySeconds: 30
             periodSeconds: 60
             timeoutSeconds: 45
             failureThreshold: 3

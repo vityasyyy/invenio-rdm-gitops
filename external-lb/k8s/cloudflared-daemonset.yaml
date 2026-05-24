@@ -16,6 +16,9 @@ spec:
       labels:
         app: cloudflared
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       terminationGracePeriodSeconds: 30
       containers:
         - name: tunnel
@@ -53,6 +56,8 @@ spec:
             runAsUser: 65534
             runAsNonRoot: true
             allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
             capabilities:
               drop:
                 - ALL

@@ -95,9 +95,9 @@ jobs:
             for key in $keys; do
               val=$(yq e ".spec.encryptedData.\"$key\"" "$f" 2>/dev/null || true)
               if [ -n "$val" ]; then
-                first_chars=$(echo "$val" | head -c 4)
-                if [ "$first_chars" != "AgA" ] && [ "$first_chars" != "AgE" ]; then
-                  echo "::error file=$f::SealedSecret key '$key' doesn't appear to be properly encrypted (should start with 'AgA' or 'AgE')"
+                first_chars=$(echo "$val" | head -c 2)
+                if [ "$first_chars" != "Ag" ]; then
+                  echo "::error file=$f::SealedSecret key '$key' doesn't appear to be properly encrypted (should start with 'Ag')"
                   found=true
                 fi
               fi

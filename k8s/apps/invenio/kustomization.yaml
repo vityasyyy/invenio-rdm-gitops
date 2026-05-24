@@ -8,7 +8,6 @@ resources:
   - app-sealed-secret.yaml
   - ghcr-pull-secret.yaml
   - serviceaccount.yaml
-  - invenio-theme-config.yaml
   - invenio-deployment.yaml
   - invenio-worker-deployment.yaml
   - invenio-setup-job.yaml
