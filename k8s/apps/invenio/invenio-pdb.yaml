@@ -9,7 +9,7 @@ spec:
   minAvailable: 1
   selector:
     matchLabels:
-      app: invenio-web
+      app.kubernetes.io/name: invenio-web
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -22,4 +22,4 @@ spec:
   minAvailable: 1
   selector:
     matchLabels:
-      app: invenio-worker
+      app.kubernetes.io/name: invenio-worker

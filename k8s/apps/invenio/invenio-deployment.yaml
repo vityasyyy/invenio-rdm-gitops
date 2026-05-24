@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/name: invenio-web
     app.kubernetes.io/part-of: invenio-rdm
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app.kubernetes.io/name: invenio-web
@@ -101,12 +101,11 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
-            httpGet:
-              path: /api/health
+            tcpSocket:
               port: http
-            initialDelaySeconds: 60
+            initialDelaySeconds: 30
             periodSeconds: 10
-            timeoutSeconds: 10
+            timeoutSeconds: 5
             failureThreshold: 3
           resources:
             requests:
