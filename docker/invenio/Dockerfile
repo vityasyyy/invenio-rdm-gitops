@@ -48,8 +48,8 @@ WORKDIR /opt/invenio
 # --- Install Python dependencies (with cache mount) ---
 COPY docker/invenio/requirements.txt ./
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --user --no-cache-dir -r requirements.txt \
-    && pip install --user --no-cache-dir \
+    pip install --user -r requirements.txt \
+    && pip install --user \
        "invenio-s3>=3.0.2" \
        "boto3>=1.34.0" \
        "botocore>=1.34.0"
