@@ -22,7 +22,7 @@ patches:
         path: /data
         value:
           log.level: info
-          argocd.server_addr: argocd-server.argocd.svc.cluster.local:443
+          argocd.server_addr: argocd-server.argocd.svc.cluster.local:8080
           argocd.insecure: "true"
           # Registry configuration for GitHub Container Registry
           registries.conf: |
