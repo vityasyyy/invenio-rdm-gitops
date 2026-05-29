@@ -28,3 +28,12 @@ spec:
       - PruneLast=true
       - ApplyOutOfSyncOnly=true
       - ServerSideApply=true
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jqPathExpressions:
+        - .metadata.labels["app.kubernetes.io/instance"]
+    - group: apps
+      kind: StatefulSet
+      jqPathExpressions:
+        - .metadata.labels["app.kubernetes.io/instance"]

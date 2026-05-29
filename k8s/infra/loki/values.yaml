@@ -35,6 +35,14 @@ singleBinary:
 
 chunksCache:
   allocated_memory: 256Mi
+  memcached:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: 1
+        memory: 4Gi
 
 resultsCache:
   allocated_memory: 256Mi
