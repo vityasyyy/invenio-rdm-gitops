@@ -166,10 +166,9 @@ spec:
         - port: 6443
           protocol: TCP
 ---
-# database-allow-instance-ingress — allows the CNPG operator and monitoring to reach
-# postgres instances on the status and metrics ports. Without this ingress rule, the
-# operator cannot extract instance status (port 8000) or Prometheus metrics (port 9187),
-# causing ClusterIsNotReady and ContinuousArchivingFailing conditions.
+# database-allow-instance-ingress — allows the CNPG operator to reach postgres instances
+# on the status and postgres ports. Without this ingress rule, the operator cannot
+# extract instance status (port 8000), causing ClusterIsNotReady conditions.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -186,6 +185,32 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: cloudnative-pg
+      ports:
+        - port: 8000
+          protocol: TCP
+        - port: 5432
+          protocol: TCP
+---
+# database-allow-operator-egress — allows the CNPG operator to reach postgres instances
+# on the status and postgres ports. This egress rule is needed because database-allow-egress
+# (podSelector: {}) creates a default-deny egress, so the operator needs explicit egress
+# to ports 8000 and 5432 within the namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: database-allow-operator-egress
+  namespace: database
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cloudnative-pg
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: postgres
       ports:
         - port: 8000
           protocol: TCP
