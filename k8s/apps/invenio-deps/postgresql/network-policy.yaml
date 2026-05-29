@@ -167,8 +167,9 @@ spec:
           protocol: TCP
 ---
 # database-allow-instance-ingress — allows the CNPG operator to reach postgres instances
-# on the status and postgres ports. Without this ingress rule, the operator cannot
-# extract instance status (port 8000), causing ClusterIsNotReady conditions.
+# on the status and postgres ports, and allows postgres pods to reach each other for
+# replication and join operations. Without this, the operator cannot extract instance
+# status (port 8000), and new replicas cannot join the cluster (port 5432).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -180,14 +181,26 @@ spec:
       cnpg.io/cluster: postgres
   policyTypes:
     - Ingress
+    - Egress
   ingress:
     - from:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: cloudnative-pg
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: postgres
       ports:
         - port: 8000
           protocol: TCP
+        - port: 5432
+          protocol: TCP
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: postgres
+      ports:
         - port: 5432
           protocol: TCP
 ---
