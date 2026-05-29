@@ -95,6 +95,7 @@ spec:
                 - celery -A invenio_app.celery inspect ping -d celery@$(hostname) --timeout 30
             initialDelaySeconds: 30
             periodSeconds: 15
+            timeoutSeconds: 30
             failureThreshold: 12
           livenessProbe:
             exec:
