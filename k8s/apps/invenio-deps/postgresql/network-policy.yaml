@@ -1,4 +1,13 @@
 # Network policies for database namespace
+#
+# IMPORTANT: kube-proxy DNAT port substitution
+# When pods connect to a ClusterIP Service (e.g. kubernetes API at 10.43.0.1:443),
+# kube-proxy DNATs the destination to the real endpoint (e.g. 10.17.117.41:6443)
+# BEFORE Calico evaluates egress iptables rules. This means a NetworkPolicy matching
+# only destination port 443 will silently drop the DNATed packets whose destination
+# port is now 6443. Any egress policy targeting the Kubernetes API server MUST include
+# both ports 443 and 6443.
+#
 # NOTE: No default-deny ingress because the CloudNativePG webhook must be reachable
 # from the Kubernetes API server (host network), which cannot be matched by namespaceSelector.
 # Individual pods are protected by specific ingress policies.
@@ -134,6 +143,10 @@ spec:
         - port: 9000
           protocol: TCP
 ---
+# database-allow-apiserver — allows all pods in the database namespace to reach the
+# Kubernetes API server. Both ports 443 and 6443 are required because kube-proxy DNATs
+# ClusterIP traffic (dst port 443 → 6443) before Calico evaluates egress rules, so a
+# policy matching only port 443 silently drops the DNATed packets.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -149,4 +162,6 @@ spec:
             cidr: 0.0.0.0/0
       ports:
         - port: 443
+          protocol: TCP
+        - port: 6443
           protocol: TCP
