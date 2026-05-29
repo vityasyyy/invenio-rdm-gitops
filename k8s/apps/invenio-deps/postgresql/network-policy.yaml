@@ -165,3 +165,28 @@ spec:
           protocol: TCP
         - port: 6443
           protocol: TCP
+---
+# database-allow-operator-egress — allows the CNPG operator to reach postgres instances
+# on the status port (8000) within the database namespace. The operator queries this
+# port to extract instance status and health information.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: database-allow-operator-egress
+  namespace: database
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cloudnative-pg
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: postgres
+      ports:
+        - port: 8000
+          protocol: TCP
+        - port: 5432
+          protocol: TCP
