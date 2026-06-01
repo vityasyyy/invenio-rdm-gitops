@@ -140,8 +140,10 @@ git checkout -b <prefix>/<issue-number>-<short-slug>
 
 ### Step 5: Create the PR
 
+All PRs must be **squash-merged** to keep `main` history clean.
+
 ```bash
-gh pr create --title "[T1/T2/T3] <description>" --body "$(cat <<'EOF'
+gh pr create --title "[T1/T2/T3] <description>" --squash --body "$(cat <<'EOF'
 Closes #<issue-number>
 
 ## Summary
@@ -161,6 +163,12 @@ EOF
 )"
 ```
 
+After approval, merge via **squash merge** only:
+
+```bash
+gh pr merge <number> --squash --delete-branch
+```
+
 ## Rules
 
 1. **No branch without an issue** — always create the issue first
@@ -169,6 +177,7 @@ EOF
 4. **Rollback plan required for T3** — infra changes that could break services must have rollback steps
 5. **PR must close the issue** — include `Closes #<issue-number>` in PR body
 6. **Tier up when in doubt** — a small change touching many services is not T1
+7. **Squash merge only** — all PRs must be squash-merged to keep `main` history clean; use `gh pr merge <number> --squash --delete-branch`
 
 ## Quick Reference
 

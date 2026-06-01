@@ -52,8 +52,8 @@ spec:
               cpu: 25m
               memory: 32Mi
             limits:
-              cpu: 50m
-              memory: 32Mi
+              cpu: 100m
+              memory: 64Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -66,7 +66,7 @@ spec:
 
       containers:
         - name: web
-          image: ghcr.io/vityasyyy/invenio-rdm-custom:v12.0.5
+          image: ghcr.io/vityasyyy/invenio-rdm-custom:latest
           imagePullPolicy: IfNotPresent
           args:
             - gunicorn
@@ -95,20 +95,23 @@ spec:
             - name: tmp
               mountPath: /tmp
           startupProbe:
-            tcpSocket:
+            httpGet:
+              path: /api/health
               port: http
             initialDelaySeconds: 30
             periodSeconds: 10
             failureThreshold: 30
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /api/health
               port: http
             initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /api/health
               port: http
             initialDelaySeconds: 30
             periodSeconds: 10
