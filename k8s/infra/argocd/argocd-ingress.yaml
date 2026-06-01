@@ -1,5 +1,6 @@
 # ArgoCD Ingress - for Cloudflare Tunnel exposure
 # Uses Traefik IngressRoute (since we have Traefik in the cluster)
+# Two routes: HTTP (browser/REST) and gRPC-web (CLI/UI streaming)
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -11,8 +12,17 @@ spec:
   entryPoints:
     - web
   routes:
+    - match: Host(`argocd.vityasy.me`) && HeadersRegexp(`Content-Type`, `^application/grpc-web`)
+      kind: Rule
+      priority: 10
+      services:
+        - name: argocd-server
+          port: 8080
+      middlewares:
+        - name: argocd-headers
     - match: Host(`argocd.vityasy.me`)
       kind: Rule
+      priority: 1
       services:
         - name: argocd-server
           port: 8080

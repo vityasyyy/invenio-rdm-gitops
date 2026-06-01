@@ -33,8 +33,7 @@ jobs:
           ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
           ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
         run: |
-          # Pass credentials directly to every command; skip 'argocd login' in CI
-          ARGOCD_OPTS="--server $ARGOCD_SERVER --auth-token $ARGOCD_AUTH_TOKEN --grpc-web --insecure"
+          ARGOCD_OPTS="--server $ARGOCD_SERVER --auth-token $ARGOCD_AUTH_TOKEN --insecure"
 
           echo "Waiting up to 5 minutes for ArgoCD apps to sync and become healthy..."
           timeout=300
@@ -43,18 +42,34 @@ jobs:
 
           while [ $elapsed -lt $timeout ]; do
             echo "Checking ArgoCD app status (elapsed: ${elapsed}s)..."
-            unhealthy_apps=$(argocd app list $ARGOCD_OPTS -o json | \
-              jq -r '.[] | select(.status.health.status != "Healthy" or .status.sync.status != "Synced") | .metadata.name')
+
+            app_list_json=$(argocd app list $ARGOCD_OPTS -o json 2>/dev/null)
+            argocd_exit=$?
+
+            if [ $argocd_exit -ne 0 ]; then
+              echo "⚠ ArgoCD CLI returned exit code $argocd_exit (will retry)"
+              sleep $interval
+              elapsed=$((elapsed + interval))
+              continue
+            fi
+
+            unhealthy_filter='.[] | select(.status.health.status != "Healthy"'
+            unhealthy_filter+=' or .status.sync.status != "Synced") | .metadata.name'
+            unhealthy_apps=$(echo "$app_list_json" | \
+              jq -r "$unhealthy_filter" 2>/dev/null)
 
             if [ -z "$unhealthy_apps" ]; then
               echo "✓ All ArgoCD apps are synced and healthy!"
-              argocd app list $ARGOCD_OPTS
+              argocd app list $ARGOCD_OPTS 2>/dev/null || true
               exit 0
             fi
 
             echo "Unhealthy/unsynced apps:"
-            argocd app list $ARGOCD_OPTS -o json | \
-              jq -r '.[] | select(.status.health.status != "Healthy" or .status.sync.status != "Synced") | "  - \(.metadata.name) (Health: \(.status.health.status), Sync: \(.status.sync.status))"'
+            detail_filter='.[] | select(.status.health.status != "Healthy"'
+            detail_filter+=' or .status.sync.status != "Synced")'
+            detail_filter+=' | "  - \(.metadata.name) (Health: \(.status.health.status),'
+            detail_filter+=' Sync: \(.status.sync.status))"'
+            echo "$app_list_json" | jq -r "$detail_filter" 2>/dev/null
 
             sleep $interval
             elapsed=$((elapsed + interval))
@@ -62,14 +77,15 @@ jobs:
 
           echo "❌ Timeout: Some apps are still unhealthy or unsynced after ${timeout}s"
           echo "Final status:"
-          argocd app list $ARGOCD_OPTS
+          argocd app list $ARGOCD_OPTS 2>/dev/null || echo "Could not retrieve final status from ArgoCD"
           exit 1
 
       - name: Smoke test
         run: |
           echo "Running smoke test against InvenioRDM health endpoint..."
-          HEALTH_URL="${HEALTH_URL:-https://invenio.vityasy.me/api/health}"
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "${HEALTH_URL}" || echo "000")
+          HEALTH_URL="${HEALTH_URL:-https://invenio.vityasy.me/ping}"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            --connect-timeout 10 --max-time 30 "${HEALTH_URL}" || echo "000")
 
           if [ "$HTTP_CODE" = "200" ]; then
             echo "✓ Smoke test passed: ${HEALTH_URL} returned HTTP ${HTTP_CODE}"
@@ -77,4 +93,3 @@ jobs:
             echo "⚠ Smoke test returned HTTP ${HTTP_CODE} from ${HEALTH_URL}"
             echo "  This may be expected if CI cannot reach the endpoint (private network/Cloudflare)"
             echo "  This step does not fail the workflow."
-          fi
