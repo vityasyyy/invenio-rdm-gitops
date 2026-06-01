@@ -1,4 +1,7 @@
 # Network policies for InvenioRDM namespace
+# NOTE: NetworkPolicy ports must match the containerPort (5000), NOT the
+# Service port (8000). Kubernetes evaluates NetworkPolicies post-DNAT at the
+# pod level, so traffic arrives on the container's actual listening port.
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -28,7 +31,7 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: traefik
       ports:
-        - port: 8000
+        - port: 5000
           protocol: TCP
 ---
 apiVersion: networking.k8s.io/v1
@@ -48,7 +51,7 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
       ports:
-        - port: 8000
+        - port: 5000
           protocol: TCP
 ---
 apiVersion: networking.k8s.io/v1
