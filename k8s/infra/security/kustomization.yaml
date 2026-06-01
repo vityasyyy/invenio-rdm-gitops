@@ -19,3 +19,4 @@ resources:
   - resource-quotas/redis-quota.yaml
   - resource-quotas/search-quota.yaml
   - resource-quotas/database-quota.yaml
+  - shared-security-headers-middleware.yaml

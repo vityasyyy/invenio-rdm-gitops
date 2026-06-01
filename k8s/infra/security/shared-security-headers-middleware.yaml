@@ -1,10 +1,10 @@
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
-  name: grafana-headers
-  namespace: monitoring
+  name: security-headers
+  namespace: traefik
   annotations:
-    argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   headers:
     frameDeny: true

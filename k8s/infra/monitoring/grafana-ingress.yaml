@@ -10,7 +10,8 @@ spec:
     - match: Host(`grafana.vityasy.me`)
       kind: Rule
       middlewares:
-        - name: grafana-headers
+        - name: security-headers
+          namespace: traefik
       services:
         - name: monitoring-grafana
           port: 80

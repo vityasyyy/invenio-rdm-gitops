@@ -27,27 +27,42 @@ Traefik Controller (traefik namespace)
 | Chart | traefik v39.0.6 |
 | App Version | v3.6.11 |
 | Image | docker.io/traefik:v3.6.11 |
-| Replicas | 1 |
+| Replicas | 2 |
 | Service Type | ClusterIP |
-| Watched Namespaces (CRD) | traefik, argocd, monitoring, minio |
-| Watched Namespaces (Ingress) | traefik, argocd, monitoring, minio |
+| Watched Namespaces (CRD) | traefik, argocd, monitoring, minio, invenio |
+| Watched Namespaces (Ingress) | traefik, argocd, monitoring, minio, invenio |
+| Cross-Namespace Middleware | enabled |
 | Default IngressClass | traefik |
 
 ## Architecture
 
 ```
-Cloudflare Tunnel → traefik:8000 (web entryPoint)
-                           │
-                           ├─ IngressRoute: argocd.vityasy.me → argocd-server:8080
-                           ├─ IngressRoute: *.vityasy.me → (future services)
-                           ├─ IngressRoute: grafana.vityasy.me → grafana (monitoring)
-                           └─ IngressRoute: minio-console.vityasy.me → minio-console:9001 (minio)
+Cloudflare Tunnel (handles TLS termination)
+    ↓ (HTTP)
+traefik:8000 (web entryPoint)
+    │
+    ├─ IngressRoute: invenio.vityasy.me → invenio-web:8000 (→ :5000)
+    ├─ IngressRoute: api-invenio.vityasy.me → invenio-web:8000 (→ :5000)
+    ├─ IngressRoute: argocd.vityasy.me → argocd-server:8080
+    ├─ IngressRoute: grafana.vityasy.me → monitoring-grafana:80
+    └─ IngressRoute: minio-console.vityasy.me → minio-console:9001
 ```
+
+**Note:** All internal traffic (cloudflared → Traefik → backend services) is HTTP by design. TLS is terminated at the Cloudflare edge.
+
+## Security Headers
+
+All IngressRoutes reference a shared `security-headers` Middleware in the `traefik` namespace that provides:
+- frameDeny, browserXssFilter, contentTypeNosniff
+- HSTS (stsSeconds: 31536000, stsIncludeSubdomains, forceSTSHeader)
+
+ArgoCD uses an additional `argocd-full-headers` Middleware that chains `security-headers` with a CSP-specific `argocd-headers` Middleware.
 
 ## Key Configuration Notes
 
 - **`providers.kubernetesCRD.namespaces`**: Controls which namespaces Traefik scans for IngressRoute resources. Add new namespaces here when deploying new services with IngressRoutes.
 - **`providers.kubernetesIngress.namespaces`**: Controls which namespaces Traefik scans for standard Kubernetes Ingress resources.
+- **`providers.kubernetesCRD.allowCrossNamespace: true`**: Allows IngressRoutes to reference Middlewares in other namespaces (needed for shared security-headers).
 - **`service.type: ClusterIP`**: Uses internal DNS. Cloudflare Tunnel connects directly to the internal service.
 
 ## Troubleshooting
@@ -58,6 +73,9 @@ kubectl logs -n traefik -l app.kubernetes.io/name=traefik --tail=50
 
 # Verify IngressRoutes are discovered
 kubectl get ingressroute -A
+
+# Check shared Middleware
+kubectl get middleware -n traefik
 
 # Check Traefik dashboard (port-forward)
 kubectl port-forward -n traefik deploy/traefik 9000:9000
