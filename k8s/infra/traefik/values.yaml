@@ -55,7 +55,7 @@ providers:
       - monitoring
       - minio
       - invenio
-    allowCrossNamespace: false
+    allowCrossNamespace: true
     allowEmptyServices: false
   kubernetesIngress:
     enabled: true
