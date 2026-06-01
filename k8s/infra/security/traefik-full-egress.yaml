@@ -35,11 +35,12 @@ spec:
         - protocol: TCP
           port: 80
     - to:
-        - ipBlock:
-            cidr: 10.43.0.0/16
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
       ports:
         - protocol: TCP
-          port: 6443
+          port: 443
     - to:
         - namespaceSelector:
             matchLabels:
