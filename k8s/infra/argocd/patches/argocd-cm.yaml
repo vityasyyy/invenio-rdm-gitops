@@ -8,5 +8,5 @@ data:
   "statusbadge.enabled": "true"
   "account.anonymous.enabled": "false"
   "accounts.github-actions": "apiKey"
-  # Reduce reconciliation frequency to avoid GitHub rate-limiting/timeouts
-  "timeout.reconciliation": "600s"
+  # Poll every 30s (supplements GitHub webhook for push-based sync)
+  "timeout.reconciliation": "30s"
