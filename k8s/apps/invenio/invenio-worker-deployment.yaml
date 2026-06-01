@@ -45,13 +45,13 @@ spec:
                 sleep 5
               done
               echo "OpenSearch is ready!"
-          resources:
-            requests:
-              cpu: 25m
-              memory: 32Mi
-            limits:
-              cpu: 50m
-              memory: 32Mi
+           resources:
+             requests:
+               cpu: 25m
+               memory: 32Mi
+             limits:
+               cpu: 100m
+               memory: 64Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -63,7 +63,7 @@ spec:
               type: RuntimeDefault
       containers:
         - name: worker
-          image: ghcr.io/vityasyyy/invenio-rdm-custom:v12.0.5
+          image: ghcr.io/vityasyyy/invenio-rdm-custom:latest
           imagePullPolicy: IfNotPresent
           args:
             - celery
