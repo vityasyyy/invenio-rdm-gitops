@@ -92,6 +92,27 @@ spec:
           annotations:
             summary: "Invenio PVC usage is high"
             description: "Persistent volume usage in namespace invenio is above 80%."
+        - alert: InvenioTraffic4xxRatioHigh
+          expr: |
+            100 * (
+              sum(rate(
+                traefik_service_requests_total{
+                  service=~"invenio-web.*",code=~"4.."
+                }[10m]
+              )) / clamp_min(
+                sum(rate(
+                  traefik_service_requests_total{
+                    service=~"invenio-web.*"
+                  }[10m]
+                )), 0.001
+              )
+            ) > 10
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Invenio 4xx ratio is high (>10%)"
+            description: "Traefik reports more than 10% 4xx responses for invenio-web over the last 10m. This may indicate a routing or network policy issue."
     - name: velero.rules
       rules:
         - alert: VeleroBackupFailed
@@ -140,3 +161,47 @@ spec:
           annotations:
             summary: "OpenSearch cluster status is red"
             description: "OpenSearch cluster is in RED state. Some shards are unavailable."
+    - name: traefik-routing
+      rules:
+        - alert: TraefikHigh404Rate
+          expr: |
+            100 * (
+              sum(rate(traefik_service_requests_total{code="404"}[5m])) /
+              clamp_min(sum(rate(traefik_service_requests_total[5m])), 0.001)
+            ) > 5
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Traefik 404 rate is above 5%"
+            description: "High proportion of 404 responses from Traefik. Likely a routing, network policy, or missing service issue."
+        - alert: TraefikServiceDown
+          expr: |
+            count(traefik_service_server_up) by (service) == 0
+            and on(service) count(traefik_service_requests_total) by (service) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Traefik backend {{ $labels.service }} has no healthy servers"
+            description: "All backend servers for this Traefik service are down."
+    - name: cloudflared-tunnel
+      rules:
+        - alert: CloudflareTunnelDown
+          expr: up{job=~".*cloudflared.*"} == 0
+          for: 3m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Cloudflare tunnel is down"
+            description: "cloudflared is not reporting as up. External access is likely broken."
+    - name: cnpg-replication
+      rules:
+        - alert: CNPGReplicationLagHigh
+          expr: cnpg_collection_replication_lag > 30
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PostgreSQL replication lag is high"
+            description: "Cluster {{ $labels.cluster_name }} has replication lag above 30 seconds."
