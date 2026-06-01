@@ -181,7 +181,7 @@ jobs:
               continue
             fi
 
-            proj_file="argocd/projects/${project}-project.yaml"
+            proj_file="k8s/infra/argocd/projects/${project}-project.yaml"
             if [ ! -f "$proj_file" ]; then
               echo "::error file=$f::App $app_name references project '$project' but no project file found at $proj_file"
               failed=true
