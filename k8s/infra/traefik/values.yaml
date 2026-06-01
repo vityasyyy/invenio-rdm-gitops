@@ -56,10 +56,10 @@ providers:
       - minio
       - invenio
     allowCrossNamespace: false
-    allowEmptyServices: true
+    allowEmptyServices: false
   kubernetesIngress:
     enabled: true
-    allowEmptyServices: true
+    allowEmptyServices: false
     # Watch traefik, argocd, monitoring, minio, and invenio namespaces for standard Ingress resources
     namespaces:
       - traefik
@@ -87,9 +87,9 @@ global:
   checkNewVersion: true
   sendAnonymousUsage: false
 
-# Single replica - sufficient for small clusters
+# Two replicas for HA
 deployment:
-  replicas: 1
+  replicas: 2
 
 # Resource limits
 resources:

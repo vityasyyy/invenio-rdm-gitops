@@ -39,7 +39,8 @@ spec:
             - -c
             - |
               echo "Waiting for OpenSearch to be ready..."
-              until wget -qO- http://invenio-search.invenio.svc.cluster.local:9200/_cluster/health | grep -q '"status"'; do
+              until wget -qO- http://invenio-search.invenio.svc.cluster.local:9200/_cluster/health \
+                | grep -q '"status"'; do
                 echo "OpenSearch not ready yet, waiting 5s..."
                 sleep 5
               done
@@ -62,8 +63,8 @@ spec:
               type: RuntimeDefault
       containers:
         - name: worker
-          image: ghcr.io/vityasyyy/invenio-rdm-custom:latest
-          imagePullPolicy: Always
+          image: ghcr.io/vityasyyy/invenio-rdm-custom:v12.0.5
+          imagePullPolicy: IfNotPresent
           args:
             - celery
             - -A
@@ -80,6 +81,9 @@ spec:
                 name: invenio-app-config
             - secretRef:
                 name: invenio-app-secrets
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           resources:
             requests:
               cpu: 250m
@@ -121,7 +125,10 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-            readOnlyRootFilesystem: false
+            readOnlyRootFilesystem: true
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir: {}
