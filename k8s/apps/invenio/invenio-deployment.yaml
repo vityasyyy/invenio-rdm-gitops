@@ -29,6 +29,9 @@ spec:
         fsGroup: 1654
         seccompProfile:
           type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir: {}
       initContainers:
         - name: wait-for-opensearch
           image: busybox:1.36
@@ -62,8 +65,8 @@ spec:
 
       containers:
         - name: web
-          image: ghcr.io/vityasyyy/invenio-rdm-custom:latest
-          imagePullPolicy: Always
+          image: ghcr.io/vityasyyy/invenio-rdm-custom:v12.0.5
+          imagePullPolicy: IfNotPresent
           args:
             - gunicorn
             - invenio_app.wsgi:application
@@ -87,6 +90,9 @@ spec:
                 name: invenio-app-config
             - secretRef:
                 name: invenio-app-secrets
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           startupProbe:
             tcpSocket:
               port: http
@@ -118,7 +124,7 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-            readOnlyRootFilesystem: false
+            readOnlyRootFilesystem: true
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
