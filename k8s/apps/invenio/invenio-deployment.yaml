@@ -96,14 +96,14 @@ spec:
               mountPath: /tmp
           startupProbe:
             httpGet:
-              path: /api/health
+              path: /ping
               port: http
             initialDelaySeconds: 30
             periodSeconds: 10
             failureThreshold: 30
           livenessProbe:
             httpGet:
-              path: /api/health
+              path: /ping
               port: http
             initialDelaySeconds: 30
             periodSeconds: 30
@@ -111,7 +111,7 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: /ping
               port: http
             initialDelaySeconds: 30
             periodSeconds: 10
