@@ -19,21 +19,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install ArgoCD CLI
-        run: |
-          wget https://github.com/argoproj/argo-cd/releases/download/v2.12.0/argocd-linux-amd64
-          chmod +x argocd-linux-amd64
-          sudo mv argocd-linux-amd64 /usr/local/bin/argocd
-
       - name: Wait for sync and verify health
         env:
           ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
           ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
         run: |
-          ARGOCD_OPTS="--server $ARGOCD_SERVER --auth-token $ARGOCD_AUTH_TOKEN --insecure"
+          set +e
+
+          ARGOCD_URL="https://${ARGOCD_SERVER}"
+          AUTH_HEADER="Authorization: Bearer ${ARGOCD_AUTH_TOKEN}"
 
           echo "Waiting up to 5 minutes for ArgoCD apps to sync and become healthy..."
           timeout=300
@@ -43,41 +37,59 @@ jobs:
           while [ $elapsed -lt $timeout ]; do
             echo "Checking ArgoCD app status (elapsed: ${elapsed}s)..."
 
-            app_list_json=$(argocd app list $ARGOCD_OPTS -o json 2>/dev/null)
-            argocd_exit=$?
+            response=$(curl -s -k \
+              -H "$AUTH_HEADER" \
+              -H "Content-Type: application/json" \
+              -w "\n%{http_code}" \
+              "${ARGOCD_URL}/api/v1/applications" 2>/dev/null)
+            http_code=$(echo "$response" | tail -1)
+            body=$(echo "$response" | sed '$d')
 
-            if [ $argocd_exit -ne 0 ]; then
-              echo "⚠ ArgoCD CLI returned exit code $argocd_exit (will retry)"
+            if [ "$http_code" != "200" ]; then
+              echo "ArgoCD API returned HTTP ${http_code} (will retry)"
               sleep $interval
               elapsed=$((elapsed + interval))
               continue
             fi
 
-            unhealthy_filter='.[] | select(.status.health.status != "Healthy"'
-            unhealthy_filter+=' or .status.sync.status != "Synced") | .metadata.name'
-            unhealthy_apps=$(echo "$app_list_json" | \
+            unhealthy_filter='.items[]'
+            unhealthy_filter+=' | select(.status.health.status != "Healthy"'
+            unhealthy_filter+=' or .status.sync.status != "Synced")'
+            unhealthy_filter+=' | .metadata.name'
+            unhealthy_apps=$(echo "$body" | \
               jq -r "$unhealthy_filter" 2>/dev/null)
 
             if [ -z "$unhealthy_apps" ]; then
-              echo "✓ All ArgoCD apps are synced and healthy!"
-              argocd app list $ARGOCD_OPTS 2>/dev/null || true
+              echo "All ArgoCD apps are synced and healthy!"
+              summary_filter='.items[] | "  \(.metadata.name)"'
+              summary_filter+=' Health=\(.status.health.status)'
+              summary_filter+=' Sync=\(.status.sync.status)'
+              echo "$body" | jq -r "$summary_filter" 2>/dev/null
               exit 0
             fi
 
             echo "Unhealthy/unsynced apps:"
-            detail_filter='.[] | select(.status.health.status != "Healthy"'
+            detail_filter='.items[]'
+            detail_filter+=' | select(.status.health.status != "Healthy"'
             detail_filter+=' or .status.sync.status != "Synced")'
-            detail_filter+=' | "  - \(.metadata.name) (Health: \(.status.health.status),'
-            detail_filter+=' Sync: \(.status.sync.status))"'
-            echo "$app_list_json" | jq -r "$detail_filter" 2>/dev/null
+            detail_filter+=' | "  - \(.metadata.name)"'
+            detail_filter+=' (Health: \(.status.health.status)'
+            detail_filter+=', Sync: \(.status.sync.status))"'
+            echo "$body" | jq -r "$detail_filter" 2>/dev/null
 
             sleep $interval
             elapsed=$((elapsed + interval))
           done
 
-          echo "❌ Timeout: Some apps are still unhealthy or unsynced after ${timeout}s"
+          echo "Timeout: Some apps are still unhealthy or unsynced after ${timeout}s"
           echo "Final status:"
-          argocd app list $ARGOCD_OPTS 2>/dev/null || echo "Could not retrieve final status from ArgoCD"
+          final_filter='.items[] | "  - \(.metadata.name)"'
+          final_filter+=' (Health: \(.status.health.status)'
+          final_filter+=', Sync: \(.status.sync.status))"'
+          curl -s -k -H "$AUTH_HEADER" \
+            "${ARGOCD_URL}/api/v1/applications" 2>/dev/null | \
+            jq -r "$final_filter" 2>/dev/null || \
+            echo "Could not retrieve final status from ArgoCD"
           exit 1
 
       - name: Smoke test
@@ -88,8 +100,9 @@ jobs:
             --connect-timeout 10 --max-time 30 "${HEALTH_URL}" || echo "000")
 
           if [ "$HTTP_CODE" = "200" ]; then
-            echo "✓ Smoke test passed: ${HEALTH_URL} returned HTTP ${HTTP_CODE}"
+            echo "Smoke test passed: ${HEALTH_URL} returned HTTP ${HTTP_CODE}"
           else
-            echo "⚠ Smoke test returned HTTP ${HTTP_CODE} from ${HEALTH_URL}"
-            echo "  This may be expected if CI cannot reach the endpoint (private network/Cloudflare)"
+            echo "Smoke test returned HTTP ${HTTP_CODE} from ${HEALTH_URL}"
+            echo "  This may be expected if CI cannot reach the endpoint"
+            echo "  (private network/Cloudflare)"
             echo "  This step does not fail the workflow."
