@@ -70,6 +70,12 @@ spec:
           protocol: TCP
         - port: 6379
           protocol: TCP
+        - port: 9121
+          protocol: TCP
+        - port: 9187
+          protocol: TCP
+        - port: 8001
+          protocol: TCP
     - to: []
       ports:
         - port: 53
