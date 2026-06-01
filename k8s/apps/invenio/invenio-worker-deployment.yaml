@@ -44,14 +44,14 @@ spec:
                 echo "OpenSearch not ready yet, waiting 5s..."
                 sleep 5
               done
-              echo "OpenSearch is ready!"
-           resources:
-             requests:
-               cpu: 25m
-               memory: 32Mi
-             limits:
-               cpu: 100m
-               memory: 64Mi
+               echo "OpenSearch is ready!"
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
