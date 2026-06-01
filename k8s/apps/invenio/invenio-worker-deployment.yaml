@@ -39,7 +39,8 @@ spec:
             - -c
             - |
               echo "Waiting for OpenSearch to be ready..."
-              until wget -qO- http://invenio-search.invenio.svc.cluster.local:9200/_cluster/health | grep -q '"status"'; do
+              until wget -qO- http://invenio-search.invenio.svc.cluster.local:9200/_cluster/health \
+                | grep -q '"status"'; do
                 echo "OpenSearch not ready yet, waiting 5s..."
                 sleep 5
               done

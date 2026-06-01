@@ -54,7 +54,9 @@ spec:
             severity: warning
           annotations:
             summary: "Invenio pod restarts are elevated"
-            description: "Container {{ $labels.container }} in pod {{ $labels.pod }} restarted more than 3 times in 30m."
+            description: >-
+              Container {{ $labels.container }} in pod
+              {{ $labels.pod }} restarted more than 3 times in 30m.
         - alert: InvenioTraffic5xxRatioHigh
           expr: |
             100 * (
@@ -112,7 +114,10 @@ spec:
             severity: warning
           annotations:
             summary: "Invenio 4xx ratio is high (>10%)"
-            description: "Traefik reports more than 10% 4xx responses for invenio-web over the last 10m. This may indicate a routing or network policy issue."
+            description: >-
+              Traefik reports more than 10% 4xx responses for invenio-web
+              over the last 10m. This may indicate a routing or network
+              policy issue.
     - name: velero.rules
       rules:
         - alert: VeleroBackupFailed
@@ -174,7 +179,9 @@ spec:
             severity: critical
           annotations:
             summary: "Traefik 404 rate is above 5%"
-            description: "High proportion of 404 responses from Traefik. Likely a routing, network policy, or missing service issue."
+            description: >-
+              High proportion of 404 responses from Traefik. Likely a
+              routing, network policy, or missing service issue.
         - alert: TraefikServiceDown
           expr: |
             count(traefik_service_server_up) by (service) == 0
