@@ -16,7 +16,4 @@ resources:
   - resource-quotas/monitoring-quota.yaml
   - resource-quotas/minio-quota.yaml
   - resource-quotas/velero-quota.yaml
-  - resource-quotas/redis-quota.yaml
-  - resource-quotas/search-quota.yaml
-  - resource-quotas/database-quota.yaml
   - shared-security-headers-middleware.yaml
