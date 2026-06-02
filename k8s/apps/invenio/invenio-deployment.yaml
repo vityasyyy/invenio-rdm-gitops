@@ -98,6 +98,9 @@ spec:
             httpGet:
               path: /ping
               port: http
+              httpHeaders:
+                - name: Host
+                  value: invenio.vityasy.me
             initialDelaySeconds: 30
             periodSeconds: 10
             failureThreshold: 30
@@ -105,6 +108,9 @@ spec:
             httpGet:
               path: /ping
               port: http
+              httpHeaders:
+                - name: Host
+                  value: invenio.vityasy.me
             initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5
@@ -113,6 +119,9 @@ spec:
             httpGet:
               path: /ping
               port: http
+              httpHeaders:
+                - name: Host
+                  value: invenio.vityasy.me
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
