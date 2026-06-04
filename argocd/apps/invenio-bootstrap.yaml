@@ -7,6 +7,17 @@ metadata:
     argocd.argoproj.io/sync-wave: "9"
 spec:
   project: invenio
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: invenio-worker
+      jsonPointers:
+        - /spec/replicas
+    - group: apps
+      kind: Deployment
+      name: invenio-web
+      jsonPointers:
+        - /spec/replicas
   source:
     repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
     targetRevision: main
