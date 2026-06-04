@@ -106,3 +106,4 @@ jobs:
             echo "  This may be expected if CI cannot reach the endpoint"
             echo "  (private network/Cloudflare)"
             echo "  This step does not fail the workflow."
+          fi
