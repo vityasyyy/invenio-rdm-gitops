@@ -1,0 +1,142 @@
+# Temporary diagnostic job — run via ArgoCD sync, delete after debugging.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: invenio-debug
+  namespace: invenio
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: invenio-debug
+        app.kubernetes.io/part-of: invenio-rdm
+    spec:
+      serviceAccountName: default
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654
+        runAsGroup: 1654
+        fsGroup: 1654
+        seccompProfile:
+          type: RuntimeDefault
+      restartPolicy: Never
+      containers:
+        - name: debug
+          image: ghcr.io/vityasyyy/invenio-rdm-custom:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "=== InvenioRDM Debug Diagnostics ==="
+              echo "Timestamp: $(date -u)"
+              echo ""
+
+              echo "=== 1. DB connection test ==="
+              python3 -c "
+              import os, psycopg2
+              conn = psycopg2.connect(
+                  host=os.environ['INVENIO_DB_HOST'],
+                  port=os.environ['INVENIO_DB_PORT'],
+                  dbname=os.environ['INVENIO_DB_NAME'],
+                  user=os.environ['INVENIO_DB_USER'],
+                  password=os.environ.get('INVENIO_DB_PASSWORD','')
+              )
+              cur = conn.cursor()
+              cur.execute('SELECT version()')
+              print('PostgreSQL:', cur.fetchone()[0])
+              conn.close()
+              print('DB connection OK')
+              " 2>&1 || echo "DB CONNECTION FAILED"
+
+              echo ""
+              echo "=== 2. Alembic migration status ==="
+              invenio alembic current 2>&1 || echo "ALEMBIC CURRENT FAILED"
+              echo "--- heads ---"
+              invenio alembic heads 2>&1 || echo "ALEMBIC HEADS FAILED"
+
+              echo ""
+              echo "=== 3. OpenSearch status ==="
+              curl -s "http://invenio-search.invenio.svc.cluster.local:9200/_cluster/health?pretty" 2>&1
+              echo "--- indices ---"
+              curl -s "http://invenio-search.invenio.svc.cluster.local:9200/_cat/indices?v" 2>&1
+
+              echo ""
+              echo "=== 4. S3/MinIO connectivity ==="
+              python3 -c "
+              import boto3, os
+              from botocore.config import Config
+              s3 = boto3.client('s3',
+                  endpoint_url=os.environ['INVENIO_S3_ENDPOINT'],
+                  aws_access_key_id=os.environ.get('INVENIO_S3_ACCESS_KEY_ID',''),
+                  aws_secret_access_key=os.environ.get('INVENIO_S3_SECRET_ACCESS_KEY',''),
+                  config=Config(signature_version='s3v4'),
+                  region_name='us-east-1'
+              )
+              buckets = [b['Name'] for b in s3.list_buckets()['Buckets']]
+              print('Buckets:', buckets)
+              " 2>&1 || echo "S3 CONNECTION FAILED"
+
+              echo ""
+              echo "=== 5. File locations ==="
+              invenio files location list 2>&1 || echo "FILE LOCATION LIST FAILED"
+
+              echo ""
+              echo "=== 6. Reproduce the error: create a draft record ==="
+              python3 -c "
+              import traceback
+              try:
+                  from flask import Flask
+                  from invenio_app.factory import create_app
+                  app = create_app()
+                  with app.app_context():
+                      from invenio_access.permissions import system_identity
+                      from invenio_rdm_records.proxies import current_rdm_records_service as svc
+                      draft = svc.create(system_identity, {
+                          'metadata': {
+                              'resource_type': {'id': 'publication-article'},
+                              'title': 'Debug test record',
+                              'creators': [{'person_or_org': {'type': 'personal', 'given_name': 'Debug', 'family_name': 'Test'}}],
+                              'publication_date': '2026-01-01',
+                              'publisher': 'Test'
+                          },
+                          'access': {'record': 'public', 'files': 'public'},
+                          'files': {'enabled': True}
+                      })
+                      print('SUCCESS: Draft created with id:', draft.id)
+                      # Clean up
+                      svc.delete_draft(system_identity, draft.id)
+                      print('Cleanup: draft deleted')
+              except Exception as e:
+                  print('FAILED:', type(e).__name__, str(e))
+                  traceback.print_exc()
+              " 2>&1
+
+              echo ""
+              echo "=== Debug complete ==="
+          envFrom:
+            - configMapRef:
+                name: invenio-app-config
+            - secretRef:
+                name: invenio-app-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
