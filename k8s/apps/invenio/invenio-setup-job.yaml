@@ -1,20 +1,19 @@
 # InvenioRDM setup / initialization job
-# Runs at sync wave 2 (before app deployment at wave 3) to ensure DB schema,
-# search indices, and file locations exist. Idempotent — safe to re-run on every sync.
+#
+# This is an ArgoCD PostSync hook — it runs automatically after every sync
+# (including image updates from argocd-image-updater).
+# BeforeHookCreation deletes any previous run before starting a new one.
+#
+# Script is fully idempotent: safe to re-run at any time.
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: invenio-setup
   namespace: invenio
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
-    argocd.argoproj.io/sync-options: Replace=true
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
-  manualSelector: true
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: invenio-setup
-      app.kubernetes.io/part-of: invenio-rdm
   backoffLimit: 3
   activeDeadlineSeconds: 1800
   template:
@@ -42,81 +41,81 @@ spec:
             - |
               set -e
 
-              echo "Waiting for dependencies to be ready..."
+              echo "=== InvenioRDM Setup (PostSync Hook) ==="
+              echo "Waiting for all dependencies to be ready..."
 
               python3 -c "
               import socket, time, urllib.request
 
               def wait_tcp(host, port, name):
-                  while True:
+                  for i in range(60):
                       try:
-                          socket.create_connection((host, port), timeout=2).close()
-                          print(f'{name} is ready')
+                          socket.create_connection((host, port), timeout=3).close()
+                          print(f'{name} ready')
                           return
                       except Exception:
-                          print(f'Waiting for {name}...')
+                          print(f'Waiting for {name}... ({i+1}/60)')
                           time.sleep(5)
+                  raise RuntimeError(f'{name} not available after 5 minutes')
 
               def wait_http(url, name):
-                  while True:
+                  for i in range(60):
                       try:
-                          urllib.request.urlopen(url, timeout=2)
-                          print(f'{name} is ready')
+                          urllib.request.urlopen(url, timeout=3)
+                          print(f'{name} ready')
                           return
                       except Exception:
-                          print(f'Waiting for {name}...')
+                          print(f'Waiting for {name}... ({i+1}/60)')
                           time.sleep(5)
+                  raise RuntimeError(f'{name} not available after 5 minutes')
 
               wait_tcp('invenio-postgresql.invenio.svc.cluster.local', 5432, 'PostgreSQL')
               wait_tcp('invenio-redis.invenio.svc.cluster.local', 6379, 'Redis')
               wait_http('http://invenio-search.invenio.svc.cluster.local:9200/_cluster/health', 'OpenSearch')
-              print('All dependencies ready. Running Invenio setup...')
               "
 
-              # Initialize database (idempotent)
-              echo "[1/7] Creating database tables..."
-              if ! invenio db create 2>&1; then
-                echo "WARNING: invenio db create failed (may already exist)"
-              fi
+              echo ""
+              echo "[1/8] Creating database tables (idempotent)..."
+              invenio db create 2>&1 || echo "Tables may already exist, continuing."
 
-              # Initialize search indices (skip if already exist)
-              echo "[2/7] Initializing search indices..."
-              if ! invenio index list --json 2>/dev/null | grep -q '"aliases"'; then
-                if ! invenio index init 2>&1; then
-                  echo "WARNING: invenio index init failed (may already exist)"
-                fi
-              else
-                echo "Search indices already exist, skipping."
-              fi
+              echo ""
+              echo "[2/8] Running pending database migrations..."
+              invenio alembic upgrade 2>&1
+              echo "Migrations done."
 
-              # Create admin role and assign superuser-access (required before
-              # fixtures — the fixtures user references the admin role)
-              echo "[3/7] Creating admin role..."
-              invenio roles create admin 2>&1 || echo "Role may already exist, continuing."
-              echo "[4/7] Assigning superuser-access to admin role..."
-              invenio access allow superuser-access role admin 2>&1 || echo "Permission may already exist, continuing."
+              echo ""
+              echo "[3/8] Initializing search indices..."
+              invenio index init 2>&1 || echo "Indices may already exist, continuing."
 
-              # Create RDM fixtures (vocabularies, admin user, default community)
-              echo "[5/7] Creating RDM fixtures..."
-              invenio rdm-records fixtures
+              echo ""
+              echo "[4/8] Creating admin role and superuser access..."
+              invenio roles create admin 2>&1 || echo "Role may already exist."
+              invenio access allow superuser-access role admin 2>&1 || echo "Permission may already exist."
 
-              # Create default file location if it doesn't exist
-              echo "[6/7] Creating default file location..."
-              if ! invenio files location create --default default-location s3://invenio-rdm/files/ 2>&1; then
-                echo "File location may already exist, continuing."
-              fi
+              echo ""
+              echo "[5/8] Loading RDM fixtures (vocabularies, resource types, etc.)..."
+              invenio rdm-records fixtures 2>&1
+              echo "Fixtures loaded."
 
-              # Create MinIO buckets if they don't exist
-              echo "[7/7] Ensuring MinIO buckets exist..."
+              echo ""
+              echo "[6/8] Rebuilding search index for existing records..."
+              invenio rdm-records rebuild-index 2>&1 || echo "No existing records to rebuild (first run)."
+
+              echo ""
+              echo "[7/8] Creating default file location..."
+              invenio files location create --default default-location s3://invenio-rdm/files/ 2>&1 \
+                || echo "File location may already exist, continuing."
+
+              echo ""
+              echo "[8/8] Ensuring MinIO buckets exist..."
               python3 -c "
-              import boto3
+              import boto3, os
               from botocore.config import Config
               from botocore.exceptions import ClientError
-              import os
 
               s3 = boto3.client(
                   's3',
-                  endpoint_url='http://minio.minio.svc.cluster.local:9000',
+                  endpoint_url=os.environ['INVENIO_S3_ENDPOINT'],
                   aws_access_key_id=os.environ['INVENIO_S3_ACCESS_KEY_ID'],
                   aws_secret_access_key=os.environ['INVENIO_S3_SECRET_ACCESS_KEY'],
                   config=Config(signature_version='s3v4'),
@@ -128,19 +127,16 @@ spec:
                       s3.head_bucket(Bucket=bucket)
                       print(f'Bucket {bucket} already exists')
                   except ClientError as e:
-                      error_code = e.response['Error']['Code']
-                      if error_code == '404':
-                          print(f'Creating bucket {bucket}...')
+                      if e.response['Error']['Code'] == '404':
                           s3.create_bucket(Bucket=bucket)
                           print(f'Bucket {bucket} created')
                       else:
-                          print(f'ERROR: Failed to check bucket {bucket}: {e}')
                           raise
-
               print('All buckets verified')
               "
 
-              echo "Invenio setup complete!"
+              echo ""
+              echo "=== InvenioRDM setup complete! ==="
           envFrom:
             - configMapRef:
                 name: invenio-app-config
