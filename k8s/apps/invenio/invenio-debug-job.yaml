@@ -36,90 +36,142 @@ spec:
               set -e
               echo "=== InvenioRDM Debug Diagnostics ==="
               echo "Timestamp: $(date -u)"
-              echo ""
 
-              echo "=== 1. DB connection test ==="
-              python3 -c "
+              # Collect all output for ConfigMap
+              OUTPUT=""
+              append() { OUTPUT="${OUTPUT}$1\n"; echo "$1"; }
+
+              append "=== 1. DB connection ==="
+              DB_RESULT=$(python3 -c "
               import os, psycopg2
-              conn = psycopg2.connect(
-                  host=os.environ['INVENIO_DB_HOST'],
-                  port=os.environ['INVENIO_DB_PORT'],
-                  dbname=os.environ['INVENIO_DB_NAME'],
-                  user=os.environ['INVENIO_DB_USER'],
-                  password=os.environ.get('INVENIO_DB_PASSWORD','')
-              )
-              cur = conn.cursor()
-              cur.execute('SELECT version()')
-              print('PostgreSQL:', cur.fetchone()[0])
-              conn.close()
-              print('DB connection OK')
-              " 2>&1 || echo "DB CONNECTION FAILED"
+              try:
+                  dsn = os.environ.get('INVENIO_SQLALCHEMY_DATABASE_URI', '')
+                  if dsn:
+                      import re
+                      m = re.match(r'postgresql\+psycopg2://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)', dsn)
+                      conn = psycopg2.connect(host=m.group(3), port=m.group(4), dbname=m.group(5), user=m.group(1), password=m.group(2))
+                  else:
+                      conn = psycopg2.connect(host=os.environ['INVENIO_DB_HOST'], port=os.environ['INVENIO_DB_PORT'], dbname=os.environ['INVENIO_DB_NAME'], user=os.environ['INVENIO_DB_USER'], password=os.environ.get('INVENIO_DB_PASSWORD',''))
+                  cur = conn.cursor()
+                  cur.execute('SELECT version()')
+                  print('OK:', cur.fetchone()[0][:50])
+                  conn.close()
+              except Exception as e:
+                  print('FAILED:', e)
+              " 2>&1)
+              append "$DB_RESULT"
 
-              echo ""
-              echo "=== 2. Alembic migration status ==="
-              invenio alembic current 2>&1 || echo "ALEMBIC CURRENT FAILED"
-              echo "--- heads ---"
-              invenio alembic heads 2>&1 || echo "ALEMBIC HEADS FAILED"
+              append "=== 2. Alembic status ==="
+              ALEMBIC_CURRENT=$(invenio alembic current 2>&1 | tail -5)
+              append "current: $ALEMBIC_CURRENT"
+              ALEMBIC_HEADS=$(invenio alembic heads 2>&1 | tail -5)
+              append "heads: $ALEMBIC_HEADS"
 
-              echo ""
-              echo "=== 3. OpenSearch status ==="
-              curl -s "http://invenio-search.invenio.svc.cluster.local:9200/_cluster/health?pretty" 2>&1
-              echo "--- indices ---"
-              curl -s "http://invenio-search.invenio.svc.cluster.local:9200/_cat/indices?v" 2>&1
+              append "=== 3. OpenSearch health ==="
+              OS_HEALTH=$(curl -s "http://invenio-search.invenio.svc.cluster.local:9200/_cluster/health" 2>&1)
+              append "$OS_HEALTH"
+              OS_INDICES=$(curl -s "http://invenio-search.invenio.svc.cluster.local:9200/_cat/indices?h=index,status,docs.count" 2>&1 | grep -v "^\." | head -20)
+              append "indices: $OS_INDICES"
 
-              echo ""
-              echo "=== 4. S3/MinIO connectivity ==="
-              python3 -c "
+              append "=== 4. S3/MinIO connectivity ==="
+              S3_RESULT=$(python3 -c "
               import boto3, os
               from botocore.config import Config
-              s3 = boto3.client('s3',
-                  endpoint_url=os.environ['INVENIO_S3_ENDPOINT'],
-                  aws_access_key_id=os.environ.get('INVENIO_S3_ACCESS_KEY_ID',''),
-                  aws_secret_access_key=os.environ.get('INVENIO_S3_SECRET_ACCESS_KEY',''),
-                  config=Config(signature_version='s3v4'),
-                  region_name='us-east-1'
-              )
-              buckets = [b['Name'] for b in s3.list_buckets()['Buckets']]
-              print('Buckets:', buckets)
-              " 2>&1 || echo "S3 CONNECTION FAILED"
+              try:
+                  s3 = boto3.client('s3', endpoint_url=os.environ['INVENIO_S3_ENDPOINT'],
+                      aws_access_key_id=os.environ.get('INVENIO_S3_ACCESS_KEY_ID',''),
+                      aws_secret_access_key=os.environ.get('INVENIO_S3_SECRET_ACCESS_KEY',''),
+                      config=Config(signature_version='s3v4'), region_name='us-east-1')
+                  buckets = [b['Name'] for b in s3.list_buckets()['Buckets']]
+                  print('OK buckets:', buckets)
+              except Exception as e:
+                  print('FAILED:', e)
+              " 2>&1)
+              append "$S3_RESULT"
 
-              echo ""
-              echo "=== 5. File locations ==="
-              invenio files location list 2>&1 || echo "FILE LOCATION LIST FAILED"
+              append "=== 5. File locations ==="
+              FILE_LOC=$(invenio files location list 2>&1)
+              append "$FILE_LOC"
 
-              echo ""
-              echo "=== 6. Reproduce the error: create a draft record ==="
-              python3 -c "
+              append "=== 6a. Create draft WITHOUT files ==="
+              NO_FILES_RESULT=$(python3 -c "
               import traceback
               try:
-                  from flask import Flask
                   from invenio_app.factory import create_app
                   app = create_app()
                   with app.app_context():
                       from invenio_access.permissions import system_identity
                       from invenio_rdm_records.proxies import current_rdm_records_service as svc
                       draft = svc.create(system_identity, {
-                          'metadata': {
-                              'resource_type': {'id': 'publication-article'},
-                              'title': 'Debug test record',
-                              'creators': [{'person_or_org': {'type': 'personal', 'given_name': 'Debug', 'family_name': 'Test'}}],
-                              'publication_date': '2026-01-01',
-                              'publisher': 'Test'
-                          },
+                          'metadata': {'resource_type': {'id': 'publication-article'}, 'title': 'Debug test', 'creators': [{'person_or_org': {'type': 'personal', 'given_name': 'Test', 'family_name': 'Debug'}}], 'publication_date': '2026-01-01', 'publisher': 'Test'},
                           'access': {'record': 'public', 'files': 'public'},
-                          'files': {'enabled': True}
+                          'files': {'enabled': False}
                       })
-                      print('SUCCESS: Draft created with id:', draft.id)
-                      # Clean up
+                      print('SUCCESS no-files, id:', draft.id)
                       svc.delete_draft(system_identity, draft.id)
-                      print('Cleanup: draft deleted')
               except Exception as e:
                   print('FAILED:', type(e).__name__, str(e))
                   traceback.print_exc()
-              " 2>&1
+              " 2>&1)
+              append "$NO_FILES_RESULT"
+
+              append "=== 6b. Create draft WITH files ==="
+              WITH_FILES_RESULT=$(python3 -c "
+              import traceback
+              try:
+                  from invenio_app.factory import create_app
+                  app = create_app()
+                  with app.app_context():
+                      from invenio_access.permissions import system_identity
+                      from invenio_rdm_records.proxies import current_rdm_records_service as svc
+                      draft = svc.create(system_identity, {
+                          'metadata': {'resource_type': {'id': 'publication-article'}, 'title': 'Debug test files', 'creators': [{'person_or_org': {'type': 'personal', 'given_name': 'Test', 'family_name': 'Debug'}}], 'publication_date': '2026-01-01', 'publisher': 'Test'},
+                          'access': {'record': 'public', 'files': 'public'},
+                          'files': {'enabled': True}
+                      })
+                      print('SUCCESS with-files, id:', draft.id)
+                      svc.delete_draft(system_identity, draft.id)
+              except Exception as e:
+                  print('FAILED:', type(e).__name__, str(e))
+                  traceback.print_exc()
+              " 2>&1)
+              append "$WITH_FILES_RESULT"
+
+              append "=== 7. Effective SEARCH_HOSTS config ==="
+              SEARCH_CFG=$(python3 -c "
+              from invenio_app.factory import create_app
+              app = create_app()
+              with app.app_context():
+                  print('SEARCH_HOSTS:', app.config.get('SEARCH_HOSTS'))
+                  print('SQLALCHEMY_DATABASE_URI:', str(app.config.get('SQLALCHEMY_DATABASE_URI',''))[:80])
+                  print('FILES_REST_STORAGE_FACTORY:', app.config.get('FILES_REST_STORAGE_FACTORY'))
+                  print('S3_ENDPOINT_URL:', app.config.get('S3_ENDPOINT_URL'))
+                  print('DATACITE_ENABLED:', app.config.get('DATACITE_ENABLED'))
+                  print('RATELIMIT_STORAGE_URI:', app.config.get('RATELIMIT_STORAGE_URI'))
+              " 2>&1)
+              append "$SEARCH_CFG"
+
+              append "=== Debug complete ==="
+
+              # Write results to ConfigMap via Kubernetes API
+              TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+              CA=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+
+              # Escape output for JSON
+              ESCAPED=$(echo -e "$OUTPUT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+
+              # Try to create/update the ConfigMap
+              curl -sk --cacert $CA \
+                -H "Authorization: Bearer $TOKEN" \
+                -H "Content-Type: application/json" \
+                -X POST \
+                "https://kubernetes.default.svc/api/v1/namespaces/${NAMESPACE}/configmaps" \
+                -d "{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"metadata\":{\"name\":\"invenio-debug-output\",\"namespace\":\"${NAMESPACE}\"},\"data\":{\"output\":$ESCAPED}}" \
+                2>&1 | python3 -c "import sys,json; d=json.load(sys.stdin); print('ConfigMap status:', d.get('status') or d.get('metadata',{}).get('name','?'))"
 
               echo ""
-              echo "=== Debug complete ==="
+              echo "=== Output saved to ConfigMap invenio-debug-output ==="
           envFrom:
             - configMapRef:
                 name: invenio-app-config
