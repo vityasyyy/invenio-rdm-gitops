@@ -15,6 +15,7 @@ resources:
   - invenio-hpa.yaml
   - invenio-pdb.yaml
   - debug-rbac.yaml
+  - argocd-log-reader.yaml
   - invenio-debug-output-cm.yaml
   - invenio-debug-job.yaml
 
