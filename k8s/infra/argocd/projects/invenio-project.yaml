@@ -72,6 +72,10 @@ spec:
       kind: 'LimitRange'
     - group: ''
       kind: 'PersistentVolumeClaim'
+    - group: 'rbac.authorization.k8s.io'
+      kind: 'Role'
+    - group: 'rbac.authorization.k8s.io'
+      kind: 'RoleBinding'
   roles:
     - name: admin
       description: Admin access to invenio project
