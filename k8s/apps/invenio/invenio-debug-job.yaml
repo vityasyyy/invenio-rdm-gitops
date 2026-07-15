@@ -163,40 +163,33 @@ spec:
               printf '%s' "$OUTPUT" > /tmp/debug_output.txt
 
               python3 -c "
-import json, ssl, urllib.request
-
-with open('/tmp/debug_output.txt') as f:
-    output = f.read()
-
-token = open('/var/run/secrets/kubernetes.io/serviceaccount/token').read().strip()
-ns    = open('/var/run/secrets/kubernetes.io/serviceaccount/namespace').read().strip()
-ca    = '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
-
-ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-ctx.load_verify_locations(ca)
-
-base    = 'https://kubernetes.default.svc/api/v1/namespaces/' + ns + '/configmaps'
-headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'}
-body    = json.dumps({'apiVersion':'v1','kind':'ConfigMap',
-                      'metadata':{'name':'invenio-debug-output','namespace':ns},
-                      'data':{'output':output}}).encode()
-
-try:
-    req  = urllib.request.Request(base, data=body, headers=headers, method='POST')
-    resp = urllib.request.urlopen(req, context=ctx)
-    print('ConfigMap created:', json.loads(resp.read()).get('metadata',{}).get('name'))
-except urllib.error.HTTPError as e:
-    if e.code == 409:
-        ph = dict(headers); ph['Content-Type'] = 'application/strategic-merge-patch+json'
-        pb = json.dumps({'data':{'output':output}}).encode()
-        req2  = urllib.request.Request(base+'/invenio-debug-output', data=pb, headers=ph, method='PATCH')
-        resp2 = urllib.request.urlopen(req2, context=ctx)
-        print('ConfigMap patched:', json.loads(resp2.read()).get('metadata',{}).get('name'))
-    else:
-        print('HTTP error writing ConfigMap:', e.code, e.read().decode()[:500])
-except Exception as ex:
-    print('ConfigMap write exception:', ex)
-" 2>&1
+              import json, ssl, urllib.request
+              output = open('/tmp/debug_output.txt').read()
+              token = open('/var/run/secrets/kubernetes.io/serviceaccount/token').read().strip()
+              ns = open('/var/run/secrets/kubernetes.io/serviceaccount/namespace').read().strip()
+              ca = '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
+              ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+              ctx.load_verify_locations(ca)
+              base = 'https://kubernetes.default.svc/api/v1/namespaces/' + ns + '/configmaps'
+              hdrs = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'}
+              body = json.dumps({'apiVersion':'v1','kind':'ConfigMap',
+                  'metadata':{'name':'invenio-debug-output','namespace':ns},
+                  'data':{'output':output}}).encode()
+              try:
+                  req = urllib.request.Request(base, data=body, headers=hdrs, method='POST')
+                  print('ConfigMap created:', json.loads(urllib.request.urlopen(req, context=ctx).read()).get('metadata',{}).get('name'))
+              except urllib.error.HTTPError as e:
+                  if e.code == 409:
+                      ph = {'Authorization': 'Bearer ' + token,
+                          'Content-Type': 'application/strategic-merge-patch+json'}
+                      pb = json.dumps({'data':{'output':output}}).encode()
+                      req2 = urllib.request.Request(base+'/invenio-debug-output', data=pb, headers=ph, method='PATCH')
+                      print('ConfigMap patched:', json.loads(urllib.request.urlopen(req2, context=ctx).read()).get('metadata',{}).get('name'))
+                  else:
+                      print('HTTP error writing ConfigMap:', e.code, e.read().decode()[:500])
+              except Exception as ex:
+                  print('ConfigMap write exception:', ex)
+              " 2>&1
               echo "=== Output saved to ConfigMap invenio-debug-output ==="
           envFrom:
             - configMapRef:
