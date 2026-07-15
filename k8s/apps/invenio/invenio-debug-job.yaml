@@ -148,6 +148,7 @@ spec:
                       print('SQLALCHEMY_DATABASE_URI:', str(app.config.get('SQLALCHEMY_DATABASE_URI',''))[:80])
                       print('FILES_REST_STORAGE_FACTORY:', app.config.get('FILES_REST_STORAGE_FACTORY'))
                       print('S3_ENDPOINT_URL:', app.config.get('S3_ENDPOINT_URL'))
+                      print('S3_ENDPOINT (raw key):', app.config.get('S3_ENDPOINT'))
                       print('DATACITE_ENABLED:', app.config.get('DATACITE_ENABLED'))
                       print('RATELIMIT_STORAGE_URI:', app.config.get('RATELIMIT_STORAGE_URI'))
               except Exception as e:
@@ -158,32 +159,44 @@ spec:
 
               append "=== Debug complete ==="
 
-              # Write results to ConfigMap via Kubernetes API
-              TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
-              NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
-              CA=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              # Write output to temp file so Python can read it (curl may not be in image)
+              printf '%s' "$OUTPUT" > /tmp/debug_output.txt
 
-              ESCAPED=$(printf '%s' "$OUTPUT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
-              CM_BODY="{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"metadata\":{\"name\":\"invenio-debug-output\",\"namespace\":\"${NAMESPACE}\"},\"data\":{\"output\":${ESCAPED}}}"
+              python3 -c "
+import json, ssl, urllib.request
 
-              # Try POST first; if 409 (already exists), PATCH instead
-              RESP=$(curl -sk --cacert $CA \
-                -H "Authorization: Bearer $TOKEN" \
-                -H "Content-Type: application/json" \
-                -X POST \
-                "https://kubernetes.default.svc/api/v1/namespaces/${NAMESPACE}/configmaps" \
-                -d "$CM_BODY")
-              if echo "$RESP" | grep -q '"reason":"AlreadyExists"'; then
-                curl -sk --cacert $CA \
-                  -H "Authorization: Bearer $TOKEN" \
-                  -H "Content-Type: application/strategic-merge-patch+json" \
-                  -X PATCH \
-                  "https://kubernetes.default.svc/api/v1/namespaces/${NAMESPACE}/configmaps/invenio-debug-output" \
-                  -d "{\"data\":{\"output\":${ESCAPED}}}" > /dev/null
-                echo "ConfigMap updated (patched)"
-              else
-                echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('ConfigMap created:', d.get('metadata',{}).get('name','?'))" 2>/dev/null || echo "ConfigMap write response: $RESP"
-              fi
+with open('/tmp/debug_output.txt') as f:
+    output = f.read()
+
+token = open('/var/run/secrets/kubernetes.io/serviceaccount/token').read().strip()
+ns    = open('/var/run/secrets/kubernetes.io/serviceaccount/namespace').read().strip()
+ca    = '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
+
+ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+ctx.load_verify_locations(ca)
+
+base    = 'https://kubernetes.default.svc/api/v1/namespaces/' + ns + '/configmaps'
+headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'}
+body    = json.dumps({'apiVersion':'v1','kind':'ConfigMap',
+                      'metadata':{'name':'invenio-debug-output','namespace':ns},
+                      'data':{'output':output}}).encode()
+
+try:
+    req  = urllib.request.Request(base, data=body, headers=headers, method='POST')
+    resp = urllib.request.urlopen(req, context=ctx)
+    print('ConfigMap created:', json.loads(resp.read()).get('metadata',{}).get('name'))
+except urllib.error.HTTPError as e:
+    if e.code == 409:
+        ph = dict(headers); ph['Content-Type'] = 'application/strategic-merge-patch+json'
+        pb = json.dumps({'data':{'output':output}}).encode()
+        req2  = urllib.request.Request(base+'/invenio-debug-output', data=pb, headers=ph, method='PATCH')
+        resp2 = urllib.request.urlopen(req2, context=ctx)
+        print('ConfigMap patched:', json.loads(resp2.read()).get('metadata',{}).get('name'))
+    else:
+        print('HTTP error writing ConfigMap:', e.code, e.read().decode()[:500])
+except Exception as ex:
+    print('ConfigMap write exception:', ex)
+" 2>&1
               echo "=== Output saved to ConfigMap invenio-debug-output ==="
           envFrom:
             - configMapRef:
