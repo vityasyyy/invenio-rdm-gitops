@@ -17,6 +17,9 @@ subjects:
   - kind: ServiceAccount
     name: argocd-server
     namespace: argocd
+  - kind: ServiceAccount
+    name: argocd-application-controller
+    namespace: argocd
 roleRef:
   kind: Role
   name: argocd-log-reader
