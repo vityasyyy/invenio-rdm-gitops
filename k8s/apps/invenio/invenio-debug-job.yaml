@@ -33,11 +33,11 @@ spec:
             - /bin/bash
             - -c
             - |
-              set -e
+              set +e
               echo "=== InvenioRDM Debug Diagnostics ==="
               echo "Timestamp: $(date -u)"
 
-              # Collect all output for ConfigMap
+              # Collect all output for ConfigMap — never exit early
               OUTPUT=""
               append() { OUTPUT="${OUTPUT}$1\n"; echo "$1"; }
 
@@ -58,19 +58,19 @@ spec:
                   conn.close()
               except Exception as e:
                   print('FAILED:', e)
-              " 2>&1)
+              " 2>&1) || DB_RESULT="shell-error: $?"
               append "$DB_RESULT"
 
               append "=== 2. Alembic status ==="
-              ALEMBIC_CURRENT=$(invenio alembic current 2>&1 | tail -5)
+              ALEMBIC_CURRENT=$(invenio alembic current 2>&1 | tail -5) || ALEMBIC_CURRENT="shell-error: $?"
               append "current: $ALEMBIC_CURRENT"
-              ALEMBIC_HEADS=$(invenio alembic heads 2>&1 | tail -5)
+              ALEMBIC_HEADS=$(invenio alembic heads 2>&1 | tail -5) || ALEMBIC_HEADS="shell-error: $?"
               append "heads: $ALEMBIC_HEADS"
 
               append "=== 3. OpenSearch health ==="
-              OS_HEALTH=$(curl -s "http://invenio-search.invenio.svc.cluster.local:9200/_cluster/health" 2>&1)
+              OS_HEALTH=$(curl -s --max-time 10 "http://invenio-search.invenio.svc.cluster.local:9200/_cluster/health" 2>&1) || OS_HEALTH="curl-error: $?"
               append "$OS_HEALTH"
-              OS_INDICES=$(curl -s "http://invenio-search.invenio.svc.cluster.local:9200/_cat/indices?h=index,status,docs.count" 2>&1 | grep -v "^\." | head -20)
+              OS_INDICES=$(curl -s --max-time 10 "http://invenio-search.invenio.svc.cluster.local:9200/_cat/indices?h=index,status,docs.count" 2>&1 | grep -v "^\." | head -20) || OS_INDICES="curl-error"
               append "indices: $OS_INDICES"
 
               append "=== 4. S3/MinIO connectivity ==="
@@ -78,7 +78,7 @@ spec:
               import boto3, os
               from botocore.config import Config
               try:
-                  s3 = boto3.client('s3', endpoint_url=os.environ['INVENIO_S3_ENDPOINT'],
+                  s3 = boto3.client('s3', endpoint_url=os.environ.get('INVENIO_S3_ENDPOINT','http://minio.minio.svc.cluster.local:9000'),
                       aws_access_key_id=os.environ.get('INVENIO_S3_ACCESS_KEY_ID',''),
                       aws_secret_access_key=os.environ.get('INVENIO_S3_SECRET_ACCESS_KEY',''),
                       config=Config(signature_version='s3v4'), region_name='us-east-1')
@@ -86,11 +86,11 @@ spec:
                   print('OK buckets:', buckets)
               except Exception as e:
                   print('FAILED:', e)
-              " 2>&1)
+              " 2>&1) || S3_RESULT="shell-error: $?"
               append "$S3_RESULT"
 
               append "=== 5. File locations ==="
-              FILE_LOC=$(invenio files location list 2>&1)
+              FILE_LOC=$(invenio files location list 2>&1) || FILE_LOC="shell-error: $?"
               append "$FILE_LOC"
 
               append "=== 6a. Create draft WITHOUT files ==="
@@ -112,7 +112,7 @@ spec:
               except Exception as e:
                   print('FAILED:', type(e).__name__, str(e))
                   traceback.print_exc()
-              " 2>&1)
+              " 2>&1) || NO_FILES_RESULT="shell-error: $?"
               append "$NO_FILES_RESULT"
 
               append "=== 6b. Create draft WITH files ==="
@@ -134,21 +134,26 @@ spec:
               except Exception as e:
                   print('FAILED:', type(e).__name__, str(e))
                   traceback.print_exc()
-              " 2>&1)
+              " 2>&1) || WITH_FILES_RESULT="shell-error: $?"
               append "$WITH_FILES_RESULT"
 
-              append "=== 7. Effective SEARCH_HOSTS config ==="
+              append "=== 7. Effective config ==="
               SEARCH_CFG=$(python3 -c "
-              from invenio_app.factory import create_app
-              app = create_app()
-              with app.app_context():
-                  print('SEARCH_HOSTS:', app.config.get('SEARCH_HOSTS'))
-                  print('SQLALCHEMY_DATABASE_URI:', str(app.config.get('SQLALCHEMY_DATABASE_URI',''))[:80])
-                  print('FILES_REST_STORAGE_FACTORY:', app.config.get('FILES_REST_STORAGE_FACTORY'))
-                  print('S3_ENDPOINT_URL:', app.config.get('S3_ENDPOINT_URL'))
-                  print('DATACITE_ENABLED:', app.config.get('DATACITE_ENABLED'))
-                  print('RATELIMIT_STORAGE_URI:', app.config.get('RATELIMIT_STORAGE_URI'))
-              " 2>&1)
+              import traceback
+              try:
+                  from invenio_app.factory import create_app
+                  app = create_app()
+                  with app.app_context():
+                      print('SEARCH_HOSTS:', app.config.get('SEARCH_HOSTS'))
+                      print('SQLALCHEMY_DATABASE_URI:', str(app.config.get('SQLALCHEMY_DATABASE_URI',''))[:80])
+                      print('FILES_REST_STORAGE_FACTORY:', app.config.get('FILES_REST_STORAGE_FACTORY'))
+                      print('S3_ENDPOINT_URL:', app.config.get('S3_ENDPOINT_URL'))
+                      print('DATACITE_ENABLED:', app.config.get('DATACITE_ENABLED'))
+                      print('RATELIMIT_STORAGE_URI:', app.config.get('RATELIMIT_STORAGE_URI'))
+              except Exception as e:
+                  print('FAILED:', e)
+                  traceback.print_exc()
+              " 2>&1) || SEARCH_CFG="shell-error: $?"
               append "$SEARCH_CFG"
 
               append "=== Debug complete ==="
@@ -158,19 +163,27 @@ spec:
               NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
               CA=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
 
-              # Escape output for JSON
-              ESCAPED=$(echo -e "$OUTPUT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+              ESCAPED=$(printf '%s' "$OUTPUT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+              CM_BODY="{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"metadata\":{\"name\":\"invenio-debug-output\",\"namespace\":\"${NAMESPACE}\"},\"data\":{\"output\":${ESCAPED}}}"
 
-              # Try to create/update the ConfigMap
-              curl -sk --cacert $CA \
+              # Try POST first; if 409 (already exists), PATCH instead
+              RESP=$(curl -sk --cacert $CA \
                 -H "Authorization: Bearer $TOKEN" \
                 -H "Content-Type: application/json" \
                 -X POST \
                 "https://kubernetes.default.svc/api/v1/namespaces/${NAMESPACE}/configmaps" \
-                -d "{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"metadata\":{\"name\":\"invenio-debug-output\",\"namespace\":\"${NAMESPACE}\"},\"data\":{\"output\":$ESCAPED}}" \
-                2>&1 | python3 -c "import sys,json; d=json.load(sys.stdin); print('ConfigMap status:', d.get('status') or d.get('metadata',{}).get('name','?'))"
-
-              echo ""
+                -d "$CM_BODY")
+              if echo "$RESP" | grep -q '"reason":"AlreadyExists"'; then
+                curl -sk --cacert $CA \
+                  -H "Authorization: Bearer $TOKEN" \
+                  -H "Content-Type: application/strategic-merge-patch+json" \
+                  -X PATCH \
+                  "https://kubernetes.default.svc/api/v1/namespaces/${NAMESPACE}/configmaps/invenio-debug-output" \
+                  -d "{\"data\":{\"output\":${ESCAPED}}}" > /dev/null
+                echo "ConfigMap updated (patched)"
+              else
+                echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('ConfigMap created:', d.get('metadata',{}).get('name','?'))" 2>/dev/null || echo "ConfigMap write response: $RESP"
+              fi
               echo "=== Output saved to ConfigMap invenio-debug-output ==="
           envFrom:
             - configMapRef:
