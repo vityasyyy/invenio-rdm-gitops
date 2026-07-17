@@ -20,8 +20,6 @@ spec:
       labels:
         app.kubernetes.io/name: invenio-worker
         app.kubernetes.io/part-of: invenio-rdm
-      annotations:
-        kubectl.kubernetes.io/restartedAt: "2026-07-17T00:00:00Z"
     spec:
       serviceAccountName: default
       securityContext:

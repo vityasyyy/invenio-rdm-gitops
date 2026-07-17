@@ -52,30 +52,33 @@ jobs:
               continue
             fi
 
-            unhealthy_filter='.items[]'
-            unhealthy_filter+=' | select(.status.health.status != "Healthy"'
-            unhealthy_filter+=' or .status.sync.status != "Synced")'
-            unhealthy_filter+=' | .metadata.name'
-            unhealthy_apps=$(echo "$body" | \
-              jq -r "$unhealthy_filter" 2>/dev/null)
+            unhealthy_apps=$(jq -r '
+              (.items // [])[]
+              | select(
+                  .status.health.status != "Healthy"
+                  or .status.sync.status != "Synced"
+                )
+              | .metadata.name
+            ' <<<"$body")
 
             if [ -z "$unhealthy_apps" ]; then
               echo "All ArgoCD apps are synced and healthy!"
-              summary_filter='.items[] | "  \(.metadata.name)"'
-              summary_filter+=' Health=\(.status.health.status)'
-              summary_filter+=' Sync=\(.status.sync.status)'
-              echo "$body" | jq -r "$summary_filter" 2>/dev/null
+              jq -r '
+                .items[]
+                | "  \(.metadata.name) Health=\(.status.health.status) Sync=\(.status.sync.status)"
+              ' <<<"$body"
               exit 0
             fi
 
             echo "Unhealthy/unsynced apps:"
-            detail_filter='.items[]'
-            detail_filter+=' | select(.status.health.status != "Healthy"'
-            detail_filter+=' or .status.sync.status != "Synced")'
-            detail_filter+=' | "  - \(.metadata.name)"'
-            detail_filter+=' (Health: \(.status.health.status)'
-            detail_filter+=', Sync: \(.status.sync.status))"'
-            echo "$body" | jq -r "$detail_filter" 2>/dev/null
+            jq -r '
+              .items[]
+              | select(
+                  .status.health.status != "Healthy"
+                  or .status.sync.status != "Synced"
+                )
+              | "  - \(.metadata.name) (Health: \(.status.health.status), Sync: \(.status.sync.status))"
+            ' <<<"$body"
 
             sleep $interval
             elapsed=$((elapsed + interval))
@@ -83,12 +86,12 @@ jobs:
 
           echo "Timeout: Some apps are still unhealthy or unsynced after ${timeout}s"
           echo "Final status:"
-          final_filter='.items[] | "  - \(.metadata.name)"'
-          final_filter+=' (Health: \(.status.health.status)'
-          final_filter+=', Sync: \(.status.sync.status))"'
           curl -s -k -H "$AUTH_HEADER" \
             "${ARGOCD_URL}/api/v1/applications" 2>/dev/null | \
-            jq -r "$final_filter" 2>/dev/null || \
+            jq -r '
+              .items[]
+              | "  - \(.metadata.name) (Health: \(.status.health.status), Sync: \(.status.sync.status))"
+            ' || \
             echo "Could not retrieve final status from ArgoCD"
           exit 1
 
@@ -102,8 +105,6 @@ jobs:
           if [ "$HTTP_CODE" = "200" ]; then
             echo "Smoke test passed: ${HEALTH_URL} returned HTTP ${HTTP_CODE}"
           else
-            echo "Smoke test returned HTTP ${HTTP_CODE} from ${HEALTH_URL}"
-            echo "  This may be expected if CI cannot reach the endpoint"
-            echo "  (private network/Cloudflare)"
-            echo "  This step does not fail the workflow."
+            echo "Smoke test failed: ${HEALTH_URL} returned HTTP ${HTTP_CODE}"
+            exit 1
           fi

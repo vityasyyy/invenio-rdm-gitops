@@ -20,8 +20,6 @@ spec:
       labels:
         app.kubernetes.io/name: invenio-web
         app.kubernetes.io/part-of: invenio-rdm
-      annotations:
-        kubectl.kubernetes.io/restartedAt: "2026-07-17T00:00:00Z"
     spec:
       serviceAccountName: default
       securityContext:
@@ -106,17 +104,8 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 10
             failureThreshold: 30
-          livenessProbe:
-            httpGet:
-              path: /ping
-              port: http
-              httpHeaders:
-                - name: Host
-                  value: invenio.vityasy.me
-            initialDelaySeconds: 30
-            periodSeconds: 30
-            timeoutSeconds: 5
-            failureThreshold: 3
+          # Keep dependency failures out of liveness checks so they do not
+          # restart a healthy Gunicorn process and remove every endpoint.
           readinessProbe:
             httpGet:
               path: /ping
