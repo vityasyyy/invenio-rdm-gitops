@@ -19,8 +19,7 @@ resources:
   - invenio-debug-output-cm.yaml
   - invenio-debug-job.yaml
 
-# Image Updater will overwrite this block with a pinned digest
-# after detecting a new image on GHCR.
+# Pin the verified build so every node runs the same image.
 images:
   - name: ghcr.io/vityasyyy/invenio-rdm-custom
-    newTag: latest
+    digest: sha256:e626ca7f91d623336bf840c55882972c5e5dd9162319753ca03acc8af682d117
