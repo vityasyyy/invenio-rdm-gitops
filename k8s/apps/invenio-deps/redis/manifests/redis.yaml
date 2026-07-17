@@ -11,6 +11,8 @@ metadata:
     app.kubernetes.io/part-of: invenio-rdm
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: redis
@@ -22,16 +24,18 @@ spec:
         app.kubernetes.io/component: master
         app.kubernetes.io/part-of: invenio-rdm
     spec:
+      # Keep the identity used to initialize the existing NFS-backed PVC.
       securityContext:
         runAsNonRoot: true
-        runAsUser: 999
-        runAsGroup: 999
-        fsGroup: 999
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: redis
-          image: docker.io/library/redis:8.0.2
+          image: docker.io/library/redis@sha256:b43d2dcbbdb1f9e1582e3a0f37e53bf79038522ccffb56a25858969d7a9b6c11
           imagePullPolicy: IfNotPresent
           ports:
             - name: redis
@@ -39,6 +43,30 @@ spec:
           args:
             - redis-server
             - --appendonly yes
+          startupProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
           resources:
             requests:
               cpu: 100m

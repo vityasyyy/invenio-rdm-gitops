@@ -1,0 +1,26 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: argocd-log-reader
+  namespace: redis
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argocd-log-reader
+  namespace: redis
+subjects:
+  - kind: ServiceAccount
+    name: argocd-server
+    namespace: argocd
+  - kind: ServiceAccount
+    name: argocd-application-controller
+    namespace: argocd
+roleRef:
+  kind: Role
+  name: argocd-log-reader
+  apiGroup: rbac.authorization.k8s.io
