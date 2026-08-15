@@ -198,9 +198,75 @@ session.
 - requests 7890Mi / allocatable 8108Mi = **99%** (pod-requests annotation)
 - actual usage ~5641Mi = 71% (`kubectl top`)
 
+## Final recovery verification (2026-08-15, after PR #55 merge)
+
+PR #55 (redis OOM fix, merged as `3d610e9`) is live: redis limit 512Mi -> 1Gi plus
+`--maxmemory 512mb --maxmemory-policy allkeys-lru`. Verified 2026-08-15 ~03:04-03:08Z,
+after ArgoCD sync revision reached `3d610e9d...`.
+
+### Redis — FIXED and stable
+
+- `redis-master` Ready **1/1**, **restarts 0** across three checks ~4 min apart
+  (03:04:29Z, 03:06:35Z, 03:08:52Z). Was 134 restarts / OOMKilled (exit 137) before the fix.
+- Start time 02:54:48Z; restart count FLAT since — the limit raise + maxmemory cap ended the
+  OOM loop.
+
+### Core path — healthy on worker-02
+
+| Component | State |
+|---|---|
+| invenio-web | 3/5 Ready (2 Pending: insufficient memory) — serving `/ping` = **200** |
+| redis | Ready 1/1, 0 restarts |
+| postgres-3 | Ready, primary |
+| opensearch | Ready 1/1 |
+| invenio-worker | 0/1, all Pending (insufficient memory) |
+
+### Endpoint codes (2026-08-15)
+
+| Endpoint | Code |
+|---|---|
+| https://invenio.vityasy.me/ping | **200** |
+| https://invenio.vityasy.me/ | **200** |
+| https://api-invenio.vityasy.me/api | **404** |
+| https://api-invenio.vityasy.me/api/records | **500** |
+| https://api-invenio.vityasy.me/api/schemas | **502** |
+| https://argocd.vityasy.me | **200** |
+
+### ArgoCD / HPA / CNPG — NOT fully converged (deadlock persists)
+
+| App | targetRevision | SYNC | HEALTH |
+|---|---|---|---|
+| apps | main | Synced | Healthy |
+| invenio-bootstrap | main | **OutOfSync** | **Degraded** |
+| invenio-postgresql | main | Synced | Healthy |
+| invenio-redis | main | Synced | Healthy |
+
+- Bootstrap sync still **Running / retrying** (started 02:40:38Z), blocked at wave 3
+  (`waiting for healthy state of apps/Deployment/invenio-web`). Wave 4 (HPA right-size) is
+  gated and **has NOT reached the live cluster**.
+- Live HPA is still web **min 2 / max 5** (replicas 5, memory 87% > 80% target -> HPA holds 5)
+  and worker **min 2 / max 4** (replicas 4, all Pending).
+- Web deployment stuck at desired 5 / available 3: two web pods cannot schedule because node
+  requests are 7890Mi / 7918Mi (99%). Even at 3/5 the deployment never reports Healthy, so
+  ArgoCD never applies the HPA right-size — the memory deadlock is **independent of redis**
+  now: each web pod uses ~447Mi of its 512Mi request (87%), so the old HPA will not scale down.
+- CNPG `postgres` cluster: spec.instances=1, primary postgres-3 Ready; **postgres-1/2 still
+  Running 0/1** (startup probe failing, HTTP 500; operator phase "Waiting for the instances to
+  become active", ClusterIsNotReady). Operator has not removed them.
+- Node (worker-02): requests **7890Mi** / 7918Mi allocatable = 99% (pods 45); actual usage
+  ~5949Mi = 75%. `CriticalAddonsOnly` control-plane taint kept (no app pods on control-plane).
+
+### Why redis fix did not break the deadlock
+
+Original chain assumed redis down -> web never Ready -> HPA wave 4 gated. Now redis is up and
+web pods ARE Ready — but the **old** HPA (target 80%, web at 87%) keeps 5 web replicas, 2 of
+which cannot schedule on an 8Gi node, so the Deployment is never fully available and the
+HPA right-size (wave 4) is still gated. Full convergence needs either the HPA right-size
+applied out-of-band, memory freed by CNPG removing postgres-1/2, or a larger node.
+
 ## Status
 
-Recovery is **incomplete / blocked on redis**. The right-sizing is correct in main and will
-apply once web can become healthy; the redis 512Mi limit vs 548Mi dataset is the hard blocker
-and needs a manifest decision (raise limit / set maxmemory / trim stale RDB). See
-`.superpowers/sdd/2026-08-14-cluster-recovery-and-ugm-migration/task-3-report.md`.
+Redis OOM loop is **resolved** (restart count flat at 0, /ping 200). Recovery is **partially
+converged**: core data plane + web healthy on worker-02. Full ArgoCD convergence (HPA
+right-size applied, postgres-1/2 removed, node requests < ~7000Mi) remains **blocked by the
+memory deadlock on the single 8Gi worker** — see the Final recovery verification section above.
