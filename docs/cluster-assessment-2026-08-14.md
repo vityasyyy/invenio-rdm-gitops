@@ -102,3 +102,105 @@ The cluster has been running in a degraded state since **2026-07-17T20:01:41Z**,
 3. Reconcile ArgoCD apps to baseline once the application-controller can run; right-size CNPG instances and invenio replicas to fit within worker-02's 8Gi.
 4. Restore core data plane (postgres, opensearch, redis) and application working state at degraded scale.
 5. Follow-up: UGM image migration in separate PRs.
+
+---
+
+# Recovery: single-node right-sizing
+
+Date: 2026-08-15
+Reference: PR #54 (merged to main as `20ce6d9`), task #53. App-of-apps tracks `main`; no targetRevision overrides.
+
+## Right-sizing changes (applied to git, in main)
+
+- `k8s/apps/invenio/invenio-hpa.yaml`
+  - `invenio-web-hpa`: minReplicas 2 -> **1**, maxReplicas 5 -> **2**
+  - `invenio-worker-hpa`: minReplicas 2 -> **1**, maxReplicas 4 -> **2**
+- `k8s/apps/invenio-deps/postgresql/cluster.yaml`
+  - `spec.instances`: 3 -> **1** (single primary; replicas re-added when nodes return)
+
+Rationale: with worker-01 evicted, only worker-02 (8Gi) is schedulable. The full baseline
+stack (web 5 + worker 4 + postgres 3 + everything else) over-commits the node (requests
+7890Mi / 8108Mi = 99%) and cannot schedule. Right-sizing cuts web/worker HPA targets and
+postgres instances so the core path fits on one node.
+
+## Sync / application state
+
+| App | targetRevision | SYNC | HEALTH | Notes |
+|---|---|---|---|---|
+| apps | main | Synced | Healthy | root app-of-apps, revision 20ce6d9 |
+| invenio-bootstrap | main | **OutOfSync** | **Degraded** | op Running, blocked "waiting for healthy state of apps/Deployment/invenio-web" |
+| invenio-postgresql | main | Synced | Healthy | CNPG operator chart |
+| invenio-redis | main | Synced | Progressing | revision 20ce6d9 |
+
+The bootstrap sync is wave-ordered: it applied the new web Deployment (wave 3) but will not
+apply the HPA right-sizing (wave 4) until web becomes healthy. Web cannot become healthy
+because redis is down, and redis cannot start because its dataset exceeds its memory limit
+(see below). **The HPA right-sizing has therefore NOT reached the live cluster** — live HPA
+is still web min 2 / max 5 and worker min 2 / max 4.
+
+## Pod state (worker-02 only)
+
+| Component | State |
+|---|---|
+| redis-master | CrashLoopBackOff, **134 restarts**, all OOMKilled (exit 137) |
+| postgres-3 | Ready, primary, 1/1 |
+| postgres-1 / postgres-2 | Running 0/1 (CNPG operator recreated them; cluster status still `instances: 3`, phase "Waiting for the instances to become active") |
+| invenio-web | 2 new-rev Running (startup-probe failing, exit 137 after ~300s), 1 old-rev OOM-looping, rest Pending |
+| invenio-worker | all Pending (insufficient memory) |
+| opensearch | 1/1 Ready |
+
+## Redis OOM root cause (evidence)
+
+- Node is NOT memory-starved: actual usage 5641Mi / 8108Mi = 71%; node conditions all OK.
+- redis container limit = **512Mi**, request = 128Mi; args `redis-server --appendonly yes`; no `maxmemory` set.
+- redis is OOM-killed ~15-19s after container start, at ~383Mi and climbing (observed via
+  `kubectl top`); exit 137 `OOMKilled` -> **cgroup limit hit, not node pressure**.
+- The redis PVC (`redis-data`, 5Gi NFS) holds **~548Mi** of data:
+  - `appendonlydir/appendonly.aof.15.base.rdb` = 190Mi
+  - `appendonlydir/appendonly.aof.15.incr.aof` = 112Mi
+  - `dump.rdb` = 193Mi
+  - `temp-7644.rdb` = 66Mi (stale temp from interrupted save)
+- At startup redis replays the base RDB + incremental AOF into memory; the loaded dataset
+  plus redis overhead exceeds the 512Mi limit before AOF rewrite can complete.
+
+Conclusion: freeing node memory does not help redis — the fix requires a manifest change
+(raise the memory limit, e.g. to 1Gi, and/or set `maxmemory` with an eviction policy, and/or
+clean the stale `temp-*.rdb`). Per task constraints this is **reported, not changed**, in this
+session.
+
+## Deadlock chain (why the right-sizing cannot self-heal yet)
+
+1. redis OOM-loops (dataset 548Mi > 512Mi limit) -> redis down
+2. invenio-web cannot initialize (cache/broker connection) -> web never Ready, /ping never served
+3. ArgoCD bootstrap sync waits for web health before applying HPA wave 4 -> HPA stays min 2/max 5
+4. Node requests stay ~99% -> new pods (worker, extra web) stay Pending
+5. Loop persists until redis is fixed or HPA is applied out-of-band
+
+## Additional infra findings
+
+- **kubelet streaming proxy broken for worker-02**: `kubectl logs`/`exec` to any pod on
+  worker-02 returns `proxy error from 127.0.0.1:9345 while dialing 10.17.117.43:10250, code 502`
+  (server-node pods work). Node status, metrics, and kubelet `:10250` healthz all OK, so the
+  apiserver -> worker kubelet streaming path is broken. This also breaks CNPG backups
+  (`LastBackupFailed: error dialing backend ... 502`).
+- CNPG cluster condition: `ClusterIsNotReady`, `ContinuousArchiving=False`.
+
+## Endpoint codes (2026-08-15)
+
+| Endpoint | Code |
+|---|---|
+| https://invenio.vityasy.me/ping | **404** |
+| https://api-invenio.vityasy.me/api | **404** |
+| https://argocd.vityasy.me | **200** |
+
+## Node memory (worker-02)
+
+- requests 7890Mi / allocatable 8108Mi = **99%** (pod-requests annotation)
+- actual usage ~5641Mi = 71% (`kubectl top`)
+
+## Status
+
+Recovery is **incomplete / blocked on redis**. The right-sizing is correct in main and will
+apply once web can become healthy; the redis 512Mi limit vs 548Mi dataset is the hard blocker
+and needs a manifest decision (raise limit / set maxmemory / trim stale RDB). See
+`.superpowers/sdd/2026-08-14-cluster-recovery-and-ugm-migration/task-3-report.md`.

@@ -46,6 +46,8 @@ spec:
           args:
             - redis-server
             - --appendonly yes
+            - --maxmemory 512mb
+            - --maxmemory-policy allkeys-lru
           startupProbe:
             exec:
               command:
@@ -76,7 +78,7 @@ spec:
               memory: 128Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              memory: 1Gi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
