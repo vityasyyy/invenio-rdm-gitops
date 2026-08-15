@@ -204,3 +204,87 @@ Recovery is **incomplete / blocked on redis**. The right-sizing is correct in ma
 apply once web can become healthy; the redis 512Mi limit vs 548Mi dataset is the hard blocker
 and needs a manifest decision (raise limit / set maxmemory / trim stale RDB). See
 `.superpowers/sdd/2026-08-14-cluster-recovery-and-ugm-migration/task-3-report.md`.
+
+---
+
+# Recovery: final converged state (2026-08-15, after PR #55)
+
+Reference: PR #55 merged to main as `3d610e9`. Worktree `.worktrees/cluster-recovery`,
+branch `feat/53-recovery-verification` reset to origin/main `3d610e9`.
+
+## Out-of-band HPA patch (no manifest change)
+
+The live HPA was still the pre-merge sizing (web min2/max5, worker min2/max4), which kept web
+at 5 replicas (2 unschedulable on the ~99%-requested node), so `invenio-web` stayed Degraded
+and ArgoCD's sync-wave gate (wave 3 Deployments Healthy before wave 4 HPA applies) blocked the
+HPA right-size forever. To break the deadlock the **live** HPA was patched to exactly the
+merged git values (safe — identical to main; ArgoCD will converge to the same spec):
+
+```
+kubectl -n invenio patch hpa invenio-web-hpa   --type merge -p '{"spec":{"minReplicas":1,"maxReplicas":2}}'
+kubectl -n invenio patch hpa invenio-worker-hpa --type merge -p '{"spec":{"minReplicas":1,"maxReplicas":2}}'
+```
+
+Result — live HPA now matches git (web min1/max2, worker min1/max2); web scaled 5 -> 2 and
+became **Healthy** (`invenio-web` 2/2, Available=True). The HPA deadlock is broken.
+
+## Final app table
+
+| App | targetRevision | SYNC | HEALTH |
+|---|---|---|---|
+| apps | main | Synced | Healthy |
+| invenio-bootstrap | main | Synced | **Degraded** (op Failed after 5 retries) |
+| invenio-postgresql | main | Synced | Healthy |
+| invenio-redis | main | Synced | Healthy |
+
+`invenio-bootstrap` still reports Degraded because `invenio-worker` Deployment cannot become
+Ready: worker pods (768Mi each + 32Mi init) do not fit worker-02 (requests 7378Mi / 7918Mi,
+only ~540Mi free), and the memory is only freed when CNPG removes postgres-1/2 — which is
+blocked by the pre-existing infra issue (see below).
+
+## Endpoint codes (2026-08-15, post-patch)
+
+| Endpoint | Code |
+|---|---|
+| https://invenio.vityasy.me/ping | **200** |
+| https://api-invenio.vityasy.me/api | **404** (expected until app fully converges) |
+| https://invenio.vityasy.me/api/records?size=1 | **500** (app-level; downstream of degraded DB/worker) |
+| https://argocd.vityasy.me | **200** |
+
+`/api/records` body: `{"message":"The server encountered an internal error and was unable to
+complete your request. Either the server is overloaded or there is an error in the application.","status":500}`
+
+## HPA live vs git
+
+| HPA | git (main) | live |
+|---|---|---|
+| invenio-web-hpa | min 1 / max 2 | min 1 / max 2 (desired 2, current 2) |
+| invenio-worker-hpa | min 1 / max 2 | min 1 / max 2 (desired 2, current 2) |
+
+## CNPG status
+
+- `clusters.postgresql.cnpg.io/postgres`: spec.instances=**1**, status.instances=**3**,
+  ready=1, phase "Waiting for the instances to become active" (> 6 min).
+- postgres-1 / postgres-2 still **Running 0/1** (startup probe HTTPS /healthz:8000 -> HTTP 500);
+  postgres-3 Ready primary 1/1.
+- Operator reason (from cluster status, not deleted — per constraints): `ClusterIsNotReady` +
+  `ContinuousArchiving=False` (`unexpected failure invoking barman-cloud-wal-archive: exit status 1`)
+  and `LastBackupFailed` (`error dialing backend: proxy error from 127.0.0.1:9345 while dialing
+  10.17.117.43:10250, code 502`) — the **known** apiserver->worker-02 kubelet streaming 502
+  breaks the operator's `exec` into postgres pods, so the cluster never becomes Ready and the
+  operator will not scale postgres-1/2 down.
+
+## Node memory (worker-02)
+
+- requests dropped from 7890Mi -> **7378Mi** (of 8108Mi allocatable; web scaled 5->2).
+- Still above the ~7200Mi target because postgres-1/2 (256Mi) are not removed; even with them
+  removed only ONE 768Mi worker pod fits (2 worker pods need 1536Mi), so `invenio-worker`
+  will remain at 1 unschedulable pod on this node.
+
+## Remaining blocker
+
+The only remaining blocker is the **pre-existing** apiserver->worker-02 kubelet streaming 502
+(do NOT fix): it breaks CNPG WAL archiving/backups, keeps the CNPG cluster NotReady, and
+prevents the postgres-1/2 scale-down that would free node memory for `invenio-worker`. Full
+single-node convergence (bootstrap Healthy, worker 1/1, requests < ~7200Mi) requires either
+fixing the kubelet streaming path or a second schedulable node.
