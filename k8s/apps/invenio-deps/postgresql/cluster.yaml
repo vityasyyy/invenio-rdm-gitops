@@ -1,6 +1,6 @@
 # CloudNativePG Cluster for InvenioRDM
 # Single-instance cluster for development/small-scale production.
-# Can be scaled to HA (3 instances) later by increasing instances.
+# Scaled down to 1 for single-node recovery; increase when nodes are added.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -9,7 +9,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
-  instances: 3
+  instances: 1
   imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
   postgresql:
