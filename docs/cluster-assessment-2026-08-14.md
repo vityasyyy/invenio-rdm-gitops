@@ -288,3 +288,62 @@ The only remaining blocker is the **pre-existing** apiserver->worker-02 kubelet 
 prevents the postgres-1/2 scale-down that would free node memory for `invenio-worker`. Full
 single-node convergence (bootstrap Healthy, worker 1/1, requests < ~7200Mi) requires either
 fixing the kubelet streaming path or a second schedulable node.
+
+---
+
+# Recovery: session 2 — CNPG replica force-delete outcome (2026-08-15)
+
+## Force-delete postgres-1/2 — OPERATOR RECREATED THEM
+
+Per the plan, postgres-1 and postgres-2 were force-deleted (`--force --grace-period=0`) to free
+~256Mi for `invenio-worker`. Within 3 minutes the CNPG operator **recreated them**:
+
+```
+postgres-1  0/1  Running   2m   10.42.2.225   ubuntu-btd-kubernetes-worker-02
+postgres-2  0/1  Pending
+postgres-3  1/1  Running   13h  10.42.2.40    ubuntu-btd-kubernetes-worker-02
+cluster: phase "Waiting for the instances to become active" / instances=3 ready=1
+```
+
+`spec.instances` remains 1, but `status.instances` stays 3: the cluster is stuck NotReady
+(ContinuousArchiving=False, WAL-archive 502), so the operator keeps reconciling the replica set
+and does NOT scale down. Forced deletion is therefore ineffective while the kubelet-502
+blocks the operator's exec path. Memory returned to 7890Mi/8108Mi within minutes.
+
+## invenio-worker — still Pending (insufficient memory)
+
+```
+invenio-worker-6df7dbc6c8-ldqsl  0/1  Pending
+invenio-worker-6df7dbc6c8-wpj7x  0/1  Pending
+invenio-worker-77b6d66db4-q6nj5  0/1  Pending
+```
+Scheduling: `1 Insufficient memory, 1 node(s) had untolerated taint {CriticalAddonsOnly: true}`.
+Rollout exceeded progress deadline. HPA live min1/max2 (matches git). Nothing scaled manually.
+
+## invenio-setup (PostSync hook) — Complete
+
+`invenio-setup` Job Complete 1/1 (completionTime 2026-07-17). Fixtures/index work done.
+
+## Endpoint codes (session 2)
+
+| Endpoint | Code |
+|---|---|
+| https://invenio.vityasy.me/ping | **200** |
+| https://invenio.vityasy.me/api/records?size=1 | **500** |
+| https://api-invenio.vityasy.me/api | **404** |
+| https://invenio.vityasy.me/api/records?q=*&size=1 | **500** |
+
+## Debug infrastructure
+
+`invenio-debug` is a PostSync hook that already ran (29d) with no output — the ConfigMap
+`invenio-debug-output` still holds the placeholder `{"status":"pending"}`. Re-running it needs
+an ArgoCD `--force` sync (CLI auth unavailable; port-forward and core-mode both blocked by the
+kubelet-502), and its pod (512Mi) would not schedule on this node (~218Mi free). The
+ConfigMap-based debug path produced no diagnostics. No new manifests created (per constraints).
+
+## Status
+
+Recovery remains **incomplete**. CNPG cannot reach spec.instances=1 while the operator is
+blocked by the known kubelet-streaming-502, so postgres-1/2 cannot be removed and `invenio-worker`
+has no memory to schedule. The API 500 persists at the application layer (worker down). Full
+single-node convergence requires the kubelet streaming path to work (or a second node).
