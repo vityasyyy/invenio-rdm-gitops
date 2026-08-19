@@ -14,10 +14,7 @@ resources:
   - invenio-ingressroute.yaml
   - invenio-hpa.yaml
   - invenio-pdb.yaml
-  - debug-rbac.yaml
   - argocd-log-reader.yaml
-  - invenio-debug-output-cm.yaml
-  - invenio-debug-job.yaml
 
 # Pin the verified build so every node runs the same image.
 images:
