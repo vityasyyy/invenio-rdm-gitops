@@ -34,9 +34,11 @@ RUN cp -r ./static/. ${INVENIO_INSTANCE_PATH}/static/ && \
 
 # K8s hardening: run as a non-root user with the repo's pinned uid/gid 1654.
 # (The security-context in the K8s manifests enforces runAsUser/runAsGroup/fsGroup.)
-RUN groupadd -r invenio --gid=1654 && \
-    useradd -r -g invenio --uid=1654 --home-dir=/opt/invenio --shell=/bin/bash invenio && \
-    chown -R invenio:invenio ${INVENIO_INSTANCE_PATH}
+# The base image ships an 'invenio' user at uid 1000 (gid 0); we replace it with
+# a uid/gid 1654 user so the runtime runAsUser:1654 can read/write the instance.
+RUN userdel -f invenio 2>/dev/null; groupadd -f -g 1654 invenio; \
+    useradd -r -u 1654 -g 1654 --home-dir=/opt/invenio --shell=/bin/bash invenio; \
+    chown -R 1654:1654 ${INVENIO_INSTANCE_PATH} /opt/invenio/.local
 
 USER invenio
 EXPOSE 5000
