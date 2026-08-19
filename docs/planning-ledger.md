@@ -65,8 +65,8 @@ values match `k8s/apps/invenio/invenio-hpa.yaml`.
 |---|---|---|
 | `https://invenio.vityasy.me/ping` | 200 | UI healthy |
 | `https://invenio.vityasy.me/` | 200 | UI serves (InvenioRDM branding, NOT yet UGM) |
-| `https://invenio.vityasy.me/api` | 404 | "URL not found" — JSON 404 from app |
-| `https://api-invenio.vityasy.me/api` | 404 | same |
+| `https://invenio.vityasy.me/api` | 404 | "URL not found" — JSON 404 from app; **caused by red OpenSearch (no searchable shards)** |
+| `https://api-invenio.vityasy.me/api` | 404 | same root cause |
 | `https://invenio.vityasy.me/api/records?size=1` | 500 | app-level internal error |
 | `https://argocd.vityasy.me` | 200 | healthy |
 
@@ -87,14 +87,30 @@ values match `k8s/apps/invenio/invenio-hpa.yaml`.
 
 ## Known Blocker(s)
 
-1. **`/api` and `/api/records` fail at the app layer (404/500)** even though pods are healthy.
-   Root cause is NOT yet confirmed. The prior assessment tied this to degraded worker/DB, but
-   those are now healthy — the API path needs fresh investigation. Note: `/api/records` 500
-   historically was the corrupted `INVENIO_SEARCH_HOSTS` saga (#48) and the upload/500 saga
-   (DEBUG_PROGRESS.md); must re-verify.
+1. **ROOT CAUSE CONFIRMED (2026-08-19) — OpenSearch `red`, 141 unassigned shards → API 404/500.**
+   - OpenSearch cluster health: `status: red`, 1 data node, **141 unassigned shards**
+     (`active_shards_percent 4.08%`).
+   - Every Invenio search index is affected: `rdmrecords-records-record-v7.0.0`,
+     `communities-*`, `users-user-*`, `drafts-*`, `requests-*`, etc. — all `red`, both
+     primary+replica shards `UNASSIGNED`.
+   - Unassigned reason (`_cluster/allocation/explain`): `ALLOCATION_FAILED` →
+     `RecoveryFailedException` → `EngineCreationFailureException` →
+     **`LockObtainFailedException: Lock held by another program: .../index/write.lock`**.
+     Stale NFS file locks left behind when OpenSearch was force-deleted during worker-01
+     recovery (2026-08-14). Shard has exhausted 5 retries.
+   - Downstream effect: worker's search scans throw
+     `opensearchpy TransportError(503, 'search_phase_execution_exception')` → `/api/records`
+     500 and `/api` 404 even though pods/DB/redis are healthy.
+   - **Fix direction (not yet applied — needs approval):** the plan's fresh-start stance makes
+     wiping OpenSearch indices acceptable. Options: (a) stop OpenSearch, remove stale
+     `write.lock` files on the NFS data volume, restart (keeps data, but shards may still need
+     `reroute?retry_failed=true`); or (b) clean-slate delete all indices
+     (`curl -XDELETE 'http://localhost:9200/*'`) and re-run `invenio index init` /
+     `rdm-records rebuild-index` via the setup job — matches Phase 2 Task 11 Step 1.
 2. **Pre-existing infra issue:** apiserver→worker-02 kubelet streaming 502 (port 9345→10250)
-   still blocks `kubectl logs`/`exec` to worker-02 pods and CNPG WAL-archive/backups. Out of
-   scope per prior constraints; do NOT fix. (Logs for worker-02 web pods error with 502.)
+   still blocks `kubectl logs`/`exec` to worker-02 pods (web, opensearch) and CNPG
+   WAL-archive/backups. Out of scope per prior constraints; do NOT fix. Worker pods on
+   worker-01 remain readable — used to probe OpenSearch via the cluster service.
 
 ---
 
@@ -107,7 +123,7 @@ values match `k8s/apps/invenio/invenio-hpa.yaml`.
 | Task 1: Connect VPN + verify connectivity | ✅ Done | kubectl works, all nodes Ready |
 | Task 2: Assess drift | ✅ Done | `docs/cluster-assessment-2026-08-14.md` |
 | Task 3: Reconcile to main | ✅ Done | all 16 apps Synced+Healthy |
-| Task 4: Verify baseline (500 saga) | ⚠️ **Gate OPEN** | `/api` 404, `/api/records` 500 — NOT verified functional |
+| Task 4: Verify baseline (500 saga) | ⚠️ **Gate OPEN — root cause found** | `/api` 404, `/api/records` 500 — OpenSearch `red` (141 unassigned shards, stale `write.lock`) |
 | Task 5: Remove debug artifacts + rotate ArgoCD pass | ⚠️ **Not started** | kustomization still has debug resources; secrets/argocd-admin-password.txt not confirmed |
 
 ### PHASE 2 — Migrate to UGM Image (status: NOT started)
@@ -142,6 +158,9 @@ values match `k8s/apps/invenio/invenio-hpa.yaml`.
 ### 2026-08-19 — session open
 - worker-01 is Ready again (~28h); all 16 ArgoCD apps Synced+Healthy; invenio-web/worker 2/2.
 - The plan's single-node assumption is obsolete — capacity is no longer the blocker.
-- Live API gate still fails: `/api` 404, `/api/records` 500. Needs fresh root-cause before Phase 2.
+- **Root-caused the API gate:** OpenSearch is `red` with 141 unassigned shards
+  (`LockObtainFailedException .../index/write.lock`, stale NFS locks from 2026-08-14 force-delete).
+  Worker search scans throw 503 → `/api/records` 500, `/api` 404. This is the Phase-1 Task 4 gate.
 - Phase 1 Task 5 (debug artifact cleanup) still outstanding; Phase 2 entirely not started.
-- `kubectl logs`/`exec` to worker-02 web pods blocked by the known kubelet streaming 502.
+- `kubectl logs`/`exec` to worker-02 web/opensearch pods blocked by the known kubelet streaming 502
+  (probed OpenSearch from a worker-01 pod instead).
