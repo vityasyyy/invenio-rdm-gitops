@@ -1,0 +1,28 @@
+/*******************************
+    UGM Research Data Repository
+    Brand color overrides
+    Source: official UGM logo files (Biru UGM / Kuning UGM)
+*******************************/
+
+/*-------------------
+    Brand Colors
+--------------------*/
+
+@ugmBlue: #004D71;
+@ugmBlueDark: #00334c;
+@ugmGold: #FFD429;
+
+@primaryColor: @ugmBlue;
+@secondaryColor: @ugmGold;
+
+@invertedPrimaryColor: @ugmBlueDark;
+@invertedSecondaryColor: @ugmGold;
+
+/*-------------------
+      Page
+--------------------*/
+
+@textColor: #1b1b1b;
+@linkColor: @ugmBlue;
+@linkUnderline: none;
+@linkHoverColor: @ugmBlueDark;
