@@ -93,7 +93,7 @@ graph TB
 │       ├── traefik/           # Ingress controller
 │       └── velero/            # Backup/DR
 ├── external-lb/               # Cloudflare Tunnel (Terraform + DaemonSet)
-├── docker/invenio/            # Custom InvenioRDM Docker image
+├── docker/ugm/                # UGM-branded InvenioRDM Docker image
 ├── scripts/                   # Bootstrap, verify, CI, and secret generation scripts
 └── secrets/                   # Gitignored directory for local secret material
 ```
