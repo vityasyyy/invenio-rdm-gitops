@@ -1,21 +1,27 @@
-# Dockerfile that builds a fully functional image of your app.
+# Dockerfile that builds a fully functional image of the UGM Invenio instance.
 #
-# This image installs all Python dependencies for your application. It's based
+# This image installs all Python dependencies for the application. It's based
 # on Almalinux (https://github.com/inveniosoftware/docker-invenio)
 # and includes Pip, Pipenv, Node.js, NPM and some few standard libraries
 # Invenio usually needs.
 #
-# Note: It is important to keep the commands in this file in sync with your
+# Adapted from gunturbudi/invenio-ugm for Kubernetes:
+#   - Build context is the repo root (not docker/ugm/) so instance-layer dirs
+#     (site/, templates/, static/, assets/, app_data/, translations/) resolve.
+#   - Pipfile/Pipfile.lock live in docker/ugm/ and are copied from there.
+#   - uwsgi ini files are copied from docker/ugm/ (HTTP socket, uid 1654 non-root).
+#
+# Note: It is important to keep the commands in this file in sync with the
 # bootstrap script located in ./scripts/bootstrap.
 
 FROM registry.cern.ch/inveniosoftware/almalinux:1
 
 COPY site ./site
-COPY Pipfile Pipfile.lock ./
+COPY docker/ugm/Pipfile docker/ugm/Pipfile.lock ./
 RUN pipenv install --deploy --system
 
-COPY ./docker/uwsgi/ ${INVENIO_INSTANCE_PATH}
-COPY ./invenio.cfg ${INVENIO_INSTANCE_PATH}
+COPY ./docker/ugm/uwsgi_ui.ini ./docker/ugm/uwsgi_rest.ini ${INVENIO_INSTANCE_PATH}
+COPY ./docker/ugm/invenio.cfg ${INVENIO_INSTANCE_PATH}
 COPY ./templates/ ${INVENIO_INSTANCE_PATH}/templates/
 COPY ./app_data/ ${INVENIO_INSTANCE_PATH}/app_data/
 COPY ./translations/ ${INVENIO_INSTANCE_PATH}/translations/
@@ -26,4 +32,14 @@ RUN cp -r ./static/. ${INVENIO_INSTANCE_PATH}/static/ && \
     invenio collect --verbose  && \
     invenio webpack buildall
 
+# K8s hardening: run as a non-root user with the repo's pinned uid/gid 1654.
+# (The security-context in the K8s manifests enforces runAsUser/runAsGroup/fsGroup.)
+RUN groupadd -r invenio --gid=1654 && \
+    useradd -r -g invenio --uid=1654 --home-dir=/opt/invenio --shell=/bin/bash invenio && \
+    chown -R invenio:invenio ${INVENIO_INSTANCE_PATH}
+
+USER invenio
+EXPOSE 5000
+
+# Keep upstream's entrypoint; the K8s manifests pass the real command (uwsgi).
 ENTRYPOINT [ "bash", "-c"]
