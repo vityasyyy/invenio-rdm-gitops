@@ -16,8 +16,21 @@
 
 | Plan file | Goal | Phase | Status (vs reality) |
 |---|---|---|---|
-| `.opencode/plans/2026-08-14-cluster-recovery-and-ugm-migration.md` | (1) recover `btd-rke2` to `main` baseline, (2) migrate Invenio to UGM image | Phase 1 + Phase 2 | Phase 1 mostly converged; API 404/500 gate + worker scheduling remain. Phase 2 not started. |
-| `.superpowers/sdd/2026-08-14-cluster-recovery-and-ugm-migration/` | task-by-task execution ledger for the above | all | Task 1 complete, Task 3 converged-with-concerns (see below). |
+| `.opencode/plans/2026-08-14-cluster-recovery-and-ugm-migration.md` | (1) recover `btd-rke2` to `main` baseline, (2) migrate Invenio to UGM image | Phase 1 + Phase 2 | **Phase 1 COMPLETE.** Phase 2 in progress: UGM layer vendored + image built (uid 1654, invenio-app-rdm 13.0.9), manifests + CI updated on `feat/ugm-adapt-dockerfile`. |
+| `.superpowers/sdd/2026-08-14-cluster-recovery-and-ugm-migration/` | task-by-task execution ledger for the above | all | Task 1-5 complete; Task 6-10 done in branch, Task 11 not yet deployed, Task 12 pending. |
+
+## NOTE: DBRepo-UGM is a SEPARATE product (do not conflate)
+
+The user pointed at `gunturbudi/dbrepo-ugm` (github.com/gunturbudi/dbrepo-ugm) in the same
+breath as the Invenio UGM migration. **It is NOT Invenio.** DBRepo is TU Wien's Database
+Repository (v1.13.4), a full docker-compose stack: MariaDB/Postgres, Keycloak, RabbitMQ,
+OpenSearch, SeaweedFS, plus metadata/consumer/search/data/dashboard services and a forked
+`dbrepo-ui` (Nuxt/Vuetify). It ships as compose + nginx gateway, NOT Kubernetes-native.
+
+This repo is InvenioRDM on Kubernetes. The Invenio-UGM migration (this plan) uses the
+`invenio-ugm` instance layer only. Deploying DBRepo-UGM here would be a NEW, separate ArgoCD
+app on an entirely different stack. **Decision pending from user** — do NOT start DBRepo work
+without explicit go-ahead. Captured here so the planning stays synced.
 
 ---
 
