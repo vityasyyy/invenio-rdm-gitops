@@ -120,7 +120,7 @@ values match `k8s/apps/invenio/invenio-hpa.yaml`.
 | Task 2: Assess drift | ✅ Done | `docs/cluster-assessment-2026-08-14.md` |
 | Task 3: Reconcile to main | ✅ Done | all 16 apps Synced+Healthy |
 | Task 4: Verify baseline (500 saga) | ✅ **Gate CLEARED (root cause found + fixed)** | OpenSearch `red` from stale `write.lock` → clean-slate re-init → `/api/records` 200. Login 404/users 500 remain separately (see blockers). |
-| Task 5: Remove debug artifacts + rotate ArgoCD pass | ⚠️ **Not started** | kustomization still has debug resources; secrets/argocd-admin-password.txt not confirmed |
+| Task 5: Remove debug artifacts + rotate ArgoCD pass | ✅ **Done** | PR #58 merged (`4d2a7b2`); debug CM/role/job pruned from cluster (NotFound); ArgoCD pass rotated + stored in `secrets/argocd-admin-password.txt` (gitignored) |
 
 ### PHASE 2 — Migrate to UGM Image (status: NOT started)
 
@@ -161,7 +161,10 @@ values match `k8s/apps/invenio/invenio-hpa.yaml`.
   unauthenticated `POST /api/records?expand=1` returns 403 (was 500) — **500 saga confirmed gone.**
 - AUTH PATH CLARIFIED: plan's `/api/accounts/login` token flow doesn't exist here; real auth is
   HTML form login at `/login/` (session cookie). Not a blocker.
-- Phase 1 Task 5 (debug artifact cleanup) still outstanding; Phase 2 entirely not started.
+- **Phase 1 Task 5 DONE:** PR #58 merged (`4d2a7b2`) removed debug artifacts (CM/role/job pruned,
+  verified NotFound); ArgoCD admin password rotated and stored in gitignored
+  `secrets/argocd-admin-password.txt`. Phase 1 COMPLETE.
+- Phase 2 (UGM migration) started (Task 6).
 - `kubectl logs`/`exec`/port-forward to worker-02 web/opensearch pods blocked by the known
   kubelet streaming 502 (probed OpenSearch and ran invenio CLI from a worker-01 pod instead).
 - Ledger committed + PR #57 opened (`docs/planning-ledger` branch).
