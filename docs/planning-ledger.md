@@ -103,6 +103,19 @@ values match `k8s/apps/invenio/invenio-hpa.yaml`.
 
 ## Known Blocker(s)
 
+0. **HARD BLOCKER (2026-08-19) — GHCR pull secret token is dead; UGM image cannot be pulled by the cluster.**
+   - The migration merged (#60) and CI pushed `ghcr.io/vityasyyy/invenio-ugm` successfully.
+   - But all new pods fail `ErrImagePull` / `403 Forbidden` on `ghcr.io/token?...invenio-ugm:pull`.
+   - Diagnosed: the `ghp_...` PAT stored in the sealed `ghcr-pull-secret` returns **403 even on the
+     old `invenio-rdm-custom` digest** (which definitely exists) → the PAT is **revoked/expired**.
+   - The stored `secrets/ghcr/pat.txt` also 403s; the `gh` CLI token (repo scope) also 403s.
+   - The old pods run only because the image is cached on the nodes; ANY new pull fails.
+   - **Action needed from user:** provide a valid GHCR credential. Either (a) a PAT with
+     `read:packages` scope so I can re-seal `ghcr-pull-secret` via kubeseal, or (b) set the
+     `invenio-ugm` package to public so no auth is required. Deployment (Task 11) is BLOCKED until then.
+   - NOTE: the old `invenio-rdm-custom` image was likely public when first deployed (pulled without
+     the secret), which is why the token wasn't needed then.
+
 1. **RESOLVED (2026-08-19) — OpenSearch `red`, 141 unassigned shards → API 500.** Fixed via
    clean-slate: `DELETE /_all` indices + `invenio index init` + remove stale `.opensearch-sap-log-types-config`
    primary. OpenSearch now `yellow` (all primaries active; 32 unassigned are only replicas,
