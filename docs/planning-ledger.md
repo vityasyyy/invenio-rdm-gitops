@@ -149,7 +149,7 @@ values match `k8s/apps/invenio/invenio-hpa.yaml`.
 | Task 4: Verify baseline (500 saga) | ✅ **Gate CLEARED (root cause found + fixed)** | OpenSearch `red` from stale `write.lock` → clean-slate re-init → `/api/records` 200. Login 404/users 500 remain separately (see blockers). |
 | Task 5: Remove debug artifacts + rotate ArgoCD pass | ✅ **Done** | PR #58 merged (`4d2a7b2`); debug CM/role/job pruned from cluster (NotFound); ArgoCD pass rotated + stored in `secrets/argocd-admin-password.txt` (gitignored) |
 
-### PHASE 2 — Migrate to UGM Image (status: Tasks 6-11 DONE, Task 12 pending)
+### PHASE 2 — Migrate to UGM Image (status: COMPLETE)
 
 | Task | Status | Evidence |
 |---|---|---|
@@ -159,7 +159,7 @@ values match `k8s/apps/invenio/invenio-hpa.yaml`.
 | Task 9: Rewrite ConfigMap + setup job | ✅ Done | JSON search hosts, Redis broker, local files location, idempotent [9/9] setup |
 | Task 10: CI build workflow + image-updater | ✅ Done | invenio-ugm image build + verify, image-updater CR updated |
 | Task 11: Clean-slate deploy + E2E verification | ✅ **Done** | UGM deployed, app Healthy, setup [9/9], UI+API 200, UGM branding live. API 404 regression found+fixed (combined wsgi). |
-| Task 12: Cleanup + documentation | ⛔ Not started | `DEBUG_PROGRESS.md` still present |
+| Task 12: Cleanup + documentation | ✅ **Done** | PR #64 merged (`e84bd33`): DEBUG_PROGRESS.md deleted, README docker/invenio→docker/ugm. S3_* keys + CNPG backup left (deferrable/intentional). |
 
 ---
 
