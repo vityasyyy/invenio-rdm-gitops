@@ -43,5 +43,6 @@ RUN userdel -f invenio 2>/dev/null; groupadd -f -g 1654 invenio; \
 USER invenio
 EXPOSE 5000
 
-# Keep upstream's entrypoint; the K8s manifests pass the real command (uwsgi).
-ENTRYPOINT [ "bash", "-c"]
+# Default command. K8s manifests override args with uwsgi --ini, which works
+# because this is exec-form CMD (no bash -c wrapper swallowing extra args).
+CMD ["uwsgi", "--ini", "/opt/invenio/var/instance/uwsgi_ui.ini"]
