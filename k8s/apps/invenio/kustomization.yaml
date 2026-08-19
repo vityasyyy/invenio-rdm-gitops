@@ -20,4 +20,4 @@ resources:
 
 images:
   - name: ghcr.io/vityasyyy/invenio-ugm
-    newTag: latest
+    digest: sha256:609eacc9c46951b98b016481128f7835cdcd73265b53f00e0b731c3b6440d887
