@@ -1,6 +1,10 @@
-# InvenioRDM application configuration
-# Non-sensitive settings consumed by web and worker pods.
+# InvenioRDM application configuration (UGM image)
+# Non-sensitive settings consumed by web, worker, scheduler, and setup pods.
 # Endpoints resolve via ExternalName services in the invenio namespace.
+#
+# Secrets live in invenio-app-secrets (SealedSecret): INVENIO_SQLALCHEMY_DATABASE_URI,
+# INVENIO_SECRET_KEY, INVENIO_CACHE_REDIS_URL, and the (retired) S3 keys. Those are NOT
+# duplicated here.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -9,31 +13,28 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 data:
-  INVENIO_SITE_NAME: "Invenio RDM"
+  # Instance identity (UGM invenio.cfg reads these non-INVENIO_ prefixed vars)
+  INSTANCE_DOMAIN: "invenio.vityasy.me"
+  INSTANCE_NAME: "UGM Research Data Repository"
+  INSTANCE_TAGLINE: "Share your research. Grow its impact. Keep it safe for the future."
+  INSTANCE_PUBLISHER: "Universitas Gadjah Mada"
+  INSTANCE_ADMIN_EMAIL: "admin@example.org"
+  INSTANCE_UI_URL: "https://invenio.vityasy.me"
+  # Site URLs (deterministic overrides in the vendored docker/ugm/invenio.cfg)
   INVENIO_SITE_UI_URL: "https://invenio.vityasy.me"
   INVENIO_SITE_API_URL: "https://api-invenio.vityasy.me"
-  INVENIO_DB_NAME: "invenio"
-  INVENIO_DB_USER: "invenio"
-  INVENIO_DB_PORT: "5432"
-  INVENIO_DB_HOST: "invenio-postgresql.invenio.svc.cluster.local"
-  INVENIO_REDIS_HOST: "invenio-redis.invenio.svc.cluster.local"
-  INVENIO_REDIS_PORT: "6379"
-  INVENIO_SEARCH_HOST: "invenio-search.invenio.svc.cluster.local"
-  INVENIO_SEARCH_PORT: "9200"
-  INVENIO_S3_ENDPOINT: "http://minio.minio.svc.cluster.local:9000"
-  INVENIO_S3_BUCKET: "invenio-rdm"
-  # Disable Invenio's HTTPS redirect (TLS terminates at Cloudflare; Traefik
-  # handles security headers via the invenio-headers middleware)
-  INVENIO_APP_ENABLE_SECURE_HEADERS: "False"
-  # Configure Redis URLs (demo image defaults to localhost)
+  # Search — IMPORTANT: must be valid JSON. The UGM cfg parses INVENIO_SEARCH_HOSTS.
+  INVENIO_SEARCH_HOSTS: '["invenio-search.invenio.svc.cluster.local:9200"]'
+  # Redis session/cache/ratelimit URLs (broker backend also uses Redis, no RabbitMQ)
   INVENIO_ACCOUNTS_SESSION_REDIS_URL: "redis://invenio-redis.invenio.svc.cluster.local:6379/1"
   INVENIO_COMMUNITIES_IDENTITIES_CACHE_REDIS_URL: "redis://invenio-redis.invenio.svc.cluster.local:6379/4"
   INVENIO_IIIF_CACHE_REDIS_URL: "redis://invenio-redis.invenio.svc.cluster.local:6379/0"
   INVENIO_RATELIMIT_STORAGE_URI: "redis://invenio-redis.invenio.svc.cluster.local:6379/3"
-  # JSONSchemas host for external URL generation
+  # Celery broker/backend — cluster has no RabbitMQ, use Redis
+  INVENIO_BROKER_URL: "redis://invenio-redis.invenio.svc.cluster.local:6379/0"
+  INVENIO_CELERY_BROKER_URL: "redis://invenio-redis.invenio.svc.cluster.local:6379/0"
+  INVENIO_CELERY_RESULT_BACKEND: "redis://invenio-redis.invenio.svc.cluster.local:6379/2"
+  # Security / proxy
+  INVENIO_APP_ENABLE_SECURE_HEADERS: "False"
   INVENIO_JSONSCHEMAS_HOST: "invenio.vityasy.me"
-  # Celery broker and result backend use Redis
-  CELERY_BROKER_URL: "redis://invenio-redis.invenio.svc.cluster.local:6379/0"
-  CELERY_RESULT_BACKEND: "redis://invenio-redis.invenio.svc.cluster.local:6379/0"
-  # CACHE_REDIS_URL is needed by Invenio's cache layer
-  INVENIO_CACHE_REDIS_URL: "redis://invenio-redis.invenio.svc.cluster.local:6379/0"
+  INVENIO_WSGI_PROXIES: "1"
