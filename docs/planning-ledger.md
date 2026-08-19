@@ -68,9 +68,9 @@ values match `k8s/apps/invenio/invenio-hpa.yaml`.
 | `https://invenio.vityasy.me/api` | 404 | no route at `/api` root (expected); real endpoints work |
 | `https://api-invenio.vityasy.me/api` | 404 | same (root has no route) |
 | `https://api-invenio.vityasy.me/api/records?size=1` | **200** | **FIXED** — returns proper empty search response |
+| `POST https://invenio.vityasy.me/api/records?expand=1` | **403** | **FIXED** — was the historical 500; now returns 403 (unauthenticated), proving the 500 saga is gone |
 | `https://api-invenio.vityasy.me/api/communities` | 200 | functional |
-| `https://api-invenio.vityasy.me/api/accounts/login` | 404 | still open — login route not served (separate from 500 saga) |
-| `https://api-invenio.vityasy.me/api/users/me` | 500 | still open |
+| `https://api-invenio.vityasy.me/login/` | 200 | HTML form login (session cookie) — this is the real auth path, NOT `/api/accounts/login` |
 | `https://argocd.vityasy.me` | 200 | healthy |
 
 ### Image / storage / config (baseline, pre-UGM)
@@ -96,11 +96,12 @@ values match `k8s/apps/invenio/invenio-hpa.yaml`.
    expected on a single data node). `/api/records` returns 200 with empty search results —
    **the 500 saga gate is cleared.** Root cause was stale NFS `write.lock` files left by the
    2026-08-14 force-delete (see Findings log).
-2. **STILL OPEN — `/api/accounts/login` returns 404 and `/api/users/me` returns 500.** These are
-   NOT caused by the (now-fixed) OpenSearch shard issue. `/api/records` and `/api/communities`
-   work, so the API blueprint loads; login/users paths specifically fail. Needs investigation
-   (likely an auth/accounts blueprint routing or config issue, not infra). Blocks full smoke
-   test (Task 4 Step 1 needs a login token).
+2. **Plan's smoke-test auth path is WRONG — not a real blocker.** The plan uses
+   `/api/accounts/login` for a token; this image serves HTML form login at `/login/`
+   (200, session cookie). There is no JSON token login endpoint exposed. The correct
+   authenticated API flow needs a session cookie (CSRF + session) rather than a Bearer token.
+   The historical 500 is confirmed gone regardless: unauthenticated `POST /api/records?expand=1`
+   now returns `403` (not 500), and GET `/api/records` returns 200.
 3. **Pre-existing infra issue:** apiserver→worker-02 kubelet streaming 502 (port 9345→10250)
    still blocks `kubectl logs`/`exec`/port-forward to worker-02 pods (web, opensearch) and CNPG
    WAL-archive/backups. Out of scope per prior constraints; do NOT fix. Worker pods on
@@ -156,9 +157,10 @@ values match `k8s/apps/invenio/invenio-hpa.yaml`.
 - **Root-caused the API gate:** OpenSearch `red` (141 unassigned shards) from stale NFS
   `write.lock` left by the 2026-08-14 force-delete. Worker search scans threw 503 → `/api/records` 500.
 - **FIXED the API gate:** clean-slate `DELETE /_all` + `invenio index init` + removed stale
-  `.opensearch-sap-log-types-config`. OpenSearch now `yellow`; `/api/records` returns 200.
-- NEW OPEN ITEM: `/api/accounts/login` 404 + `/api/users/me` 500 (auth path, NOT the OpenSearch
-  issue — records/communities work). Blocks full smoke test.
+  `.opensearch-sap-log-types-config`. OpenSearch now `yellow`; GET `/api/records` returns 200 and
+  unauthenticated `POST /api/records?expand=1` returns 403 (was 500) — **500 saga confirmed gone.**
+- AUTH PATH CLARIFIED: plan's `/api/accounts/login` token flow doesn't exist here; real auth is
+  HTML form login at `/login/` (session cookie). Not a blocker.
 - Phase 1 Task 5 (debug artifact cleanup) still outstanding; Phase 2 entirely not started.
 - `kubectl logs`/`exec`/port-forward to worker-02 web/opensearch pods blocked by the known
   kubelet streaming 502 (probed OpenSearch and ran invenio CLI from a worker-01 pod instead).
