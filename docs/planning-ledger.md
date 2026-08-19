@@ -103,18 +103,19 @@ values match `k8s/apps/invenio/invenio-hpa.yaml`.
 
 ## Known Blocker(s)
 
-0. **HARD BLOCKER (2026-08-19) — GHCR pull secret token is dead; UGM image cannot be pulled by the cluster.**
-   - The migration merged (#60) and CI pushed `ghcr.io/vityasyyy/invenio-ugm` successfully.
-   - But all new pods fail `ErrImagePull` / `403 Forbidden` on `ghcr.io/token?...invenio-ugm:pull`.
-   - Diagnosed: the `ghp_...` PAT stored in the sealed `ghcr-pull-secret` returns **403 even on the
-     old `invenio-rdm-custom` digest** (which definitely exists) → the PAT is **revoked/expired**.
-   - The stored `secrets/ghcr/pat.txt` also 403s; the `gh` CLI token (repo scope) also 403s.
-   - The old pods run only because the image is cached on the nodes; ANY new pull fails.
-   - **Action needed from user:** provide a valid GHCR credential. Either (a) a PAT with
-     `read:packages` scope so I can re-seal `ghcr-pull-secret` via kubeseal, or (b) set the
-     `invenio-ugm` package to public so no auth is required. Deployment (Task 11) is BLOCKED until then.
-   - NOTE: the old `invenio-rdm-custom` image was likely public when first deployed (pulled without
-     the secret), which is why the token wasn't needed then.
+0. **RESOLVED (2026-08-19) — GHCR pull secret token was dead; UGM deploy unblocked.**
+   - User supplied a valid PAT (`write:packages` scope); verified it pulls `invenio-ugm`.
+   - Re-sealed `ghcr-pull-secret` via kubeseal (PR #61, merged `89e7412`); updated
+     `secrets/ghcr/pat.txt` (gitignored).
+   - After the fix: UGM pods pulled the image, all came up Running, setup job completed
+     [9/9], app Healthy, UI shows UGM branding.
+   - **API regression found + fixed:** the UGM `uwsgi_ui.ini` used `invenio_app.wsgi_ui`
+     (UI-only) → `/api/records` 404. Fixed to `invenio_app.wsgi` (combined UI+REST), PR #62
+     merged `926448c`. Rebuilt image `609eacc...`.
+   - Image-updater reported `IMAGES: 0` and didn't write a digest, so `:latest` kept serving
+     the old image → pinned the digest in kustomization (PR #63, merged `3c5af3d`).
+   - **Verified via public endpoints (VPN flaky):** UI `/` 200, `/ping` 200, API
+     `/api/records` 200, `/api/communities` 200, UGM branding live. Task 11 deploy SUCCESSFUL.
 
 1. **RESOLVED (2026-08-19) — OpenSearch `red`, 141 unassigned shards → API 500.** Fixed via
    clean-slate: `DELETE /_all` indices + `invenio index init` + remove stale `.opensearch-sap-log-types-config`
@@ -148,16 +149,16 @@ values match `k8s/apps/invenio/invenio-hpa.yaml`.
 | Task 4: Verify baseline (500 saga) | ✅ **Gate CLEARED (root cause found + fixed)** | OpenSearch `red` from stale `write.lock` → clean-slate re-init → `/api/records` 200. Login 404/users 500 remain separately (see blockers). |
 | Task 5: Remove debug artifacts + rotate ArgoCD pass | ✅ **Done** | PR #58 merged (`4d2a7b2`); debug CM/role/job pruned from cluster (NotFound); ArgoCD pass rotated + stored in `secrets/argocd-admin-password.txt` (gitignored) |
 
-### PHASE 2 — Migrate to UGM Image (status: NOT started)
+### PHASE 2 — Migrate to UGM Image (status: Tasks 6-11 DONE, Task 12 pending)
 
 | Task | Status | Evidence |
 |---|---|---|
-| Task 6: Vendor UGM layer | ⛔ Not started | no `docker/ugm/` |
-| Task 7: Adapt Dockerfile/config | ⛔ Not started | still gunicorn, S3 storage |
-| Task 8: Update deployments (image/args/storage/scheduler) | ⛔ Not started | no scheduler, no PVCs |
-| Task 9: Rewrite ConfigMap + setup job | ⛔ Not started | app-config still S3/redis legacy |
-| Task 10: CI build workflow + image-updater | ⛔ Not started | workflow still `invenio-rdm-custom` |
-| Task 11: Clean-slate deploy + verification | ⛔ Not started | — |
+| Task 6: Vendor UGM layer | ✅ Done | PR #60; `docker/ugm/` + site/templates/static/app_data/translations/assets vendored |
+| Task 7: Adapt Dockerfile/config | ✅ Done | non-root uid 1654, HTTP uwsgi, exec-form CMD, env-driven invenio.cfg |
+| Task 8: Update deployments (image/args/storage/scheduler) | ✅ Done | web/worker→UGM image + NFS PVCs, new scheduler, data/archive PVCs |
+| Task 9: Rewrite ConfigMap + setup job | ✅ Done | JSON search hosts, Redis broker, local files location, idempotent [9/9] setup |
+| Task 10: CI build workflow + image-updater | ✅ Done | invenio-ugm image build + verify, image-updater CR updated |
+| Task 11: Clean-slate deploy + E2E verification | ✅ **Done** | UGM deployed, app Healthy, setup [9/9], UI+API 200, UGM branding live. API 404 regression found+fixed (combined wsgi). |
 | Task 12: Cleanup + documentation | ⛔ Not started | `DEBUG_PROGRESS.md` still present |
 
 ---
