@@ -8,15 +8,16 @@ resources:
   - app-sealed-secret.yaml
   - ghcr-pull-secret.yaml
   - serviceaccount.yaml
+  - invenio-data-pvc.yaml
   - invenio-deployment.yaml
   - invenio-worker-deployment.yaml
+  - invenio-scheduler-deployment.yaml
   - invenio-setup-job.yaml
   - invenio-ingressroute.yaml
   - invenio-hpa.yaml
   - invenio-pdb.yaml
   - argocd-log-reader.yaml
 
-# Pin the verified build so every node runs the same image.
 images:
-  - name: ghcr.io/vityasyyy/invenio-rdm-custom
-    digest: sha256:e626ca7f91d623336bf840c55882972c5e5dd9162319753ca03acc8af682d117
+  - name: ghcr.io/vityasyyy/invenio-ugm
+    newTag: latest

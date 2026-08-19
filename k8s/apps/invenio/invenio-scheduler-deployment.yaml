@@ -1,24 +1,24 @@
-# InvenioRDM Celery worker deployment
-# Handles async tasks: indexing, file processing, email, etc.
-# Note: Static assets are pre-built in the Docker image.
+# Celery Beat scheduler for InvenioRDM (UGM image).
+# Runs the invenio_jobs scheduler as a singleton (must never scale).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: invenio-worker
+  name: invenio-scheduler
   namespace: invenio
   annotations:
     argocd.argoproj.io/sync-wave: "3"
   labels:
-    app.kubernetes.io/name: invenio-worker
+    app.kubernetes.io/name: invenio-scheduler
     app.kubernetes.io/part-of: invenio-rdm
 spec:
+  replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: invenio-worker
+      app.kubernetes.io/name: invenio-scheduler
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: invenio-worker
+        app.kubernetes.io/name: invenio-scheduler
         app.kubernetes.io/part-of: invenio-rdm
     spec:
       serviceAccountName: default
@@ -43,7 +43,7 @@ spec:
                 echo "OpenSearch not ready yet, waiting 5s..."
                 sleep 5
               done
-               echo "OpenSearch is ready!"
+              echo "OpenSearch is ready!"
           resources:
             requests:
               cpu: 25m
@@ -61,20 +61,17 @@ spec:
             seccompProfile:
               type: RuntimeDefault
       containers:
-        - name: worker
+        - name: scheduler
           image: ghcr.io/vityasyyy/invenio-ugm:latest
           imagePullPolicy: IfNotPresent
           args:
             - celery
             - -A
             - invenio_app.celery
-            - worker
+            - beat
+            - --scheduler
+            - invenio_jobs.services.scheduler:RunScheduler
             - --loglevel=INFO
-            - --concurrency=2
-            - --prefetch-multiplier=1
-            - --without-gossip
-            - --without-mingle
-            - --without-heartbeat
           envFrom:
             - configMapRef:
                 name: invenio-app-config
@@ -83,45 +80,22 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
-            - name: data
-              mountPath: /opt/invenio/var/instance/data
-          resources:
-            requests:
-              cpu: 500m
-              memory: 768Mi
-            limits:
-              cpu: 1000m
-              memory: 2Gi
-          startupProbe:
-            exec:
-              command:
-                - /bin/sh
-                - -c
-                - celery -A invenio_app.celery inspect ping -d celery@$(hostname) --timeout 30
-            initialDelaySeconds: 30
-            periodSeconds: 15
-            timeoutSeconds: 30
-            failureThreshold: 12
           livenessProbe:
             exec:
               command:
                 - /bin/sh
                 - -c
-                - celery -A invenio_app.celery inspect ping -d celery@$(hostname) --timeout 30
+                - pgrep -f "celery.*beat" >/dev/null
             initialDelaySeconds: 30
             periodSeconds: 60
-            timeoutSeconds: 45
             failureThreshold: 3
-          readinessProbe:
-            exec:
-              command:
-                - /bin/sh
-                - -c
-                - celery -A invenio_app.celery inspect ping -d celery@$(hostname) --timeout 15
-            initialDelaySeconds: 60
-            periodSeconds: 30
-            timeoutSeconds: 20
-            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -133,6 +107,3 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
-        - name: data
-          persistentVolumeClaim:
-            claimName: invenio-data

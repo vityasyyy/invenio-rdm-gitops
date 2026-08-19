@@ -1,0 +1,32 @@
+# Shared NFS-backed storage for Invenio instance data (uploaded files).
+# The UGM image stores app files locally at $INVENIO_INSTANCE_PATH/data (and
+# archive at .../archive), replacing the retired MinIO/S3 location.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: invenio-data
+  namespace: invenio
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: btd-nfs
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: invenio-archive
+  namespace: invenio
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: btd-nfs
+  resources:
+    requests:
+      storage: 20Gi
