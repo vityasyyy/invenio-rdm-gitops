@@ -1,0 +1,85 @@
+{#
+  UGM Research Data Repository -- homepage intro section override.
+
+  Replaces the stock "1 Configure / 2 Customize / 3 Use it!" onboarding cards
+  (the default invenio_app_rdm/intro_section.html) with an institutional
+  homepage layout inspired by TU Wien's research data repository
+  (https://researchdata.tuwien.ac.at/): a row of task-oriented feature cards,
+  followed by a short "about this repository" strip with the UGM crest.
+
+  Styling lives in assets/less/site/globals/site.overrides
+  (.ugm-feature-cards / .ugm-about-section).
+#}
+
+<section class="ugm-feature-cards">
+  <div class="ui stackable four cards container">
+
+    <div class="ui card">
+      <div class="content">
+        <i class="upload icon large"></i>
+        <div class="header">{{ _("New upload") }}</div>
+        <div class="description">
+          {{ _("Submit your dataset, software, or publication and its metadata step-by-step.") }}
+        </div>
+      </div>
+      <a class="ui bottom attached button" href="/uploads/new">
+        {{ _("Start an upload") }}
+      </a>
+    </div>
+
+    <div class="ui card">
+      <div class="content">
+        <i class="users icon large"></i>
+        <div class="header">{{ _("Communities") }}</div>
+        <div class="description">
+          {{ _("Create or join a collaborative space for your faculty, lab, or research group.") }}
+        </div>
+      </div>
+      <a class="ui bottom attached button" href="/communities">
+        {{ _("Browse communities") }}
+      </a>
+    </div>
+
+    <div class="ui card">
+      <div class="content">
+        <i class="code icon large"></i>
+        <div class="header">{{ _("API & Automation") }}</div>
+        <div class="description">
+          {{ _("Connect notebooks, pipelines, and virtual research environments via the REST API.") }}
+        </div>
+      </div>
+      <a class="ui bottom attached button" href="{{ config.SITE_API_URL }}/">
+        {{ _("Explore the API") }}
+      </a>
+    </div>
+
+    <div class="ui card">
+      <div class="content">
+        <i class="question circle icon large"></i>
+        <div class="header">{{ _("Guides & FAQ") }}</div>
+        <div class="description">
+          {{ _("Read the upload guide, licensing options, and answers to common questions.") }}
+        </div>
+      </div>
+      <a class="ui bottom attached button" href="https://inveniordm.docs.cern.ch/" target="_blank" rel="noopener">
+        {{ _("Read the guide") }}
+      </a>
+    </div>
+
+  </div>
+</section>
+
+<section class="ugm-about-section">
+  <div class="ui stackable two column grid container middle aligned">
+    <div class="six wide column center aligned">
+      <img class="ugm-crest" src="{{ url_for('static', filename='images/ugm-crest.png') }}" alt="{{ _('Universitas Gadjah Mada crest') }}">
+    </div>
+    <div class="ten wide column">
+      <h2 class="section-title">{{ _("About this repository") }}</h2>
+      <p>
+        {{ _("The %(name)s is the institutional platform for publishing and preserving Universitas Gadjah Mada's research datasets, software, and other outputs.", name=config.THEME_SITENAME) }}
+        {{ _("Every published record gets a permanent, citable link, structured FAIR metadata, and a choice of open, restricted, or private access.") }}
+      </p>
+    </div>
+  </div>
+</section>

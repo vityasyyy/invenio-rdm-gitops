@@ -10,11 +10,11 @@ spec:
     - namePattern: invenio-bootstrap
       images:
         - alias: invenio
-          imageName: ghcr.io/vityasyyy/invenio-rdm-custom:latest
+          imageName: ghcr.io/vityasyyy/invenio-ugm:latest
           commonUpdateSettings:
             updateStrategy: digest
           manifestTargets:
             kustomize:
-              name: ghcr.io/vityasyyy/invenio-rdm-custom
+              name: ghcr.io/vityasyyy/invenio-ugm
   writeBackConfig:
     method: argocd

@@ -1,0 +1,99 @@
+/*******************************
+    UGM Research Data Repository
+    Site-wide style overrides
+*******************************/
+
+/* Header logo: a square crest+wordmark badge in a white bordered box,
+   TU Wien-style, instead of a bare image floating in the dark nav bar.
+   Actual DOM served by invenio_app_rdm (checked via curl, not assumed --
+   this markup does NOT match invenio_theme's own header.html, which is
+   overridden): div.item.logo.p-0 > a.logo-link > img.ui.image.rdm-logo */
+#invenio-nav .item.logo,
+.item.logo {
+  padding: 8px !important;
+  display: flex !important;
+  align-items: center;
+}
+
+#invenio-nav .item.logo a.logo-link,
+.item.logo a.logo-link {
+  background: #ffffff;
+  border: 1px solid #d8d8d8;
+  border-radius: 4px;
+  padding: 4px 10px !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+}
+
+#invenio-nav .item.logo img.rdm-logo,
+.item.logo img.rdm-logo {
+  max-height: 46px !important;
+  width: auto !important;
+  max-width: none !important;
+}
+
+/* A thin gold accent bar under the top navigation, echoing UGM's brand pairing */
+#invenio-nav {
+  border-bottom: 3px solid @ugmGold;
+}
+
+/* Frontpage hero (header_frontpage.html): UGM campus photo with a dark
+   overlay so the white title/tagline/search stay readable.
+   Must target #frontpage-search-bar (an ID, not just .frontpage-header):
+   invenio_app_rdm's own theme sets "#frontpage-search-bar{background:
+   transparent}", and an ID selector beats our class selector regardless
+   of source order/!important placement unless we match or beat its
+   specificity here too. */
+#frontpage-search-bar.frontpage-header {
+  /* Path is relative to this file (assets/less/site/globals/) and must
+     point into assets/images/ -- not static/images/ -- so webpack's
+     css-loader can resolve and bundle it. A path into static/images/
+     (served directly by Flask) fails the webpack build: css-loader treats
+     url()s as module imports it must resolve on disk, not literal runtime
+     URLs. */
+  background:
+    linear-gradient(135deg, fade(@ugmBlueDark, 55%) 0%, fade(@ugmBlue, 40%) 100%),
+    url('../../../images/ugm-hero-bg.jpg') !important;
+  background-size: cover !important;
+  background-position: center !important;
+  padding-top: 3em;
+  padding-bottom: 1.5em;
+}
+
+.frontpage-tagline {
+  max-width: 42em;
+  margin: 0.6em auto 0 auto !important;
+  font-size: 1.15rem;
+  opacity: 0.92;
+}
+
+/* Homepage feature cards (intro_section.html) */
+.ugm-feature-cards {
+  padding-top: 2.5em;
+  padding-bottom: 2.5em;
+}
+
+.ugm-feature-cards .ui.card {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08) !important;
+  border-top: 3px solid @ugmGold !important;
+}
+
+.ugm-feature-cards .ui.card .content .header {
+  color: @ugmBlue !important;
+}
+
+.ugm-feature-cards .icon {
+  color: @ugmBlue !important;
+}
+
+.ugm-about-section {
+  background: #f7f7f5;
+  padding-top: 2.5em;
+  padding-bottom: 2.5em;
+}
+
+.ugm-about-section .ugm-crest {
+  max-height: 90px;
+  width: auto;
+}

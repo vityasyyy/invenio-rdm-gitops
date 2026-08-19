@@ -1,4 +1,4 @@
-# InvenioRDM setup / initialization job
+# InvenioRDM setup / initialization job (UGM image)
 #
 # This is an ArgoCD PostSync hook — it runs automatically after every sync
 # (including image updates from argocd-image-updater).
@@ -31,9 +31,16 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       restartPolicy: OnFailure
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: invenio-data
+        - name: archive
+          persistentVolumeClaim:
+            claimName: invenio-archive
       containers:
         - name: setup
-          image: ghcr.io/vityasyyy/invenio-rdm-custom:latest
+          image: ghcr.io/vityasyyy/invenio-ugm:latest
           imagePullPolicy: Always
           command:
             - /bin/bash
@@ -41,102 +48,74 @@ spec:
             - |
               set -e
 
-              echo "=== InvenioRDM Setup (PostSync Hook) ==="
-              echo "Waiting for all dependencies to be ready..."
+              echo "=== InvenioRDM UGM Setup (PostSync Hook) ==="
 
-              python3 -c "
+              python3 - <<'PY'
               import socket, time, urllib.request
 
               def wait_tcp(host, port, name):
                   for i in range(60):
                       try:
                           socket.create_connection((host, port), timeout=3).close()
-                          print(f'{name} ready')
+                          print(f"{name} ready")
                           return
                       except Exception:
-                          print(f'Waiting for {name}... ({i+1}/60)')
+                          print(f"Waiting for {name}... ({i+1}/60)")
                           time.sleep(5)
-                  raise RuntimeError(f'{name} not available after 5 minutes')
+                  raise RuntimeError(f"{name} not available after 5 minutes")
 
               def wait_http(url, name):
                   for i in range(60):
                       try:
                           urllib.request.urlopen(url, timeout=3)
-                          print(f'{name} ready')
+                          print(f"{name} ready")
                           return
                       except Exception:
-                          print(f'Waiting for {name}... ({i+1}/60)')
+                          print(f"Waiting for {name}... ({i+1}/60)")
                           time.sleep(5)
-                  raise RuntimeError(f'{name} not available after 5 minutes')
+                  raise RuntimeError(f"{name} not available after 5 minutes")
 
-              wait_tcp('invenio-postgresql.invenio.svc.cluster.local', 5432, 'PostgreSQL')
-              wait_tcp('invenio-redis.invenio.svc.cluster.local', 6379, 'Redis')
-              wait_http('http://invenio-search.invenio.svc.cluster.local:9200/_cluster/health', 'OpenSearch')
-              "
+              wait_tcp("invenio-postgresql.invenio.svc.cluster.local", 5432, "PostgreSQL")
+              wait_tcp("invenio-redis.invenio.svc.cluster.local", 6379, "Redis")
+              wait_http("http://invenio-search.invenio.svc.cluster.local:9200/_cluster/health", "OpenSearch")
+              PY
 
-              echo ""
-              echo "[1/8] Creating database tables (idempotent)..."
+              echo "[1/9] Database tables (idempotent)..."
               invenio db create 2>&1 || echo "Tables may already exist, continuing."
-
-              echo ""
-              echo "[2/8] Running pending database migrations..."
               invenio alembic upgrade 2>&1
               echo "Migrations done."
 
-              echo ""
-              echo "[3/8] Initializing search indices..."
-              invenio index init 2>&1 || echo "Indices may already exist, continuing."
+              echo "[2/9] Default files location (local, on the NFS PVC)..."
+              invenio files location create --default default-location "$INVENIO_INSTANCE_PATH/data" 2>&1 \
+                || echo "File location may already exist, continuing."
 
-              echo ""
-              echo "[4/8] Creating admin role and superuser access..."
+              echo "[3/9] Admin role and permissions..."
               invenio roles create admin 2>&1 || echo "Role may already exist."
               invenio access allow superuser-access role admin 2>&1 || echo "Permission may already exist."
 
-              echo ""
-              echo "[5/8] Loading RDM fixtures (vocabularies, resource types, etc.)..."
-              invenio rdm-records fixtures 2>&1
-              echo "Fixtures loaded."
+              echo "[4/9] Search index (rdm- prefix from UGM config)..."
+              invenio index init 2>&1 || echo "Indices may already exist, continuing."
 
-              echo ""
-              echo "[6/8] Rebuilding search index for existing records..."
-              invenio rdm-records rebuild-index 2>&1 || echo "No existing records to rebuild (first run)."
+              echo "[5/9] Custom fields..."
+              invenio rdm-records custom-fields init 2>&1 || echo "Records custom fields may already exist."
+              invenio communities custom-fields init 2>&1 || echo "Communities custom fields may already exist."
 
-              echo ""
-              echo "[7/8] Creating default file location..."
-              invenio files location create --default default-location s3://invenio-rdm/files/ 2>&1 \
-                || echo "File location may already exist, continuing."
+              echo "[6/9] Fixtures (general + vocabularies)..."
+              invenio rdm fixtures 2>&1 || true
+              invenio rdm-records fixtures 2>&1 || true
 
-              echo ""
-              echo "[8/8] Ensuring MinIO buckets exist..."
-              python3 -c "
-              import boto3, os
-              from botocore.config import Config
-              from botocore.exceptions import ClientError
+              echo "[7/9] Message queues..."
+              invenio queues declare 2>&1 || echo "Queues may already be declared."
 
-              s3 = boto3.client(
-                  's3',
-                  endpoint_url=os.environ['INVENIO_S3_ENDPOINT'],
-                  aws_access_key_id=os.environ['INVENIO_S3_ACCESS_KEY_ID'],
-                  aws_secret_access_key=os.environ['INVENIO_S3_SECRET_ACCESS_KEY'],
-                  config=Config(signature_version='s3v4'),
-                  region_name='us-east-1'
-              )
+              echo "[8/9] Rebuild search index for existing records..."
+              invenio rdm-records rebuild-index 2>&1 || echo "No existing records to rebuild."
 
-              for bucket in ['invenio-rdm', 'invenio-rdm-uploads', 'invenio-rdm-backups']:
-                  try:
-                      s3.head_bucket(Bucket=bucket)
-                      print(f'Bucket {bucket} already exists')
-                  except ClientError as e:
-                      if e.response['Error']['Code'] == '404':
-                          s3.create_bucket(Bucket=bucket)
-                          print(f'Bucket {bucket} created')
-                      else:
-                          raise
-              print('All buckets verified')
-              "
-
-              echo ""
-              echo "=== InvenioRDM setup complete! ==="
+              echo "[9/9] Setup complete."
+          volumeMounts:
+            - name: data
+              mountPath: /opt/invenio/var/instance/data
+            - name: archive
+              mountPath: /opt/invenio/var/instance/archive
           envFrom:
             - configMapRef:
                 name: invenio-app-config

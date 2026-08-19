@@ -6,12 +6,13 @@ on:
     tags:
       - 'v*'
     paths:
-      - 'docker/invenio/**'
+      - 'docker/ugm/**'
       - 'site/**'
       - 'templates/**'
       - 'static/**'
       - 'translations/**'
       - 'app_data/**'
+      - 'assets/**'
       - '.github/workflows/build-image.yaml'
   workflow_dispatch:
     inputs:
@@ -27,7 +28,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/invenio-rdm-custom
+  IMAGE_NAME: ${{ github.repository_owner }}/invenio-ugm
 
 jobs:
   build:
@@ -67,7 +68,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: docker/invenio/Dockerfile
+          file: docker/ugm/Dockerfile
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -126,6 +127,7 @@ jobs:
           # Run a quick smoke test to verify the image can start
           docker run --rm $IMAGE python -c \
             "import invenio_app; print('Invenio app imported successfully'); \
-             import invenio_s3; print('invenio-s3 imported successfully'); \
-             import boto3; print('boto3 imported successfully'); \
+             import invenio_app_rdm; print('invenio-app-rdm', invenio_app_rdm.__version__); \
              print('All imports OK')"
+          docker run --rm --entrypoint /bin/bash $IMAGE -c \
+            "uwsgi --version && id -u && id -g"
