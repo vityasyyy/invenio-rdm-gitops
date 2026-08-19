@@ -38,7 +38,7 @@ RUN cp -r ./static/. ${INVENIO_INSTANCE_PATH}/static/ && \
 # a uid/gid 1654 user so the runtime runAsUser:1654 can read/write the instance.
 RUN userdel -f invenio 2>/dev/null; groupadd -f -g 1654 invenio; \
     useradd -r -u 1654 -g 1654 --home-dir=/opt/invenio --shell=/bin/bash invenio; \
-    chown -R 1654:1654 ${INVENIO_INSTANCE_PATH} /opt/invenio/.local
+    chown -R 1654:1654 ${INVENIO_INSTANCE_PATH}
 
 USER invenio
 EXPOSE 5000
