@@ -120,7 +120,7 @@ spec:
                 - celery -A invenio_app.celery inspect ping -d celery@$(hostname) --timeout 15
             initialDelaySeconds: 60
             periodSeconds: 30
-            timeoutSeconds: 20
+            timeoutSeconds: 35
             failureThreshold: 3
           securityContext:
             allowPrivilegeEscalation: false

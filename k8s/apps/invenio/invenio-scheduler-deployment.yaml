@@ -62,7 +62,7 @@ spec:
               type: RuntimeDefault
       containers:
         - name: scheduler
-          image: ghcr.io/vityasyyy/invenio-ugm:latest
+          image: ghcr.io/vityasyyy/invenio-ugm@sha256:609eacc9c46951b98b016481128f7835cdcd73265b53f00e0b731c3b6440d887
           imagePullPolicy: IfNotPresent
           args:
             - celery
@@ -85,7 +85,7 @@ spec:
               command:
                 - /bin/sh
                 - -c
-                - pgrep -f "celery.*beat" >/dev/null
+                - grep -qa "celer[y]" /proc/[0-9]*/cmdline
             initialDelaySeconds: 30
             periodSeconds: 60
             failureThreshold: 3
