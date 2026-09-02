@@ -1,0 +1,29 @@
+# Plans Index
+
+Plans live in `docs/plans/` — `active/` for ongoing work, `completed/` for
+plans whose work is merged/verified. Every PR that changes behavior updates
+the relevant plan and this index (docs-follow-code). New concerns/findings
+discovered during a wave go into `docs/plans/active/` as part of the wave's PR.
+
+## Active
+
+| Plan | Branch | PR | Status |
+|---|---|---|---|
+| [2026-05-19-codebase-improvements.md](active/2026-05-19-codebase-improvements.md) | main (merged #9–#36) | — | **Mostly complete** — Tasks 1–15 verified in repo (sync waves, orphan cleanup, probes, Loki, netpol IPs, HPA/PDB, AppProject split, cert-manager removal, alerts). Remaining: Task 16 (released-PVC cleanup), Task 17 (kubelet 502 on worker-01 — known pre-existing infra issue, out of scope), Task 18 (off-site backup — placeholder, needs external S3 provider + credentials) |
+
+## Completed (merged to main)
+
+| Plan | Branch | Merged |
+|---|---|---|
+| [2026-05-20-ci-cd-and-reconciliation.md](completed/2026-05-20-ci-cd-and-reconciliation.md) | main (merged #9) | Phase A/B/C/D done — AppProject whitelist, Discord bridge image fix, CI/CD pipeline rewrite (`ci-render-manifests.sh`, `ci-validate-selectors.sh`, `validate-infra.yaml`, `deploy-verify.yaml`, `.pre-commit-config.yaml`, `setup-branch-protection.sh`), `rendered/` gitignored |
+| [2026-05-25-cluster-health-fixes-and-improvements.md](completed/2026-05-25-cluster-health-fixes-and-improvements.md) | main (merged #9) | Tasks 1–14 done — PDB selectors, HPA drift, probes, cloudflared seccomp, branch protection, resource quotas, Replace=true removal, orphan cleanup, duplicate AppProject removal, prometheus scrape ports, syncOptions, theme ConfigMap removal, Dockerfile pip cache |
+| [2026-05-29-cluster-health-fixes.md](completed/2026-05-29-cluster-health-fixes.md) | main (merged #12, #17, #18) | Tasks 1–5 done — CNPG apiserver egress netpol (ports 443+6443), Loki chunks-cache sizing, worker startup probe, Velero LimitRange, ArgoCD-self ignoreDifferences |
+| [2026-06-01-traefik-404-fix-overhaul.md](completed/2026-06-01-traefik-404-fix-overhaul.md) | main (merged #24–#36) | Tasks 1–11 done — Traefik apiserver egress fix, default-deny ingress, cross-namespace Middleware, shared security-headers Middleware, IngressRoute updates, duplicate AppProject removal, README overhaul, sealed-secrets key moved out of repo |
+| [2026-08-14-cluster-recovery-and-ugm-migration.md](completed/2026-08-14-cluster-recovery-and-ugm-migration.md) | main (merged #54–#64) | **Phase 1 + Phase 2 COMPLETE** — cluster recovered to baseline (all ArgoCD apps Synced+Healthy, 500 saga cleared), UGM image vendored + built (`ghcr.io/vityasyyy/invenio-ugm`), deployed with NFS storage, API regression fixed (combined wsgi), debug artifacts removed. See `docs/planning-ledger` for the full task-by-task record |
+| [fix-cluster-health.md](completed/fix-cluster-health.md) | main (merged #9) | Done — kustomize patch format fix (8 patch files), ArgoCD infra project + Application manifests applied, bootstrap completed |
+| [fix-invenio-upload-and-minio-buckets.md](completed/fix-invenio-upload-and-minio-buckets.md) | main (merged #49, #59) | Tasks 1–6 done — MinIO buckets created, bucket creation moved into `invenio-setup-job` (PostSync hook removed), OpenSearch worker connection fixed, uploads verified. Superseded for storage by the UGM migration (NFS local files, MinIO retired for app files) |
+
+## Archive (superseded / historical)
+
+No archived plans yet. Superseded execution plans and historical design
+documents will be moved to `docs/archive/` when they accumulate.
