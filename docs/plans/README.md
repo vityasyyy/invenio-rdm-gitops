@@ -9,7 +9,7 @@ discovered during a wave go into `docs/plans/active/` as part of the wave's PR.
 
 | Plan | Branch | PR | Status |
 |---|---|---|---|
-| [2026-09-02-email-confirmation.md](active/2026-09-02-email-confirmation.md) | feat/67-mail-config | — | **Active** — SMTP mail plumbing complete with placeholder credentials (invenio.cfg MAIL_* env wiring, ConfigMap relay vars, sealed MAIL_USERNAME/MAIL_PASSWORD). Awaiting operator-supplied university SMTP relay credentials (re-seal + replace placeholder host) |
+| [2026-09-02-email-confirmation.md](active/2026-09-02-email-confirmation.md) | feat/67-mail-config (#69) + fix/71-image-digest-bump (#72) | #69, #72 | **DEPLOYED + VERIFIED 2026-09-02** — SMTP plumbing live in cluster (ConfigMap relay vars, sealed MAIL_USERNAME/MAIL_PASSWORD, mail-enabled image `0f685be` rolled to web/worker/scheduler). Awaiting operator-supplied university SMTP relay credentials (re-seal + replace placeholder host) |
 | [2026-05-19-codebase-improvements.md](active/2026-05-19-codebase-improvements.md) | main (merged #9–#36) | — | **Mostly complete** — Tasks 1–15 verified in repo (sync waves, orphan cleanup, probes, Loki, netpol IPs, HPA/PDB, AppProject split, cert-manager removal, alerts). Remaining: Task 16 (released-PVC cleanup), Task 17 (kubelet 502 on worker-01 — known pre-existing infra issue, out of scope), Task 18 (off-site backup — placeholder, needs external S3 provider + credentials) |
 
 ## Completed (merged to main)
