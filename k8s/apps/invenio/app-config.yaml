@@ -38,3 +38,11 @@ data:
   INVENIO_APP_ENABLE_SECURE_HEADERS: "False"
   INVENIO_JSONSCHEMAS_HOST: "invenio.vityasy.me"
   INVENIO_WSGI_PROXIES: "1"
+  # Mail (Flask-Mail) — SMTP relay for confirmation/reset emails.
+  # MAIL_SERVER is a PLACEHOLDER: the operator replaces it with the university
+  # SMTP relay host. MAIL_USERNAME/MAIL_PASSWORD live in the invenio-app-secrets
+  # SealedSecret (sealed with kubeseal, see docs/plans/active/2026-09-02-email-confirmation.md).
+  MAIL_SERVER: "smtp.example.org"
+  MAIL_PORT: "587"
+  MAIL_USE_TLS: "true"
+  MAIL_DEFAULT_SENDER: "noreply@invenio.vityasy.me"
