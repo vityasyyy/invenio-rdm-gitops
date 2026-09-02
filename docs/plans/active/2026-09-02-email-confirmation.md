@@ -1,8 +1,8 @@
 # Email Confirmation / SMTP Mail Configuration — Implementation Plan
 
 > **Issue:** #67 (T2) — Wire SMTP mail configuration with placeholder credentials.
-> **Branch:** `feat/67-mail-config`
-> **Status:** Active — plumbing complete, awaiting operator-supplied university SMTP relay credentials.
+> **Branch:** `feat/67-mail-config` (merged #69) + `fix/71-image-digest-bump` (merged #72)
+> **Status:** **DEPLOYED + VERIFIED 2026-09-02** — plumbing live in cluster (ConfigMap + SealedSecret + mail-enabled image `0f685be` rolled to web/worker/scheduler; `MAIL_*` env confirmed in running pods). Remaining: operator supplies university SMTP relay credentials (re-seal `MAIL_USERNAME`/`MAIL_PASSWORD` per Operator steps below).
 
 ## Why
 
