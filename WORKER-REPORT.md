@@ -1,48 +1,62 @@
-# WORKER-REPORT — CNPG Postgres Recovery (issue #76, branch fix/74-db-recovery)
+# WORKER-REPORT — Issue #75: Kubelet streaming-proxy 502 (T3)
 
-**Date:** 2026-09-02 · **Role:** investigator + preparer (read-only; no mutations performed)
-**Issue:** #76 (T3) — Recover CNPG postgres cluster to declared single-instance state
-**Note:** branch slug references #74, but the actual issue is **#76** (the #74 issue is the worker-02 rebalance, which itself references "the crash-looping CNPG replicas (fixed by #74)" — circular; #76 is the authoritative issue for this work).
+**Worker:** fix/75-proxy-502 worktree
+**Date:** 2026-09-03
+**Status:** DIAGNOSIS COMPLETE — remediation commands prepared, **no cluster mutations performed** (docs-only commit)
 
-## What was found (diagnosis evidence)
+## Root Cause (confirmed by reproduction)
 
-1. **Drift confirmed:** `spec.instances: 1` (declared in git since #53, commit 1558167) but `status.instances: 3`. `postgres-3` is the sole healthy primary (Ready=True, 1 restart, running since 2026-08-14). `postgres-1` (445 restarts) and `postgres-2` (368 restarts) crash-loop for 18 days.
-2. **WAL archiver deadlock confirmed (postgres-2 logs):** every ~10 min reconcile: `barman-cloud-check-wal-archive: ERROR: WAL archive check failed for server postgres: Expected empty archive` with 11 ready WALs pending. The non-empty `wal/` prefix in `s3://invenio-rdm-backups/postgres` blocks the check → instance never ready → operator never completes scale-down.
-3. **postgres-1 failure mode:** startup probe 500 (`HTTP probe failed with statuscode: 500`); container exits `Completed` (exit 0) after ~60 min, kubelet restarts. Root cause not fully diagnosed (logs unreadable via 502 proxy) — likely the same archiver/status-extraction path; removal is the fix regardless.
-4. **Cluster conditions:** `Ready=False (ClusterIsNotReady)`, `ContinuousArchiving=False (ContinuousArchivingFailing)`, `LastBackupSucceeded=False (LastBackupFailed)`.
-5. **Backups:** 1,871 Backup CRs, **0 completed, all failed** since 2026-06-04 (90d) with `error dialing backend: proxy error from 127.0.0.1:9345 while dialing 10.17.117.43:10250, code 502` — the kubelet streaming-proxy issue tracked as **#75**. ScheduledBackup `postgres-daily-backup` stuck at `nextScheduleTime: 2026-08-21T03:02:00Z` (not advancing since 2026-08-21).
-6. **MinIO bucket contents NOT verified:** `kubectl exec` into MinIO failed twice with the same 502 proxy error (MinIO pod is on worker-02, 10.17.117.43). Per escalation rule, noted and not retried. Expected structure (barman): `wal/` (stale WALs — the blocker), `base/`, `backups/`. **Lead must run Step 1a (`mc ls`) before moving anything.**
-7. **No manifest change needed:** `k8s/apps/invenio-deps/postgresql/cluster.yaml` already declares `instances: 1`; drift is purely in-cluster. This wave is docs-only.
-8. **Other:** PVCs postgres-1/2/3 all Bound (10Gi, btd-nfs); PDB `postgres-primary` (minAvailable 1) won't block replica removal; netpols allow postgres→MinIO:9000; operator is Helm `cloudnative-pg-0.23.0` (image 1.25.0), 41 restarts, on worker-02.
+The RKE2 supervisor kubelet proxy (`127.0.0.1:9345`) has **no remotedialer session
+for `ubuntu-btd-kubernetes-worker-02`**. Reproduced the exact egress path from inside
+`kube-apiserver-ubuntu-btd-kubernetes-server` (using the apiserver's own client cert):
 
-## Prepared commands (lead executes with user approval — NOT run)
+```
+CONNECT 10.17.117.42:10250 → HTTP/1.1 200 OK   (worker-01: tunnel OK)
+CONNECT 10.17.117.41:10250 → HTTP/1.1 200 OK   (server node: tunnel OK)
+CONNECT 10.17.117.43:10250 → HTTP/1.1 502 Bad Gateway
+  {"message":"failed to find Session for client ubuntu-btd-kubernetes-worker-02","code":502}
+```
 
-Full detail in `docs/plans/active/2026-09-02-db-recovery.md` → "Execution Steps". Summary:
+This is the exact error string in every CNPG backup failure since 2026-06-04
+(1,872 failed Backup objects). The kubelet on worker-02 is healthy: TCP+TLS
+reachable from pod and host networks (401 = auth expected), cert valid to 2027-07-17.
 
-1. **Pre-flight (read-only):** verify postgres-3 Ready=True, restart count unchanged; verify spec/status instances = 1/3.
-2. **Move-aside (reversible, REQUIRES APPROVAL):** `mc mv --recursive local/invenio-rdm-backups/postgres/wal/ local/invenio-rdm-backups/postgres-stale-2026-09-02/` (via `kubectl exec -n minio deploy/minio`). Count objects before/after. Rollback = `mc mv` back. If exec 502s, run `mc` from a worker-01 pod or wait for #75.
-3. **Scale-down (REQUIRES APPROVAL):** no patch needed — spec already says 1. Watch `kubectl get pods -n database -w`; if postgres-2 still deadlocks, `kubectl rollout restart deploy/invenio-postgresql-cloudnative-pg -n database` to force reconcile.
-4. **Force-removal (LAST RESORT, REQUIRES EXPLICIT USER APPROVAL):** only if operator won't scale down: `kubectl delete pod postgres-1 postgres-2 -n database --grace-period=0 --force` (replicas only; PVCs retained; WALs preserved).
-5. **Manual backup (REQUIRES APPROVAL):** `kubectl create -f - <<EOF` Backup CR `manual-recovery-verify-20260902` (cluster: postgres, method: barmanObjectStore); watch `phase=completed`.
-6. **Verify:** cluster `1/1/1`, Ready=True, ContinuousArchiving=True, LastBackupSucceeded=True, scheduled backup advances.
+## Evidence Summary (per boundary)
 
-## What the lead must approve/execute
+| Boundary | Finding |
+|---|---|
+| kubectl streaming | worker-01 logs/exec OK; worker-02 logs/exec 502 (all pods, incl. fleet-agent, CNPG operator) |
+| kubelet direct | 10.17.117.43:10250 reachable (401) from cluster-agent pod, server kube-proxy, worker-01 kube-proxy |
+| supervisor proxy :9345 | 200 for worker-01 + server; **502 "failed to find Session for client ubuntu-btd-kubernetes-worker-02"** for worker-02 |
+| Rancher agents | cattle-cluster-agent v2.12.3 ×2 on server node (8–9 restarts, 41h ago); **no cattle-node-agent DaemonSet** (RKE2 uses host-level rancher-system-agent); agent logs show flapping websocket to 10.17.104.130:443 (connection refused / close 1006) |
+| Nodes | All Ready=True, heartbeats fresh; worker-01 (15d old) shares machineID with worker-02 (VM clone) |
+| CNPG | scheduledbackup 0 2 * * *, all backups failed since 2026-06-04; postgres-1/2 crash-looping on startup probe (separate issue) |
 
-- [ ] Step 1 move-aside (reversible, but mutates MinIO)
-- [ ] Step 2 operator reconcile/restart
-- [ ] Step 3 force-removal of postgres-1/2 (only if Step 2 stalls; explicit approval required)
-- [ ] Step 4 manual Backup CR
-- [ ] Confirm bucket contents with `mc ls` before any move (Step 1a)
+## Prepared Remediation (lead executes with user approval — NOT run)
 
-## Escalations / open items
+1. `kubectl -n cattle-system rollout restart deploy/cattle-cluster-agent` + `rollout status` (forces session re-registration)
+2. Verify: `kubectl -n invenio logs/exec invenio-web-f64d84446-mf5n6` ×3, `kubectl get --raw /api/v1/nodes/ubuntu-btd-kubernetes-worker-02/proxy/healthz`
+3. If still 502: SSH to worker-02 → `systemctl restart rancher-system-agent` (host-level; needs user-supplied credentials) or Rancher UI Edit→Save on the node
+4. Verify CNPG backup completes (`kubectl -n database get backups | tail` → `completed`)
+5. Regression: worker-01 + server node streaming still OK
 
-- **#75 (kubelet 502 proxy):** blocks `kubectl logs/exec` on worker-02 pods (operator, postgres-1, MinIO). Backup pipeline will keep failing until fixed — manual backup in Step 4 may fail with 502; if so, document and escalate, do not retry in a loop.
-- **postgres-1 root cause** (startup probe 500) not fully diagnosed — logs unreadable via 502. Removal is the fix; no further investigation needed for this wave.
-- **Restore drill** deliberately NOT in this wave (see plan "Restore drill (follow-up)" section) — needs healthy cluster + completed backup + #75 resolution first.
+Full commands + escalation path in `docs/plans/active/2026-09-02-proxy-502.md`.
 
-## Deliverables in this worktree
+## What the Lead Must Approve
 
-- `docs/plans/active/2026-09-02-db-recovery.md` (new — plan + evidence + prepared commands)
-- `docs/plans/README.md` (index updated)
+- [ ] `kubectl -n cattle-system rollout restart deploy/cattle-cluster-agent` (Step 1)
+- [ ] SSH to worker-02 / Rancher UI node re-registration (Step 3, only if Step 1 fails)
+- [ ] Manual CNPG backup trigger (Step 4)
+
+## Files Changed (docs-only)
+
+- `docs/plans/active/2026-09-02-proxy-502.md` (new — diagnosis + remediation plan)
+- `docs/plans/README.md` (index entry)
 - `WORKER-REPORT.md` (this file)
-- Commit: `docs: db-recovery plan with prepared execution steps (#76)` — docs-only, no cluster mutations
+
+## Gaps / Notes
+
+- No SSH access to nodes (all keys denied) — host-level agent checks deferred to lead/user.
+- Rancher management API (`/v3/nodes`) not queryable with the cluster-scoped kubeconfig token (401) — Rancher UI access needed for deeper agent-state inspection.
+- `postgres-1`/`postgres-2` startup-probe crash-loop (500 on /healthz) is a **separate** issue from the 502; flagged for a follow-up.
+- worker-01/worker-02 duplicate `machineID` noted as a possible agent-identity risk if re-registration misbehaves.
