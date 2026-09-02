@@ -2,6 +2,7 @@
 .env.*
 !.env.example
 secrets/
+keys.txt
 *.local
 *.local.yaml
 kubeconfig*
