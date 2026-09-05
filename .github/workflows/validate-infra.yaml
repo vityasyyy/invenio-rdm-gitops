@@ -3,13 +3,9 @@ name: Validate Infrastructure
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'argocd/**'
-      - 'k8s/**'
-      - 'external-lb/**'
-      - 'scripts/**'
-      - '.github/workflows/**'
-      - '.pre-commit-config.yaml'
+    # NOTE: no `paths` filter on purpose. Branch protection requires these
+    # checks on EVERY PR to main, so the workflow must run for every PR —
+    # including docs-only ones (see issue #83, which was stuck on Expected).
 
 permissions:
   contents: read
