@@ -136,3 +136,22 @@ Escalation question for the lead is recorded in `WORKER-REPORT.md`.
 2. Same for worker-01 → sane headroom on both nodes
 3. `https://invenio.vityasy.me` and `https://api-invenio.vityasy.me` return 200
 4. No OOMKilled events: `kubectl get events -A --field-selector reason=OOMKilled`
+
+## Lead verification sweep 2026-09-05 ~17:0x +07 (VPN up, read-only)
+
+Two capacity-relevant observations for the #74 scope decision (no manifest
+changes — recorded, not acted on):
+
+1. **worker-01 drifted slightly since the 16:48 +07 measurement:** requests
+   5315Mi → **5379Mi (67.9%)**, limits 14849Mi → **15105Mi (190.8%)**
+   (+64Mi req / +256Mi lim; worker-02 unchanged at 6610Mi/28040Mi). Cause
+   unknown (pod churn or HPA movement) — small, but it eats the exact
+   headroom a rebalance would need. Re-measure before sizing any move.
+2. **`invenio-worker` HPA is pinned at max 2/2** with memory 76%/80% (CPU was
+   168%/70% at 16:48, 50%/70% at 17:0x — spiky). If worker load grows it
+   cannot scale further; raising `maxReplicas` needs the memory headroom this
+   issue is about — the two decisions are coupled, decide together.
+3. **Endpoints independently healthy (no rollout involved):**
+   `invenio.vityasy.me/ping` 200, `api-invenio.vityasy.me/api/records` 200,
+   `argocd.vityasy.me` 200, `grafana.vityasy.me` 302 (login redirect, normal).
+   17/17 ArgoCD apps Synced+Healthy, zero failed pods, zero OOMKilled.
