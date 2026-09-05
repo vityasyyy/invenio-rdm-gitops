@@ -10,9 +10,12 @@
 > blocking failed Backup was deleted and `manual-backup-verify-20260905` reached
 > **`completed`** — first completed backup since 2026-06-04. Conditions now
 > **Ready True + ContinuousArchiving True + LastBackupSucceeded True**.
-> Scheduler-loop recovery (timestamps advancing past 2026-08-21) is verified
-> separately in `docs/plans/active/2026-09-05-backup-scheduler-deadlock.md` —
-> do not duplicate that work here.
+> Scheduler-loop recovery **CONFIRMED 2026-09-05 (~09:0x UTC, after VPN reconnect):**
+> timestamps advanced to last 2026-09-05T09:02 / next 2026-09-05T10:02, the
+> scheduler recreated the previously-blocking name fresh and it completed,
+> plus a new 09:02 backup completed (3 completed total), zero `already exists`
+> in 30 min of operator logs — see the completed deadlock plan
+> (`docs/plans/completed/2026-09-05-backup-scheduler-deadlock.md`).
 
 ## Verification 2026-09-05 (lead-verified live state)
 

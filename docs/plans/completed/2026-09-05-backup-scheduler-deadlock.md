@@ -1,8 +1,8 @@
-# Backup scheduler deadlock — diagnosis + prepared unblock (2026-09-05)
+# Backup scheduler deadlock — diagnosis + unblock + recovery (2026-09-05, CLOSED)
 
-> Read-only diagnosis. No cluster mutation performed. Every command in §5
-> is marked **NEEDS APPROVAL — NOT RUN**. Index update (`docs/plans/README.md`)
-> intentionally left to the docs-sync worker.
+> **Status: RESOLVED + VERIFIED 2026-09-05 — closes #81.** Scheduler loop
+> recovered (timestamps advanced to 2026-09-05, 3 completed backups, zero
+> `already exists` in 30 min of operator logs). Moved to `completed/` on close.
 
 ## Diagnosis
 
@@ -77,18 +77,22 @@ kubectl -n database get scheduledbackup postgres-daily-backup -o yaml | grep -A4
   `docs/plans/active/2026-09-02-proxy-502.md`. Keep the §5-step-2 delete (harmless).
 - `already exists` persists → read-only `get backups | grep <name from log>` and escalate.
 
-## Execution outcome (2026-09-05, user-approved)
+## Execution outcome (2026-09-05, user-approved — RECOVERY CONFIRMED)
 
 - Blocking object snapshotted (32 lines) then deleted — `deleted from database namespace`.
 - `manual-backup-verify-20260905` applied and reached **`completed`** via blocking
   `kubectl wait` — first completed backup since 2026-06-04 (90+ days).
 - Cluster conditions now **Ready=True, ContinuousArchiving=True,
   LastBackupSucceeded=True** (was `LastBackupFailed`).
-- Scheduler recovery pending next reconcile loop (~15 min): at 08:39 UTC the loop
-  still logged `already exists` (delete landed after that loop); the blocking name
-  is currently absent (`NotFound`), so the next loop should create it fresh and
-  advance `nextScheduleTime` past 2026-08-21T03:02:00Z. Verify before closing #81:
-  `kubectl -n database get scheduledbackup postgres-daily-backup -o jsonpath='{.status.nextScheduleTime}'`.
+- **Scheduler loop RECOVERED (verified after VPN reconnect, ~09:0x UTC):**
+  `lastScheduleTime=2026-09-05T09:02:00Z`, `nextScheduleTime=2026-09-05T10:02:00Z`
+  (advanced past the frozen 2026-08-21T03:02:00Z). The 09:02 loop created
+  `postgres-daily-backup-20260905090200` fresh and it reached **`completed`**;
+  the previously-blocking name `postgres-daily-backup-20260821030200` was
+  recreated by the scheduler and also **completed**. Three completed backups
+  total; zero `already exists` errors in the last 30 min of operator logs
+  (the 08:22/08:39 errors predate the delete). Daily 02:00 schedule resumes
+  on its own — no further action.
 
 ## Open questions
 
