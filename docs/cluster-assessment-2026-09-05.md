@@ -66,8 +66,9 @@ WAL move-aside unblocked the archiver; the operator removed postgres-1/2 and
 `postgres-3` serves as the healthy single primary. 2026-09-05 user-approved
 execution: blocking failed Backup deleted, `manual-backup-verify-20260905`
 **completed** (first since 2026-06-04) — `LastBackupSucceeded` now True.
-Scheduler timestamps advancing past 2026-08-21 still to be confirmed on the
-next loop (~15 min).
+**Scheduler recovery CONFIRMED (~09:0x UTC):** timestamps advanced to
+2026-09-05 (last 09:02 / next 10:02), 3 completed backups, zero `already
+exists` in 30 min of operator logs. Daily schedule resumes on its own.
 (Plan: `docs/plans/active/2026-09-02-db-recovery.md`.)
 
 ### (c) Backup scheduler deadlock — stuck since 2026-08-21 — OWNED BY backup-diag WORKER
