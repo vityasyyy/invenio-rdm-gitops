@@ -6,23 +6,27 @@
 > archiver, the operator reconciled to the declared single-instance state
 > (**spec 1 / status 1 / ready 1**, primary `postgres-3`, conditions Ready True +
 > ContinuousArchiving True). postgres-1/2 pods removed (their PVs are now
-> Released — Task 16 scope). LastBackupSucceeded is still False: the backup
-> **scheduler** deadlock (stuck since 2026-08-21, `already exists` error) is a
-> separate issue owned by the backup-diag worker in
-> `docs/plans/active/2026-09-05-backup-scheduler-deadlock.md` — do not duplicate
-> that work here.
+> Released — Task 16 scope). **Update 2026-09-05 (user-approved execution):** the
+> blocking failed Backup was deleted and `manual-backup-verify-20260905` reached
+> **`completed`** — first completed backup since 2026-06-04. Conditions now
+> **Ready True + ContinuousArchiving True + LastBackupSucceeded True**.
+> Scheduler-loop recovery (timestamps advancing past 2026-08-21) is verified
+> separately in `docs/plans/active/2026-09-05-backup-scheduler-deadlock.md` —
+> do not duplicate that work here.
 
 ## Verification 2026-09-05 (lead-verified live state)
 
 - `spec.instances: 1` / `status.instances: 1` / `readyInstances: 1` — operator
   fully reconciled; only `postgres-3` runs (healthy primary, Ready True).
 - Cluster conditions: `Ready True`, `ContinuousArchiving True` (archiver
-  unblocked by the reversible WAL move-aside), `LastBackupSucceeded False`
-  (no backup has completed yet).
-- Backups: **1,872 failed Backup objects, zero completed**. ScheduledBackup
-  `postgres-daily-backup` stuck since 2026-08-21 (`lastScheduleTime`
-  2026-08-21T02:02:00Z): every new Backup CR creation fails with an `already
-  exists` error on `postgres-daily-backup-20260821030200`.
+  unblocked by the reversible WAL move-aside), `LastBackupSucceeded True`
+  (as of the 2026-09-05 manual backup completing; was False before).
+- Backups: **1,872 failed Backup objects, one completed**
+  (`manual-backup-verify-20260905`). ScheduledBackup
+  `postgres-daily-backup` was stuck since 2026-08-21 (`lastScheduleTime`
+  2026-08-21T02:02:00Z): every new Backup CR creation failed with an `already
+  exists` error on `postgres-daily-backup-20260821030200` — unblocked
+  2026-09-05 by deleting that failed object (see the deadlock plan).
 - Kubelet streaming to worker-02 now works (logs/exec/healthz OK after the
   university IT worker-02 restart — see the proxy-502 plan), so the old 502
   exec failure mode is cleared; the remaining blocker is purely the scheduler

@@ -30,13 +30,13 @@
 Delete exactly the one failed blocking Backup CR so the next reconcile creates it
 fresh and advances; then prove the path with a uniquely-named manual Backup.
 
-## Prepared commands (ALL NEED APPROVAL — NOT RUN)
+## Prepared commands (ALL NEEDED APPROVAL — EXECUTED 2026-09-05, see outcome below)
 
 ```bash
-# 1. Audit snapshot (read-only, run first)
-kubectl -n database get backup postgres-daily-backup-20260821030200 -o yaml > /tmp/blocking-backup-20260821030200.yaml
+# 1. Audit snapshot (read-only, ran first — saved outside the repo)
+kubectl -n database get backup postgres-daily-backup-20260821030200 -o yaml > "$TMPDIR/blocking-backup-20260821030200.yaml"
 
-# 2. Unblock: delete the failed blocking object ONLY
+# 2. Unblock: delete the failed blocking object ONLY — EXECUTED, deleted
 kubectl -n database delete backup.postgresql.cnpg.io postgres-daily-backup-20260821030200
 ```
 
@@ -76,6 +76,19 @@ kubectl -n database get scheduledbackup postgres-daily-backup -o yaml | grep -A4
 - Manual backup 502s again → stop, streaming regressed; re-escalate via
   `docs/plans/active/2026-09-02-proxy-502.md`. Keep the §5-step-2 delete (harmless).
 - `already exists` persists → read-only `get backups | grep <name from log>` and escalate.
+
+## Execution outcome (2026-09-05, user-approved)
+
+- Blocking object snapshotted (32 lines) then deleted — `deleted from database namespace`.
+- `manual-backup-verify-20260905` applied and reached **`completed`** via blocking
+  `kubectl wait` — first completed backup since 2026-06-04 (90+ days).
+- Cluster conditions now **Ready=True, ContinuousArchiving=True,
+  LastBackupSucceeded=True** (was `LastBackupFailed`).
+- Scheduler recovery pending next reconcile loop (~15 min): at 08:39 UTC the loop
+  still logged `already exists` (delete landed after that loop); the blocking name
+  is currently absent (`NotFound`), so the next loop should create it fresh and
+  advance `nextScheduleTime` past 2026-08-21T03:02:00Z. Verify before closing #81:
+  `kubectl -n database get scheduledbackup postgres-daily-backup -o jsonpath='{.status.nextScheduleTime}'`.
 
 ## Open questions
 

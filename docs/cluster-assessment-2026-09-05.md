@@ -45,8 +45,8 @@ CrashLoopBackOff is resolved).
 - `invenio-web` ×2 Running, `invenio-worker` ×2 Running,
   `invenio-scheduler` ×1 Running.
 - CNPG `postgres`: spec 1 / status 1 / ready 1, primary `postgres-3`
-  (Ready True, ContinuousArchiving True, LastBackupSucceeded False).
-  postgres-1/2 pods removed; their PVs are now Released.
+  (Ready True, ContinuousArchiving True, LastBackupSucceeded True as of the
+  2026-09-05 manual backup). postgres-1/2 pods removed; their PVs are now Released.
 
 ## Findings
 
@@ -60,11 +60,14 @@ share machineID `de88ca16...`** (VM clones), so the session can drop again on
 the next reconnect flap. IT ticket for unique machine-ids still required.
 (Plan: `docs/plans/active/2026-09-02-proxy-502.md`.)
 
-### (b) Postgres reconciled to 1/1/1, Ready + Archiving True — RESOLVED (backup pipeline still red)
+### (b) Postgres reconciled to 1/1/1, all conditions green — RESOLVED (scheduler loop recovery pending)
 
 WAL move-aside unblocked the archiver; the operator removed postgres-1/2 and
-`postgres-3` serves as the healthy single primary. `LastBackupSucceeded`
-remains False: 1,872 failed Backup objects, zero completed.
+`postgres-3` serves as the healthy single primary. 2026-09-05 user-approved
+execution: blocking failed Backup deleted, `manual-backup-verify-20260905`
+**completed** (first since 2026-06-04) — `LastBackupSucceeded` now True.
+Scheduler timestamps advancing past 2026-08-21 still to be confirmed on the
+next loop (~15 min).
 (Plan: `docs/plans/active/2026-09-02-db-recovery.md`.)
 
 ### (c) Backup scheduler deadlock — stuck since 2026-08-21 — OWNED BY backup-diag WORKER
