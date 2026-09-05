@@ -97,12 +97,28 @@ push main → CI (yamllint/kustomize/kubeconform/gitleaks) → ArgoCD app-of-app
 9. 🟢 Email: wired, placeholder SMTP (#69/#72) — awaiting university relay creds (operator step documented).
 10. 🟢 DBRepo: **not in scope** (user curiosity only; decision: do not deploy).
 
+## Operator actions — status 2026-09-05 (lead-verified)
+
+| # | Action | Status 2026-09-05 |
+|---|---|---|
+| 1 | Back up sealed-secrets private key (`~/.sealed-secrets/`, single copy) | **STILL PENDING** — key pair exists (private + public pem), no backup found. Highest-priority operator step: copy to password manager / university vault |
+| 2 | University IT ticket: unique `/etc/machine-id` per node + reboot | **STILL PENDING — flap risk remains**. IT's worker-02 kill+restart reconnected the agent session (streaming works), but all 3 nodes still share `de88ca16...`, so the session can drop again |
+| 3 | Off-site backup decision (Cloudflare R2 vs university S3) | **STILL PENDING** — CNPG → MinIO and Velero → MinIO both in-cluster; 3 Released PVs (postgres-1, postgres-2, old redis-data) also await Task 16 cleanup |
+| 4 | University SMTP relay credentials (re-seal + replace `smtp.example.org`) | **STILL PENDING** — placeholder still live 2026-09-05; image `0f685be` pinned in git and live |
+| 5 | Restore drills (CNPG + Velero canary) | **STILL PENDING** — blocked until at least one backup completes (scheduler deadlock → backup-diag worker) |
+| 6 | Worker-02 rebalance (issue #74) | **NEW baseline 2026-09-05**: worker-02 83% requests / 354% limits, worker-01 67% / 187% — see `docs/plans/active/2026-09-05-worker-02-rebalance.md` |
+
+Resolved since 2026-09-03: worker-02 kubelet streaming (IT restart), postgres
+reconciled to spec 1 / status 1 / ready 1 with Ready + ContinuousArchiving True,
+17 of 17 ArgoCD apps Synced+Healthy, invenio web ×2 / worker ×2 / scheduler ×1
+Running.
+
 ## Task Groups
 
-- [ ] **Group 1**: Document architecture + findings (this doc) ✅
-- [ ] **Group 2**: Operator actions (backup sealed-secrets key; IT ticket for machineID; R2/university storage decision; SMTP creds)
-- [ ] **Group 3**: #75 resolution path (machineID via IT, or affinity workaround for CNPG backup exec)
-- [ ] **Group 4**: #74 worker-02 right-sizing after DB settles
+- [x] **Group 1**: Document architecture + findings (this doc) ✅
+- [ ] **Group 2**: Operator actions (key backup; machineID IT ticket — still pending 2026-09-05, flap risk remains; R2/university storage decision; SMTP creds — still placeholder 2026-09-05; see status table above)
+- [ ] **Group 3**: #75 resolution path — **streaming restored 2026-09-05 via IT worker-02 restart**; machineID fix via IT still pending, affinity workaround no longer urgent
+- [ ] **Group 4**: #74 worker-02 right-sizing — **baseline re-measured 2026-09-05** (83%/354%), plan at `2026-09-05-worker-02-rebalance.md`
 - [ ] **Group 5**: Restore drills (CNPG manual backup verify → restore test in canary; Velero restore drill per README)
 - [ ] **Group 6**: Off-site backup (R2 bucket + velero/CNPG re-point; migration path to university storage)
 
