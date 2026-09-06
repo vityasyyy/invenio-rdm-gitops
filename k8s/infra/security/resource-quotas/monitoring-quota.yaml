@@ -7,6 +7,11 @@ spec:
   hard:
     requests.cpu: "6"
     requests.memory: "12Gi"
-    limits.cpu: "16"
+    # NOTE (2026-09-06, #74): limits.cpu was 16 with 15.4 in use (96%) —
+    # every monitoring rollout wedged on FailedCreate during the rolling
+    # surge (old + new pods must fit simultaneously). Raised to 24 to cover
+    # steady-state (~15.4, unchanged by the memory-only #74 cuts) plus the
+    # worst-case 3-Deployment simultaneous surge (~4.5 CPU).
+    limits.cpu: "24"
     limits.memory: "24Gi"
     pods: "50"
