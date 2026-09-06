@@ -213,20 +213,31 @@ semantics. Math to beat: cluster-wide limits 42889Mi → under 31672Mi
 
 ### Phase-2 task groups
 
-- [ ] **Group 5**: Observe — top pods per in-bounds namespace, OOM history,
+- [x] **Group 5**: Observe — top pods per in-bounds namespace, OOM history,
   current requests/limits table (read-only kubectl)
   - **2026-09-06 worker wave BLOCKED — VPN down:** `cluster-info` + `describe
     node worker-02` both timed out (1 attempt each, no retry loop); no `top` /
     OOM / live node data. Git-from-manifest current table + last-known
     2026-09-05 baseline recorded in `WORKER-REPORT.md` (worktree root). No guessing.
-- [ ] **Group 6**: Propose — per-workload new values + computed node totals
+  - **2026-09-06 retry wave DONE (VPN up):** full live observe — baselines
+    identical to 2026-09-05 (worker-02 6610Mi/28040Mi = 83.5%/354.1%,
+    worker-01 5315Mi/14849Mi = 67.1%/187.5%), OOM events empty, per-pod top
+    captured. Two small upward drifts vs the v3 basis (argocd-server 121→127Mi,
+    minio 241→250Mi) — both still pass guardrails (2.0x / 2.05x limits,
+    requests still ≥ observed). See "Phase-2 implementation" below.
+- [x] **Group 6**: Propose — per-workload new values + computed node totals
   in WORKER-REPORT.md (must show worker-02 <75% / <200%)
   - **2026-09-06 BLOCKED (no observed basis):** guardrails require ≥2x/≥1.5x
     max-observed + OOM empty before/after; with VPN down neither is
     verifiable. No proposed values set — fabricated math refused. Needs:
     live `describe node` + `top` decomposition (chart defaults dominate:
     git-visible in-bounds ≈10.5Gi lim vs 12Gi monitoring-on-worker-02 alone).
-- [ ] **Group 7**: Implement — manifest edits + scheduler digest line +
+  - **2026-09-06 retry wave DONE:** v3 table adopted verbatim as the
+    implementation spec (16 numbered rows; worker-02 5458Mi/16456Mi =
+    68.9%/207.8%, worker-01 4406Mi/11572Mi = 55.6%/146.2%). The 620Mi limits
+    gap vs the 200% cap is recorded as accepted residual (lead decision) —
+    Q1 (a)/(b)/(c)/(d) squeezes NOT attempted. See "Phase-2 implementation".
+- [x] **Group 7**: Implement — manifest edits + scheduler digest line +
   `.opencode/.gitignore`; render-identical proof for scheduler;
   kustomize + yamllint per app; commit + push (no PR — lead integrates)
   - **2026-09-06 NOT EXECUTED (blocked with Group 6):** zero manifest edits;
@@ -235,6 +246,14 @@ semantics. Math to beat: cluster-wide limits 42889Mi → under 31672Mi
     `yamllint` clean on all in-bounds dirs + invenio. Deferred to VPN-up
     wave: scheduler digest string → `:latest` (render already `0f685be`,
     byte-identical proof via build diff) + `.gitignore` += `plans/`.
+  - **2026-09-06 implementation wave DONE (`feat/74-limits-impl`):** all 16
+    v3 rows applied + Q4 dead-key fixes + scheduler image string +
+    `.opencode/.gitignore` += `plans/`. Scheduler render byte-identical
+    (kustomize build diff empty, pin `0f685be` wins both ways). kustomize
+    builds clean (argocd 23648 lines, monitoring 646, minio 112, velero 59,
+    invenio 889), yamllint clean, all new Helm keys render-proven against
+    pinned charts before writing. Commit + push, no PR (lead integrates).
+    Details + file:line refs in `WORKER-REPORT.md` (worktree root).
 - [ ] **Group 8 (lead post-merge)**: ArgoCD sync watch → node alloc both
   workers → endpoints 200 → OOM events empty → HPA sane → close #74
 
@@ -255,3 +274,65 @@ Answers for the retry wave — do not re-escalate these:
    headroom is 731Mi — no pod moves, no affinity changes.
 4. **Scheduler digest string edit + `.opencode/.gitignore` ride WITH the
    VPN-up implementation PR** (single PR, not separate).
+
+## Phase-2 implementation (2026-09-06, branch `feat/74-limits-impl`)
+
+Groups 5–7 DONE. Implemented the lead-authorized v3 table EXACTLY (all 16
+numbered rows; skip-labeled rows stayed skipped). Q1 (a)/(b)/(c)/(d)
+squeezes NOT attempted per lead decision.
+
+### Final applied table (deltas vs live baseline, same node placement)
+
+| # | Workload | Req Δ | Lim Δ | File |
+|---|---|---|---|---|
+| 1 | applicationset (w02) 128/512 → 64/128 | −64 | −384 | `k8s/infra/argocd/patches/kustomize/security-context-applicationset.yaml` |
+| 2 | repo-server (w02) 256/1Gi → 128/256 (disp 128/512) | −128 | −512 | `.../security-context-repo.yaml` |
+| 3 | argocd-server (w01) 128/512 → 128/256 | 0 | −256 | `.../security-context-server.yaml` |
+| 4 | prometheus main (w02) 512/2Gi → 512/1024 | 0 | −1024 | `k8s/infra/monitoring/values.yaml` (`prometheus.prometheusSpec.resources`) |
+| 5 | config-reloaders ×4 (w02) 128/1Gi → 64/256 ea | −128 | −1536 pod-level | same file (`prometheusOperator.prometheusConfigReloader.resources` → operator flags) |
+| 6 | alertmanager main (w02) | keep | keep | — (untouched) |
+| 7 | grafana sidecars ×2 (w02) 128/1Gi → 64/128 ea | −128 | −1792 | same file (`grafana.sidecar.resources`, all sidecars) |
+| 8 | grafana main (w02) | keep | keep | — (untouched) |
+| 9 | prom-operator (w02) 128/1Gi → 64/128 | −64 | −896 | same file (`prometheusOperator.resources`) |
+| 10 | kube-state-metrics (w02) 128/1Gi → 64/64 | −64 | −960 | same file (`kube-state-metrics.resources`, new stanza) |
+| 11 | node-exporter ×2 128/1Gi → 64/64 ea | −64/−64 | −960/−960 | same file (`prometheus-node-exporter.resources`, new stanza) |
+| 12 | loki-canary ×2 128/1Gi → 64/64 ea | −64/−64 | −960/−960 | `k8s/infra/loki/values.yaml` (top-level `lokiCanary`, Q4 dead-key fix) |
+| 13 | chunks-cache (w02) pod 640/2048 → 320/640 | −320 | −1408 | same file (`chunksCache` 256/512 + `memcachedExporter` 64/128 + `allocatedMemory: 256`) |
+| 14 | results-cache (w01) pod 1357/2253 → 576/1152 | −781 | −1101 | same file (`resultsCache` 512/1024 + exporter + `allocatedMemory: 256`) |
+| 15 | traefik ×2 (w02) 128/512 → 64/192 ea | −64×2 | −320×2 | `k8s/infra/traefik/values.yaml` |
+| 16 | minio (w02) 256/1Gi → 256/512 | 0 | −512 | `k8s/infra/minio/values.yaml` |
+| — | scheduler image string `@sha256:609eacc9` → `:latest` | 0 | 0 | `k8s/apps/invenio/invenio-scheduler-deployment.yaml` (render byte-identical, pin `0f685be` wins) |
+| — | `.opencode/.gitignore` += `plans/` | — | — | housekeeping |
+
+### Computed node totals (unchanged from v3)
+
+- worker-02 requests: 6610 − 1152 = **5458Mi = 68.9%** ✅ (budget 5938.7Mi, margin 480Mi)
+- worker-02 limits: 28040 − 11584 = **16456Mi = 207.8%** — residual, see below
+- worker-01 requests: 5315 − 909 = **4406Mi = 55.6%** ✅
+- worker-01 limits: 14849 − 3277 = **11572Mi = 146.2%** ✅ (headroom 987Mi → 4264Mi)
+
+### Residual statement (accepted Phase-2 progress, not chased)
+
+worker-02 limits land at **~207.8%, 620Mi over the 200% heuristic cap**.
+This residual is EXPLICITLY ACCEPTED as Phase-2 progress: requests are fully
+fixed (83.5% → 68.9%, under the 75% cap with 480Mi margin), limits improve
+354.1% → 207.8% (−11.2Gi of overcommit), and worker-01 is safe on both axes
+(55.6%/146.2%). The Q1 squeezes that could close the 620Mi gap were
+deliberately NOT attempted — each trades guardrail margin, DR-baseline
+safety, or bounds dignity for a heuristic line. Follow-ups (capacity /
+revised targets, i.e. original Options 2/3) are lead decisions for a later
+phase, not this wave.
+
+### Verification (this wave)
+
+- One `kubectl top` guardrail pass + OOM empty + baselines identical
+  (server 121→127Mi and minio 241→250Mi drifts noted, still ≥2x).
+- Every new Helm key `helm template`-proven against pinned charts BEFORE
+  writing (kps 69.6.0, loki 6.24.0, traefik 39.0.6, minio 5.4.0); final
+  committed values re-templated (all exit 0, values confirmed in render).
+- Q4 dead keys proven dead (no template reads `monitoring.lokiCanary`;
+  `-m 8192`/`-m 1024` rendered from defaults) then fixed; final render
+  shows `-m 256` ×2 and canary 64/64.
+- Scheduler: `kustomize build` before/after diff EMPTY (byte-identical).
+- `kustomize build` per touched app + `yamllint` clean (see WORKER-REPORT.md).
+- No secrets in diff; GitOps only (zero `kubectl` writes).
