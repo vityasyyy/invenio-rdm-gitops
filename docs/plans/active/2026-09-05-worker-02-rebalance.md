@@ -215,10 +215,43 @@ semantics. Math to beat: cluster-wide limits 42889Mi → under 31672Mi
 
 - [ ] **Group 5**: Observe — top pods per in-bounds namespace, OOM history,
   current requests/limits table (read-only kubectl)
+  - **2026-09-06 worker wave BLOCKED — VPN down:** `cluster-info` + `describe
+    node worker-02` both timed out (1 attempt each, no retry loop); no `top` /
+    OOM / live node data. Git-from-manifest current table + last-known
+    2026-09-05 baseline recorded in `WORKER-REPORT.md` (worktree root). No guessing.
 - [ ] **Group 6**: Propose — per-workload new values + computed node totals
   in WORKER-REPORT.md (must show worker-02 <75% / <200%)
+  - **2026-09-06 BLOCKED (no observed basis):** guardrails require ≥2x/≥1.5x
+    max-observed + OOM empty before/after; with VPN down neither is
+    verifiable. No proposed values set — fabricated math refused. Needs:
+    live `describe node` + `top` decomposition (chart defaults dominate:
+    git-visible in-bounds ≈10.5Gi lim vs 12Gi monitoring-on-worker-02 alone).
 - [ ] **Group 7**: Implement — manifest edits + scheduler digest line +
   `.opencode/.gitignore`; render-identical proof for scheduler;
   kustomize + yamllint per app; commit + push (no PR — lead integrates)
+  - **2026-09-06 NOT EXECUTED (blocked with Group 6):** zero manifest edits;
+    docs-only commit (WORKER-REPORT.md + this plan + index). Offline checks
+    clean: `kustomize build k8s/apps/invenio` OK (889 lines),
+    `yamllint` clean on all in-bounds dirs + invenio. Deferred to VPN-up
+    wave: scheduler digest string → `:latest` (render already `0f685be`,
+    byte-identical proof via build diff) + `.gitignore` += `plans/`.
 - [ ] **Group 8 (lead post-merge)**: ArgoCD sync watch → node alloc both
   workers → endpoints 200 → OOM events empty → HPA sane → close #74
+
+### Lead answers to worker escalation (2026-09-06, VPN down at integration)
+
+Worker `limits-74` correctly stopped (VPN down both ends, no guessing).
+Answers for the retry wave — do not re-escalate these:
+
+1. **Retry Groups 5–7 when VPN is up** (worker observes first; same
+   stop-rule if still blocked). Lead will not pre-capture `top` snapshots —
+   observed usage must be fresh at implementation time.
+2. **YES — adding `resources:` stanzas to `values.yaml` for chart-default
+   workloads is IN BOUNDS** (same files/namespaces). Required: git-visible
+   in-bounds limits total only ≈10.75Gi cluster-wide vs the −11.2Gi needed,
+   so new stanzas (kube-state-metrics, node-exporter, operator, promtail,
+   node-agent, resultsCache, etc.) are the only way to reach the math.
+3. **Limits-cuts-only; ZERO rescheduling to worker-01.** Its limits
+   headroom is 731Mi — no pod moves, no affinity changes.
+4. **Scheduler digest string edit + `.opencode/.gitignore` ride WITH the
+   VPN-up implementation PR** (single PR, not separate).
