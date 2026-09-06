@@ -92,13 +92,16 @@ deployment:
   replicas: 2
 
 # Resource limits
+# Issue #74 Phase-2 row 15: 128Mi/512Mi -> 64Mi/192Mi memory-only (both
+# replicas on worker-02); cpu untouched. Observed 29/31Mi (2026-09-06 top);
+# 192Mi limit = 6x observed.
 resources:
   requests:
     cpu: "100m"
-    memory: "128Mi"
+    memory: "64Mi"
   limits:
     cpu: "500m"
-    memory: "512Mi"
+    memory: "192Mi"
 
 # Pod security
 podSecurityContext:

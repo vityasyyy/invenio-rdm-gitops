@@ -15,7 +15,7 @@ prometheus:
         memory: 512Mi
       limits:
         cpu: "1"
-        memory: 2Gi
+        memory: 1024Mi
     retention: 7d
     storageSpec:
       volumeClaimTemplate:
@@ -56,6 +56,15 @@ grafana:
   initChownData:
     enabled: false
   sidecar:
+    # Shared resources for all grafana sidecar containers (dashboards,
+    # datasources, alerts). Issue #74 Phase-2 row 7: 128Mi/1Gi (LimitRange)
+    # -> 64Mi/128Mi memory-only; cpu stays LimitRange-filled. Observed ~15Mi
+    # per sidecar (2026-09-06 top); 128Mi limit = 8x observed.
+    resources:
+      requests:
+        memory: 64Mi
+      limits:
+        memory: 128Mi
     dashboards:
       enabled: true
       label: grafana_dashboard
@@ -128,6 +137,16 @@ defaultRules:
 kubeStateMetrics:
   enabled: true
 
+# Resources for the kube-state-metrics subchart Deployment.
+# Issue #74 Phase-2 row 10: 128Mi/1Gi (LimitRange) -> 64Mi/64Mi memory-only;
+# cpu stays LimitRange-filled. Observed 22-25Mi (2026-09-06 top); 64Mi = 2.6x.
+kube-state-metrics:
+  resources:
+    requests:
+      memory: 64Mi
+    limits:
+      memory: 64Mi
+
 # Node Exporter
 nodeExporter:
   enabled: true
@@ -135,9 +154,37 @@ nodeExporter:
   tolerations:
     - operator: Exists
 
+# Resources for the prometheus-node-exporter subchart DaemonSet (both nodes).
+# Issue #74 Phase-2 row 11: 128Mi/1Gi (LimitRange) -> 64Mi/64Mi memory-only;
+# cpu stays LimitRange-filled. Observed 5Mi per node (2026-09-06 top); 64Mi = 12x.
+prometheus-node-exporter:
+  resources:
+    requests:
+      memory: 64Mi
+    limits:
+      memory: 64Mi
+
 # Prometheus Operator - disable admission webhooks to prevent failing job
 prometheusOperator:
   admissionWebhooks:
     enabled: false
     patch:
       enabled: false
+  # Resources for the prometheus-operator Deployment.
+  # Issue #74 Phase-2 row 9: 128Mi/1Gi (LimitRange) -> 64Mi/128Mi memory-only;
+  # cpu stays LimitRange-filled. Observed 23Mi (2026-09-06 top); 128Mi = 5.6x.
+  resources:
+    requests:
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+  # Config-reloader flags for prometheus + alertmanager pods (2 sidecars +
+  # 2 init containers on worker-02). Issue #74 Phase-2 row 5: 128Mi/1Gi
+  # (LimitRange) -> 64Mi/256Mi memory-only; cpu flags stay 0 (LimitRange fills
+  # cpu). Rendered as --config-reloader-memory-request/limit operator flags.
+  prometheusConfigReloader:
+    resources:
+      requests:
+        memory: 64Mi
+      limits:
+        memory: 256Mi

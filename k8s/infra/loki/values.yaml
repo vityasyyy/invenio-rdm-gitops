@@ -34,17 +34,42 @@ singleBinary:
     storageClassName: btd-nfs
 
 chunksCache:
-  allocated_memory: 256Mi
+  # Q4 fix: camelCase MB number (was snake_case `allocated_memory: 256Mi`,
+  # ignored — chart default 8192 applied, rendering `-m 8192`). 256 matches
+  # the sized-down memcached container below. Render-proof: `-m 256`.
+  allocatedMemory: 256
   resources:
     requests:
       cpu: 100m
-      memory: 512Mi
+      memory: 256Mi
     limits:
       cpu: 500m
-      memory: 1Gi
+      memory: 512Mi
 
 resultsCache:
-  allocated_memory: 256Mi
+  # Q4 fix: same snake_case dead key (chart default 1024 applied, rendering
+  # `-m 1024` and auto-sizing memcached to 1229Mi/1229Mi). Now 256 to match.
+  # Render-proof: `-m 256`.
+  allocatedMemory: 256
+  # Issue #74 Phase-2 row 14: explicit memcached resources replace the
+  # allocatedMemory-derived 1229Mi/1229Mi auto-sizing. Memory-only (cpu stays
+  # LimitRange-filled, untouched). Pod total: 512+64=576Mi req,
+  # 1024+128=1152Mi lim. Observed 4Mi (2026-09-06 top).
+  resources:
+    requests:
+      memory: 512Mi
+    limits:
+      memory: 1024Mi
+
+# Shared exporter sidecar resources for both cache StatefulSets.
+# Issue #74 Phase-2 rows 13+14: 128Mi/1Gi (LimitRange) -> 64Mi/128Mi
+# memory-only; cpu stays LimitRange-filled. Observed 3-4Mi (2026-09-06 top).
+memcachedExporter:
+  resources:
+    requests:
+      memory: 64Mi
+    limits:
+      memory: 128Mi
 
 gateway:
   enabled: false
@@ -62,8 +87,21 @@ monitoring:
     grafana:
       dashboards:
         enabled: false
-  lokiCanary:
-    enabled: false
+
+# Loki canary (DaemonSet, both workers). Issue #74 Phase-2 row 12 + Q4 fix:
+# the block lived under `monitoring.lokiCanary` (dead — no chart template
+# reads it; chart default enabled:true applied, hence 2 live canary pods
+# despite "disabled"). Moved to the top-level schema key, keeping the live
+# enabled state and bounding resources 128Mi/1Gi (LimitRange) -> 64Mi/64Mi
+# memory-only; cpu stays LimitRange-filled. Observed 20Mi per pod
+# (2026-09-06 top); 64Mi limit = 3.2x.
+lokiCanary:
+  enabled: true
+  resources:
+    requests:
+      memory: 64Mi
+    limits:
+      memory: 64Mi
 
 test:
   enabled: false
