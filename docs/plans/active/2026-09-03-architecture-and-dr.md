@@ -86,9 +86,16 @@ push main → CI (yamllint/kustomize/kubeconform/gitleaks) → ArgoCD app-of-app
 
 ## Findings (2026-09-03, verified)
 
-1. 🔴 **CNPG backups broken 90d** (1,872 failed CRs) — root cause #75 (worker-02 session missing, machineID collision).
-2. 🔴 **Single-instance Postgres** — no HA; accepted for pilot IF backups work; else untenable.
-3. 🔴 **machineID collision**: all 3 nodes share `de88ca16...` (VM clones never regenerated `/etc/machine-id`). Needs **VM console / university IT** (not SSH — all keys denied). Rancher UI edit-save at node and cluster level did **not** re-register worker-02's session.
+1. 🟢 **CNPG backups RECOVERED 2026-09-05/06** (was 🔴 90d broken) — 502
+   root cause cleared by IT restart; scheduler deadlock unblocked; 3+
+   completed backups, loop advancing, all conditions green (#75, #76, #81
+   all closed).
+2. 🟡 **Single-instance Postgres** — no HA; accepted for pilot NOW THAT
+   backups work (was 🔴 "untenable" only while backups were broken).
+3. 🟡 **machineID collision**: all 3 nodes share `de88ca16...` — IT
+   kill+restart of worker-02 reconnected its session (streaming healthy
+   since 2026-09-05), but the collision keeps flap risk; IT ticket for
+   unique machine-ids still open. (Was 🔴; downgraded, not resolved.)
 4. 🟡 **Sealed-secrets private key single copy** (`~/.sealed-secrets/`, no backup found). Must be backed up NOW (e.g., password manager / university vault).
 5. 🟡 **No off-site backup** — CNPG → MinIO and Velero → MinIO are both **in-cluster**; a full cluster loss loses backups too. Options: Cloudflare R2 (user's account; migrate to university account later) or university S3.
 6. 🟡 **Worker-02 83% requests / 354% limits** — invenio-only right-sizing
@@ -96,16 +103,26 @@ push main → CI (yamllint/kustomize/kubeconform/gitleaks) → ArgoCD app-of-app
    (issue #88): Option 1 cluster-wide limits cuts** with recorded guardrails
    (#74 Phase 2). worker-01 also crept to 67.9%/190.8% (kopia-churn jitter).
 7. 🟡 **Restore drill never performed** (neither CNPG nor Velero) — unproven recovery.
-8. 🟡 **Velero inventory MYSTERY (2026-09-06 lead investigation, issue #88)** —
-   schedule runs (lastBackup advanced 08-30 → 09-06, BSL Available, kopia
-   maintain jobs healthy hourly, all 9 repos Ready), object storage holds
-   data for 08-14/08-16/08-30 — but **zero Backup CRs exist** (`get backups`
-   empty), the 09-06 run uploaded **nothing**, and the 08-30 run's PVB logs
-   show "not found / canceled" thrash. No CronJobs prune them; TTL is 28d
-   (cannot explain it). Server-log confirmation blocked by VPN flap (early
-   reads hit the node-agent's logs by label collision — must re-read the
-   `velero-55fdb8b9c-glvtc` pod directly). No restore test either way. Until
-   solved: Velero is NOT a proven recovery path.
+8. 🟡 **Velero scheduled/sync paths silently broken; manual path PROVEN healthy
+   (2026-09-06 lead investigation, issue #91)** — Sunday schedule fires
+   (`status.lastBackup` advanced 08-30 → 09-06) but leaves **zero Backup CRs**
+   and (09-06) **zero object data**. Backup-sync recreates CRs for the 3 old
+   storage backups (08-14/08-16/08-30, data present) every minute
+   ("Successfully synced") yet `get backups.velero.io` stays empty and the
+   loop repeats — they vanish <60s by an unidentified mechanism (GC touched
+   08-16 once at 11:15 "backup not found"; NO DeleteBackupRequests, NO
+   pruning CronJobs, TTL 28d cannot explain; NOTE: bare `kubectl get backups`
+   resolves to the CNPG CRD, not Velero — always use `backups.velero.io`).
+   Early reads hit node-agent logs by label collision — server pod is
+   `velero-55fdb8b9c-glvtc`. **Mitigation in progress:** manual FULL backup
+   `manual-dr-baseline-20260906` (all schedule namespaces, fs-backup,
+   30d TTL) created 2026-09-06 ~14:1x UTC — first real restore point.
+   Next: observe the 09-13 scheduled run before reconfiguring anything.
+8b. 🟡 **velero-plugin-for-aws crash-loop (2026-09-06, issue #91)** —
+   `plugin process exited` + `read |0: file already closed` every ~minute
+   all day in BSL-validation and backup-sync paths. Every S3 operation races
+   a dying plugin process — prime suspect for the silent backup death above.
+   Watch whether it stabilizes; fix candidate: plugin version/resources.
 9. 🟢 Email: wired, placeholder SMTP (#69/#72) — awaiting university relay creds (operator step documented).
 10. 🟢 DBRepo: **not in scope** (user curiosity only; decision: do not deploy).
 
