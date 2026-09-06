@@ -2,8 +2,13 @@
 
 > **Issue:** #74 (T2) — Rebalance worker-02 memory (85% requests / 360% limits overcommit).
 > **Branch:** feat/74-worker02-rebalance (worker branch cut fresh from origin/main).
-> **Status:** **BLOCKED 2026-09-05 (worker re-measured)** — fresh `kubectl describe node`
-> numbers are identical to the morning baseline (worker-02 **83.5% requests /
+> **Status:** **Phase-2 DECIDED 2026-09-06 (lead, issue #88): Option 1 scope
+> expansion** — see "Phase 2" section for bounds + guardrails. Groups 1–4
+> done/blocked as marked below; Groups 5–7 are the worker wave, Group 8 is
+> lead post-merge verification.
+>
+> Prior state (2026-09-05 worker wave): fresh `kubectl describe node` numbers
+> were identical to the morning baseline (worker-02 **83.5% requests /
 > 354.1% limits**, worker-01 **67.1% / 187.5%**). Computed the best conceivable
 > in-scope proposed state: even with **zero** invenio pods on worker-02,
 > worker-02 would sit at **77.0% requests / 328.3% limits** — the <75% / <200%
@@ -131,7 +136,6 @@ Escalation question for the lead is recorded in `WORKER-REPORT.md`.
 - invenio-web, invenio-worker, invenio-scheduler
 
 ## Verification Steps (post-rollout)
-
 1. `kubectl describe node ubuntu-btd-kubernetes-worker-02 | grep -A5 Allocated` → requests < 75%, limits < 200%
 2. Same for worker-01 → sane headroom on both nodes
 3. `https://invenio.vityasy.me` and `https://api-invenio.vityasy.me` return 200
@@ -155,3 +159,66 @@ changes — recorded, not acted on):
    `invenio.vityasy.me/ping` 200, `api-invenio.vityasy.me/api/records` 200,
    `argocd.vityasy.me` 200, `grafana.vityasy.me` 302 (login redirect, normal).
    17/17 ArgoCD apps Synced+Healthy, zero failed pods, zero OOMKilled.
+
+## Phase 2 — scope expansion (DECISION: lead, 2026-09-06, issue #88)
+
+**Decision: Option 1 — expand scope to cluster-wide limits cuts.** Options 2
+(new capacity) and 3 (revised targets) rejected for now: no new nodes are
+available, and lowering the bar without a compensating control is not
+acceptable. Rationale: the fat lives in third-party limits (monitoring
+≈12Gi on worker-02 alone, argocd ≈3.8Gi); cutting over-provisioned limits
+toward observed usage recovers the budget without touching application
+semantics. Math to beat: cluster-wide limits 42889Mi → under 31672Mi
+(2 workers × 7918Mi × 200%), and worker-02 requests 6610Mi → under
+5938.7Mi (75%).
+
+### Bounds (worker must not cross)
+
+- **IN BOUNDS (may cut requests/limits, observe-first):** `monitoring`
+  (prometheus, alertmanager, grafana, kube-state-metrics, node-exporter,
+  prometheus-operator, loki-canary, chunks-cache, results-cache), `argocd`
+  (controller, server, repo-server, redis, dex, applicationset-controller),
+  `traefik`, `minio`, `velero` (kopia maintain jobs only — 64Mi/256Mi each,
+  halve at most), `loki` resources under monitoring.
+- **OUT OF BOUNDS (do not touch):** `database/*` (CNPG-managed postgres),
+  `search/*` (single OpenSearch master — restart risks red cluster; separate
+  follow-up with reindex-readiness), `redis/*` (OOM history, broker
+  criticality), `invenio` app pods' resources (web/worker/scheduler — proven
+  futile alone; revisit after headroom exists), any RBAC/PSA/NetworkPolicy/
+  quota/limitrange, Velero schedule/BSL, SealedSecrets, AppProjects.
+- **Allowed in `invenio` (zero-restart string change only):**
+  `invenio-scheduler-deployment.yaml` image `...@sha256:609eacc9…` →
+  `:latest` (kustomize `images:` pin stays the single source of truth; lead
+  proved the render already resolves to `0f685be`, so the rendered output
+  must be byte-identical before/after — ArgoCD must show no diff, no rollout).
+- **Allowed housekeeping:** `.opencode/.gitignore` += `plans/` (the stale
+  2026-08-14 scratch plan stays untracked by design, not committed).
+
+### Guardrails
+
+- Headroom: new limits ≥ **2× max-observed** usage for stateless
+  utils/exporters/canaries/maintainers; ≥ **1.5×** for stateful/infra
+  (prometheus, grafana, loki caches, minio, argocd-server/controller).
+  Observed = `kubectl top pods` per namespace + `kubectl get events -A
+  --field-selector reason=OOMKilled` must be empty before AND after.
+- Requests: cut only where requests clearly exceed observed + scheduling
+  slack; never below observed usage. worker-01 must stay <75% req / <200%
+  lim too (it sits at 67.9%/190.8% — thin on limits).
+- Propose the full per-workload table (current → proposed, with observed
+  basis) in `WORKER-REPORT.md` BEFORE editing manifests; the computed
+  proposed node totals must show worker-02 <75% / <200%.
+- GitOps only: no `kubectl apply/edit/patch/scale`. One PR. Rollback =
+  revert the PR (ArgoCD self-heals).
+- `kustomize build` per touched app + `yamllint` clean; no secrets in diffs.
+
+### Phase-2 task groups
+
+- [ ] **Group 5**: Observe — top pods per in-bounds namespace, OOM history,
+  current requests/limits table (read-only kubectl)
+- [ ] **Group 6**: Propose — per-workload new values + computed node totals
+  in WORKER-REPORT.md (must show worker-02 <75% / <200%)
+- [ ] **Group 7**: Implement — manifest edits + scheduler digest line +
+  `.opencode/.gitignore`; render-identical proof for scheduler;
+  kustomize + yamllint per app; commit + push (no PR — lead integrates)
+- [ ] **Group 8 (lead post-merge)**: ArgoCD sync watch → node alloc both
+  workers → endpoints 200 → OOM events empty → HPA sane → close #74
