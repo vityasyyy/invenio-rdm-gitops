@@ -237,3 +237,21 @@ semantics. Math to beat: cluster-wide limits 42889Mi → under 31672Mi
     byte-identical proof via build diff) + `.gitignore` += `plans/`.
 - [ ] **Group 8 (lead post-merge)**: ArgoCD sync watch → node alloc both
   workers → endpoints 200 → OOM events empty → HPA sane → close #74
+
+### Lead answers to worker escalation (2026-09-06, VPN down at integration)
+
+Worker `limits-74` correctly stopped (VPN down both ends, no guessing).
+Answers for the retry wave — do not re-escalate these:
+
+1. **Retry Groups 5–7 when VPN is up** (worker observes first; same
+   stop-rule if still blocked). Lead will not pre-capture `top` snapshots —
+   observed usage must be fresh at implementation time.
+2. **YES — adding `resources:` stanzas to `values.yaml` for chart-default
+   workloads is IN BOUNDS** (same files/namespaces). Required: git-visible
+   in-bounds limits total only ≈10.75Gi cluster-wide vs the −11.2Gi needed,
+   so new stanzas (kube-state-metrics, node-exporter, operator, promtail,
+   node-agent, resultsCache, etc.) are the only way to reach the math.
+3. **Limits-cuts-only; ZERO rescheduling to worker-01.** Its limits
+   headroom is 731Mi — no pod moves, no affinity changes.
+4. **Scheduler digest string edit + `.opencode/.gitignore` ride WITH the
+   VPN-up implementation PR** (single PR, not separate).
