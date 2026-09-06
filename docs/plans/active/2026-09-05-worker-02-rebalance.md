@@ -215,10 +215,25 @@ semantics. Math to beat: cluster-wide limits 42889Mi → under 31672Mi
 
 - [ ] **Group 5**: Observe — top pods per in-bounds namespace, OOM history,
   current requests/limits table (read-only kubectl)
+  - **2026-09-06 worker wave BLOCKED — VPN down:** `cluster-info` + `describe
+    node worker-02` both timed out (1 attempt each, no retry loop); no `top` /
+    OOM / live node data. Git-from-manifest current table + last-known
+    2026-09-05 baseline recorded in `WORKER-REPORT.md` (worktree root). No guessing.
 - [ ] **Group 6**: Propose — per-workload new values + computed node totals
   in WORKER-REPORT.md (must show worker-02 <75% / <200%)
+  - **2026-09-06 BLOCKED (no observed basis):** guardrails require ≥2x/≥1.5x
+    max-observed + OOM empty before/after; with VPN down neither is
+    verifiable. No proposed values set — fabricated math refused. Needs:
+    live `describe node` + `top` decomposition (chart defaults dominate:
+    git-visible in-bounds ≈10.5Gi lim vs 12Gi monitoring-on-worker-02 alone).
 - [ ] **Group 7**: Implement — manifest edits + scheduler digest line +
   `.opencode/.gitignore`; render-identical proof for scheduler;
   kustomize + yamllint per app; commit + push (no PR — lead integrates)
+  - **2026-09-06 NOT EXECUTED (blocked with Group 6):** zero manifest edits;
+    docs-only commit (WORKER-REPORT.md + this plan + index). Offline checks
+    clean: `kustomize build k8s/apps/invenio` OK (889 lines),
+    `yamllint` clean on all in-bounds dirs + invenio. Deferred to VPN-up
+    wave: scheduler digest string → `:latest` (render already `0f685be`,
+    byte-identical proof via build diff) + `.gitignore` += `plans/`.
 - [ ] **Group 8 (lead post-merge)**: ArgoCD sync watch → node alloc both
   workers → endpoints 200 → OOM events empty → HPA sane → close #74
