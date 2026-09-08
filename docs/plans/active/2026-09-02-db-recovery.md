@@ -16,6 +16,13 @@
 > plus a new 09:02 backup completed (3 completed total), zero `already exists`
 > in 30 min of operator logs — see the completed deadlock plan
 > (`docs/plans/completed/2026-09-05-backup-scheduler-deadlock.md`).
+> **Update 2026-09-08:** scheduler on healthy autopilot — consecutive HOURLY
+> completions 09-07 21:02 → 09-08 02:02, `last=2026-09-08T02:02` /
+> `next=03:02`, all conditions True. QUIRK (open, benign): cron spec is
+> `0 2 * * *` (daily) yet backups complete hourly — operator-level cadence
+> anomaly, impact positive (more restore points; 30d retention bounds
+> storage at 3.0GiB total today). Do NOT "fix" without understanding;
+> observe.
 
 ## Verification 2026-09-05 (lead-verified live state)
 
