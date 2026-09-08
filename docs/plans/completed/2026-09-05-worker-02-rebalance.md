@@ -2,10 +2,9 @@
 
 > **Issue:** #74 (T2) — Rebalance worker-02 memory (85% requests / 360% limits overcommit).
 > **Branch:** feat/74-worker02-rebalance (worker branch cut fresh from origin/main).
-> **Status:** **Phase-2 DECIDED 2026-09-06 (lead, issue #88): Option 1 scope
-> expansion** — see "Phase 2" section for bounds + guardrails. Groups 1–4
-> done/blocked as marked below; Groups 5–7 are the worker wave, Group 8 is
-> lead post-merge verification.
+> **Status:** **DONE 2026-09-08 — all acceptance criteria MET, issue #74
+> CLOSED.** Groups 1–8 complete. Moved to `completed/` on close. Residual:
+> kopia-herd placement sensitivity (see Group 8).
 >
 > Prior state (2026-09-05 worker wave): fresh `kubectl describe node` numbers
 > were identical to the morning baseline (worker-02 **83.5% requests /
@@ -135,7 +134,40 @@ Escalation question for the lead is recorded in `WORKER-REPORT.md`.
 
 - invenio-web, invenio-worker, invenio-scheduler
 
-## Verification Steps (post-rollout)
+## Group 8 — rollout verification (lead, 2026-09-08, VPN up) — DONE, TARGETS MET
+
+Rollout path: #93 merged 2026-09-06 → monitoring Deployments wedged on
+`FailedCreate` (**root cause: `monitoring-quota` limits.cpu 15.4/16 = 96%;
+rolling surge needs old+new to fit — pre-existing trap, any monitoring
+rollout would wedge**) → lead micro-fix #94 (quota 16→24 CPU, merged) →
+rollout self-healed, no manual intervention.
+
+Live verified state (all 17 ArgoCD apps Synced+Healthy):
+
+| Node | Requests | Limits | % req / % lim (7918Mi) | vs target |
+|---|---|---|---|---|
+| worker-02 | 4178Mi | 13448Mi | **52.8% / 169.9%** | ✅✅ both caps met (better than v3 68.9/207.8 via favorable placement) |
+| worker-01 | 5686Mi | 14580Mi | **71.8% / 184.1%** | ✅✅ both caps met |
+
+- Acceptance criteria ALL MET: worker-02 <75% req ✅, <200% lim ✅
+  (was 83.5%/354.1%). Issue #74 CLOSED on this wave.
+- Live specs match v3 exactly (spot-checked: grafana sidecars 64/128,
+  operator 64/128, KSM 64/64, chunks 256/512, minio 256/512, traefik
+  64/192). Prometheus WAL-replay survived 1024Mi (2/2, 0 new restarts).
+- Invenio untouched as designed (pods 5d15h old — scheduler digest edit
+  caused no rollout, render-identical proven in production).
+- Endpoints 200/200/200 (ping, api-records, argocd); HPA sane (web mem
+  75/80, worker cpu 31/mem 74, both 2/2); zero OOMKilled.
+- **Residual (tracked, not blocking): kopia-churn placement sensitivity.**
+  27 kopia-maintain pods (64Mi/256Mi each = 1728/6912 swing) migrate
+  between nodes hourly with zero spreading (all-27 on w01 observed 09-06,
+  all-27 on w02 observed 09-08). A full-herd migration to worker-01 would
+  take it to ~271% limits. Follow-up: spread/trim kopia (separate hygiene
+  wave) or accept with alert coverage. worker-02 currently holds the full
+   herd and still passes with 2388Mi limits margin.
+
+## Verification Steps (post-rollout) — all checked 2026-09-08 ✅
+
 1. `kubectl describe node ubuntu-btd-kubernetes-worker-02 | grep -A5 Allocated` → requests < 75%, limits < 200%
 2. Same for worker-01 → sane headroom on both nodes
 3. `https://invenio.vityasy.me` and `https://api-invenio.vityasy.me` return 200

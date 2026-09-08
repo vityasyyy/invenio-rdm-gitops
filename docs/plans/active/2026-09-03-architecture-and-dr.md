@@ -98,10 +98,12 @@ push main → CI (yamllint/kustomize/kubeconform/gitleaks) → ArgoCD app-of-app
    unique machine-ids still open. (Was 🔴; downgraded, not resolved.)
 4. 🟡 **Sealed-secrets private key single copy** (`~/.sealed-secrets/`, no backup found). Must be backed up NOW (e.g., password manager / university vault).
 5. 🟡 **No off-site backup** — CNPG → MinIO and Velero → MinIO are both **in-cluster**; a full cluster loss loses backups too. Options: Cloudflare R2 (user's account; migrate to university account later) or university S3.
-6. 🟡 **Worker-02 83% requests / 354% limits** — invenio-only right-sizing
-   proven impossible (worker math 2026-09-05); **lead DECIDED 2026-09-06
-   (issue #88): Option 1 cluster-wide limits cuts** with recorded guardrails
-   (#74 Phase 2). worker-01 also crept to 67.9%/190.8% (kopia-churn jitter).
+6. 🟢 **Worker-02 overcommit RESOLVED 2026-09-08 (#74 closed)** — v3 limits
+   cuts live: worker-02 **52.8% / 169.9%**, worker-01 **71.8% / 184.1%**
+   (was 83%/354%). Quota incident on the way (monitoring 96% CPU quota
+   wedged rollout, fixed 16→24). Residual watch: kopia-herd placement
+   churn (±1728Mi/±6912Mi swing; full migration to worker-01 would breach
+   ~271%) — needs spread/trim hygiene wave.
 7. 🟡 **Restore drill never performed** (neither CNPG nor Velero) — unproven recovery.
 8. 🟡 **Velero scheduled/sync paths silently broken; manual path PROVEN healthy
    (2026-09-06 lead investigation, issue #91)** — Sunday schedule fires
@@ -118,6 +120,15 @@ push main → CI (yamllint/kustomize/kubeconform/gitleaks) → ArgoCD app-of-app
    `manual-dr-baseline-20260906` (all schedule namespaces, fs-backup,
    30d TTL) created 2026-09-06 ~14:1x UTC — first real restore point.
    Next: observe the 09-13 scheduled run before reconfiguring anything.
+   **Update 2026-09-08:** manual FULL baseline `manual-dr-baseline-20260906`
+   finished **PartiallyFailed** (43 PVBs: 40 Completed incl. postgres pgdata,
+   OpenSearch data, app files, redis — core DR assets SAFE; gaps:
+   prometheus-db data-path failure, minio `export` Canceled in 12s,
+   worker-`tmp` Failed on `velero-quota` CPU). NEW finding: **`velero-quota`
+   limits.cpu 750m/2 throttles parallel data-movers** (same quota class of
+   bug as the monitoring incident) — raise before the next big backup.
+   MinIO `export` (all backup objects) has no fs-backup; its safety rests on
+   NFS + the completed pgdata PVB, not on Velero.
 8b. 🟡 **velero-plugin-for-aws crash-loop (2026-09-06, issue #91)** —
    `plugin process exited` + `read |0: file already closed` every ~minute
    all day in BSL-validation and backup-sync paths. Every S3 operation races
