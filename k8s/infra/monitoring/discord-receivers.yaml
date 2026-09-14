@@ -8,6 +8,10 @@ spec:
   # a first-level child of the base root; with alertmanagerConfigMatcherStrategy
   # None (see values.yaml) it applies cluster-wide, not just namespace monitoring.
   # CRD camelCase: groupBy/groupWait/groupInterval/repeatInterval/matchers.
+  # NOTE: no Watchdog heartbeat route by design (issue #110). A heartbeat to a
+  # human channel trains muting and proves nothing that NotificationsFailing,
+  # the pipecheck hook, and up-based target alerts don't cover better. Watchdog
+  # falls through to the base root receiver (null).
   route:
     receiver: discord-warning
     groupBy: ["alertname", "namespace", "service"]
@@ -15,11 +19,6 @@ spec:
     groupInterval: 5m
     repeatInterval: 4h
     routes:
-      - receiver: discord-warning
-        matchers:
-          - name: alertname
-            value: Watchdog
-        repeatInterval: 5m
       - receiver: discord-critical
         matchers:
           - name: severity
@@ -39,7 +38,7 @@ spec:
             name: alertmanager-discord-webhook
             key: DISCORD_WEBHOOK_URL
           title: '[CRITICAL] {{ .GroupLabels.alertname }}'
-          message: '{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}\nRunbook: {{ .Annotations.runbook_url }}\nDashboard: {{ .Annotations.dashboard }}\n{{ end }}'
+          message: '{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}{{ with .Annotations.runbook_url }}\nRunbook: {{ . }}{{ end }}{{ with .Annotations.dashboard }}\nDashboard: {{ . }}{{ end }}\n{{ end }}'
           sendResolved: true
     - name: discord-warning
       discordConfigs:
@@ -47,5 +46,5 @@ spec:
             name: alertmanager-discord-webhook
             key: DISCORD_WEBHOOK_URL
           title: '[WARNING] {{ .GroupLabels.alertname }}'
-          message: '{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}\nRunbook: {{ .Annotations.runbook_url }}\nDashboard: {{ .Annotations.dashboard }}\n{{ end }}'
+          message: '{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}{{ with .Annotations.runbook_url }}\nRunbook: {{ . }}{{ end }}{{ with .Annotations.dashboard }}\nDashboard: {{ . }}{{ end }}\n{{ end }}'
           sendResolved: true
