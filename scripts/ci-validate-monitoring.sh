@@ -75,25 +75,43 @@ elif cr.get("kind") != "AlertmanagerConfig":
 else:
     cr_receivers = {r.get("name") for r in cr.get("spec", {}).get("receivers", [])}
 route = values["alertmanager"]["config"]["route"]
-routes = route.get("routes", [])
 receivers = {r.get("name") for r in values["alertmanager"]["config"].get("receivers", [])}
-wd = [r for r in routes if (r.get("match") or {}).get("alertname") == "Watchdog"]
-if not wd:
-    err("no Watchdog route in alertmanager config")
-elif wd[0].get("receiver") != "discord-warning":
-    err(f"Watchdog routed to {wd[0].get('receiver')!r}, want 'discord-warning'")
-for r in routes:
-    if r.get("receiver") not in (receivers | cr_receivers | {None}):
-        err(f"route references unknown receiver {r.get('receiver')!r}")
+# Base Secret must be valid standalone: root-only route, base receivers only.
+if route.get("receiver") != "null":
+    err(f"base root receiver is {route.get('receiver')!r}, want 'null'")
+if route.get("routes"):
+    err("base route must be root-only — tier sub-routes live in the AlertmanagerConfig CR")
 if "discord-critical" in receivers or "discord-warning" in receivers:
     err("base receivers must be [null] only — discord receivers live in the AlertmanagerConfig CR")
 if not values["alertmanager"]["config"].get("inhibit_rules"):
     err("alertmanager config has no inhibit_rules")
+# Matcher strategy None keeps the CR route cluster-wide (default OnNamespace
+# would gate it to namespace=monitoring and drop cross-namespace alerts).
+strat = ((values.get("alertmanager") or {}).get("alertmanagerSpec") or {}).get("alertmanagerConfigMatcherStrategy") or {}
+if strat.get("type") != "None":
+    err(f"alertmanagerConfigMatcherStrategy.type is {strat.get('type')!r}, want 'None'")
+
+def _matchers(route):
+    return {m.get("name"): m.get("value") for m in route.get("matchers", [])}
 
 if cr is not None:
     crspec = cr.get("spec", {})
     if cr_receivers != {"discord-critical", "discord-warning"}:
         err(f"CR receivers are {cr_receivers}, want exactly discord-critical + discord-warning")
+    cr_route = crspec.get("route") or {}
+    if not cr_route.get("routes"):
+        err("CR spec.route must carry the tier sub-routes")
+    else:
+        wd = [r for r in cr_route["routes"] if _matchers(r).get("alertname") == "Watchdog"]
+        if not wd:
+            err("no Watchdog route in CR spec.route.routes")
+        elif wd[0].get("receiver") != "discord-warning":
+            err(f"Watchdog routed to {wd[0].get('receiver')!r}, want 'discord-warning'")
+        elif wd[0].get("repeatInterval") != "5m":
+            err(f"Watchdog repeatInterval is {wd[0].get('repeatInterval')!r}, want '5m'")
+        for r in cr_route["routes"]:
+            if r.get("receiver") not in cr_receivers:
+                err(f"CR route references unknown receiver {r.get('receiver')!r}")
     for r in crspec.get("receivers", []):
         dcs = r.get("discordConfigs", [])
         if not dcs:

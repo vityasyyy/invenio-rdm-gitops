@@ -4,6 +4,34 @@ metadata:
   name: discord-receivers
   namespace: monitoring
 spec:
+  # Self-contained tier routing (Branch A). The operator appends this route as
+  # a first-level child of the base root; with alertmanagerConfigMatcherStrategy
+  # None (see values.yaml) it applies cluster-wide, not just namespace monitoring.
+  # CRD camelCase: groupBy/groupWait/groupInterval/repeatInterval/matchers.
+  route:
+    receiver: discord-warning
+    groupBy: ["alertname", "namespace", "service"]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+    routes:
+      - receiver: discord-warning
+        matchers:
+          - name: alertname
+            value: Watchdog
+        repeatInterval: 5m
+      - receiver: discord-critical
+        matchers:
+          - name: severity
+            value: critical
+        repeatInterval: 2h
+        continue: false
+      - receiver: discord-warning
+        matchers:
+          - name: severity
+            value: warning
+        repeatInterval: 12h
+        continue: false
   receivers:
     - name: discord-critical
       discordConfigs:

@@ -166,10 +166,14 @@ whole failure mode (`DiscordBridgeDown`) that vanishes when the bridge does.
   `discord-critical` (`[CRITICAL]` title prefix, `repeat_interval 2h`) and
   `discord-warning` (quiet, `repeat_interval 12h`), both `discord_configs`
   with the webhook URL from the sealed Secret and `message` templates carrying
-  the runbook link. The base route tree in `values.yaml` (Watchdog →
-  `discord-warning` every 5m; `severity: critical` → `discord-critical`;
-  `severity: warning` → `discord-warning`; inhibit critical-over-warning)
-  references these receivers.
+  the runbook link. The CR is self-contained: route sub-tree + receivers
+  (`spec.route`: Watchdog → `discord-warning` every 5m;
+  `severity: critical` → `discord-critical`; `severity: warning` →
+  `discord-warning`; default receiver `discord-warning`); the base in
+  `values.yaml` keeps root (`receiver: null`) + inhibit critical-over-warning
+  only, so the base Secret stays valid standalone. `values.yaml` also sets
+  `alertmanagerConfigMatcherStrategy: {type: None}` so the CR route applies
+  cluster-wide (default `OnNamespace` would gate it to `namespace=monitoring`).
 - **Prove the plumbing statically:** the worker pulls chart 69.6.0
   (`helm pull prometheus-community/kube-prometheus-stack --version 69.6.0`),
   confirms the bundled Alertmanager image is ≥v0.25, reads the
