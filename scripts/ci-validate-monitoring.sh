@@ -77,21 +77,29 @@ if "discord-critical" in receivers or "discord-warning" in receivers:
 if not values["alertmanager"]["config"].get("inhibit_rules"):
     err("alertmanager config has no inhibit_rules")
 
-cr = yaml.safe_load(open(os.path.join(mon, "discord-receivers.yaml")))
-if cr.get("kind") != "AlertmanagerConfig":
+try:
+    cr = yaml.safe_load(open(os.path.join(mon, "discord-receivers.yaml")))
+except FileNotFoundError:
+    err("discord-receivers.yaml missing")
+    cr = None
+if cr is None:
+    pass
+elif cr.get("kind") != "AlertmanagerConfig":
     err("discord-receivers.yaml kind must be AlertmanagerConfig")
-crspec = cr.get("spec", {})
-cr_receivers = {r.get("name") for r in crspec.get("receivers", [])}
-if cr_receivers != {"discord-critical", "discord-warning"}:
-    err(f"CR receivers are {cr_receivers}, want exactly discord-critical + discord-warning")
-for r in crspec.get("receivers", []):
-    dcs = r.get("discordConfigs", [])
-    if not dcs:
-        err(f"CR receiver {r.get('name')}: no discordConfigs")
-    for dc in dcs:
-        url = (dc.get("webhookUrl") or {})
-        if url.get("name") != "alertmanager-discord-webhook" or not url.get("key"):
-            err(f"CR receiver {r.get('name')}: webhookUrl must keyRef the sealed alertmanager-discord-webhook Secret")
+    cr = None
+if cr is not None:
+    crspec = cr.get("spec", {})
+    cr_receivers = {r.get("name") for r in crspec.get("receivers", [])}
+    if cr_receivers != {"discord-critical", "discord-warning"}:
+        err(f"CR receivers are {cr_receivers}, want exactly discord-critical + discord-warning")
+    for r in crspec.get("receivers", []):
+        dcs = r.get("discordConfigs", [])
+        if not dcs:
+            err(f"CR receiver {r.get('name')}: no discordConfigs")
+        for dc in dcs:
+            url = (dc.get("webhookUrl") or {})
+            if url.get("name") != "alertmanager-discord-webhook" or not url.get("key"):
+                err(f"CR receiver {r.get('name')}: webhookUrl must keyRef the sealed alertmanager-discord-webhook Secret")
 
 for dead in ("alertmanager-discord-deployment.yaml",
              "alertmanager-discord-service.yaml",

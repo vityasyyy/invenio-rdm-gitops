@@ -306,8 +306,10 @@ jobs:
           sudo mv "/tmp/alertmanager-${AM_TAG#v}.linux-amd64/amtool" /usr/local/bin/
           amtool --version
 
-      - name: Check PrometheusRule syntax
-        run: promtool check rules k8s/infra/monitoring/alerts.yaml
+      - name: Check PrometheusRule syntax (extract spec.groups — promtool cannot parse the CR wrapper)
+        run: |
+          python3 -c "import yaml; d=yaml.safe_load(open('k8s/infra/monitoring/alerts.yaml')); yaml.safe_dump({'groups': d['spec']['groups']}, open('/tmp/rules-check.yaml','w'))"
+          promtool check rules /tmp/rules-check.yaml
 
       - name: Check Alertmanager routing (base + CR receivers as native stub)
         run: |
