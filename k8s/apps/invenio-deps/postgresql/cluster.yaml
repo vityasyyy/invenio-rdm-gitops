@@ -45,12 +45,10 @@ spec:
         compression: gzip
 
   monitoring:
-    # Operator-created PodMonitor intentionally OFF (issue #105): the Cluster
-    # CRD offers no podMonitorLabels field, so the operator object cannot carry
-    # the `release: monitoring` label our Prometheus podMonitorSelector requires;
-    # upstream CNPG 1.25 deprecates this field in favour of a manually managed
-    # PodMonitor (see postgres-podmonitor.yaml in this kustomization).
-    enablePodMonitor: false
+    # NOTE: no enablePodMonitor field by design (issue #112). Setting it kept
+    # this app OutOfSync (live object carries no such stanza), and scraping is
+    # covered by the manually managed postgres-metrics PodMonitor in this
+    # kustomization instead.
     customQueriesConfigMap:
       - name: cnpg-default-monitoring
         key: queries

@@ -1,0 +1,25 @@
+# Scrape Traefik :9100/metrics (issue #112).
+#
+# The chart's own ServiceMonitor (serviceMonitor/traefik/traefik/0) selects the
+# main `traefik` Service and drops every target; nothing selects the dedicated
+# `traefik-metrics` Service. This monitor selects it precisely via the unique
+# `app.kubernetes.io/component: metrics` label (proven live on the Service).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: traefik-metrics
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: metrics
+  namespaceSelector:
+    matchNames:
+      - traefik
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

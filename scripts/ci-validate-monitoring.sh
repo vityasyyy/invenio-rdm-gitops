@@ -226,13 +226,32 @@ if ((trm.get("serviceMonitor") or {}).get("additionalLabels") or {}).get("releas
 
 pgc_docs = list(yaml.safe_load_all(open(os.path.join(REPO_ROOT, "k8s/apps/invenio-deps/postgresql/cluster.yaml"))))
 pgc = next(d for d in pgc_docs if d and d.get("kind") == "Cluster")
-if (pgc["spec"].get("monitoring") or {}).get("enablePodMonitor") is not False:
-    err("postgresql cluster.yaml monitoring.enablePodMonitor must be false (manual PodMonitor owns the scrape)")
-pgm = _load("k8s/apps/invenio-deps/postgresql/postgres-podmonitor.yaml")
+if "enablePodMonitor" in (pgc["spec"].get("monitoring") or {}):
+    err("postgresql cluster.yaml must not set monitoring.enablePodMonitor (kept the app OutOfSync; manual PodMonitor owns the scrape)")
+if os.path.exists(os.path.join(REPO_ROOT, "k8s/apps/invenio-deps/postgresql/postgres-podmonitor.yaml")):
+    err("postgres-podmonitor.yaml must not exist (name collides with the CNPG-operator-owned object; use postgres-metrics-podmonitor.yaml)")
+pgm = _load("k8s/apps/invenio-deps/postgresql/postgres-metrics-podmonitor.yaml")
 if pgm.get("kind") != "PodMonitor" or (pgm.get("metadata", {}).get("labels") or {}).get("release") != "monitoring":
-    err("postgres-podmonitor.yaml must be a PodMonitor labelled release: monitoring")
+    err("postgres-metrics-podmonitor.yaml must be a PodMonitor labelled release: monitoring")
 elif (pgm["spec"].get("selector", {}).get("matchLabels") or {}).get("cnpg.io/cluster") != "postgres":
-    err("postgres PodMonitor must select matchLabels cnpg.io/cluster: postgres")
+    err("postgres-metrics PodMonitor must select matchLabels cnpg.io/cluster: postgres")
+
+# Issue #112: standalone traefik scrape (the chart SM drops every target).
+trsm = _load("k8s/infra/monitoring/traefik-servicemonitor.yaml")
+if trsm.get("kind") != "ServiceMonitor" or (trsm.get("metadata", {}).get("labels") or {}).get("release") != "monitoring":
+    err("traefik-servicemonitor.yaml must be a ServiceMonitor labelled release: monitoring")
+elif (trsm["spec"].get("selector", {}).get("matchLabels") or {}).get("app.kubernetes.io/component") != "metrics":
+    err("traefik ServiceMonitor must select the dedicated metrics Service (app.kubernetes.io/component: metrics)")
+if "traefik-servicemonitor.yaml" not in kus:
+    err("kustomization.yaml must list traefik-servicemonitor.yaml")
+
+# Issue #112: scrape ingress allows (default-deny namespaces).
+velkus = open(os.path.join(REPO_ROOT, "k8s/infra/velero/kustomization.yaml")).read()
+if "velero-scrape-netpol.yaml" not in velkus:
+    err("velero kustomization must list velero-scrape-netpol.yaml")
+mina = open(os.path.join(REPO_ROOT, "k8s/infra/security/network-policies/minio-allow.yaml")).read()
+if "kubernetes.io/metadata.name: monitoring" not in mina:
+    err("minio-allow.yaml must admit the monitoring namespace (Prometheus scrape :9000)")
 
 if errors:
     print(f"\nFAILED: {len(errors)} violation(s)")

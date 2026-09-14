@@ -12,3 +12,4 @@ resources:
   - loki-networkpolicy.yaml
   - monitoring-pipecheck.yaml
   - pipecheck-egress-netpol.yaml
+  - traefik-servicemonitor.yaml
