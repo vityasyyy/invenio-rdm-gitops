@@ -4,3 +4,4 @@ resources:
   - velero-credentials-secret.yaml
   - backup-schedule.yaml
   - limit-range.yaml
+  - velero-servicemonitor.yaml

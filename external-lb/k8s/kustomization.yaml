@@ -3,5 +3,7 @@ kind: Kustomization
 resources:
   - cloudflared-daemonset.yaml
   - cloudflared-credentials-secret.yaml
+  - cloudflared-service.yaml
+  - cloudflared-servicemonitor.yaml
 
 namespace: kube-system
