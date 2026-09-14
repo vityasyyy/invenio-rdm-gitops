@@ -73,3 +73,26 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
+---
+# Plugin downloads: the prometheus-exporter plugin (issue #105) installs from
+# github.com in an initContainer on every pod creation. Without this, the
+# download fails under search-default-deny and OpenSearch never starts.
+# Scoped to opensearch pods; mirrors invenio-allow-egress-https.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: search-allow-egress-https
+  namespace: search
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: opensearch
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP

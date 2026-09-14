@@ -1,21 +1,20 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: invenio-web
+  name: velero
   namespace: monitoring
   labels:
     release: monitoring
-  annotations:
-    argocd.argoproj.io/sync-wave: "7"
 spec:
   selector:
     matchLabels:
-      app.kubernetes.io/name: invenio-web
+      app.kubernetes.io/name: velero
+      app.kubernetes.io/instance: velero
   namespaceSelector:
     matchNames:
-      - invenio
+      - velero
   endpoints:
-    - port: http
+    - port: http-monitoring
       path: /metrics
       interval: 30s
       scrapeTimeout: 10s

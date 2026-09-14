@@ -1,298 +1,222 @@
-# WORKER-REPORT — monitoring overhaul (#96) — COMPLETE + HOTFIXES (awaiting lead/T7)
+# WORKER-REPORT — wave-2 monitoring scrapes (#105) — IMPLEMENTED, awaiting lead live-proof
 
-> Status: T1–T6 plus HOTFIX-1 (self-contained CR routes) + HOTFIX-2 (resolving
-> pipecheck alert) committed on `feat/96-monitoring-overhaul`, all static gates
-> green, negative cases proven. Branch left unpushed for lead verification.
-> Live delivery proof (pipecheck first run, Discord test delivery, Grafana
-> render check) needs VPN → T7/lead.
+> Branch `feat/105-monitoring-scrapes`, 6 per-group commits on top of `a1bb66a`.
+> All static gates green, negative case proven. No push (per instructions).
+> Live `up==1` + sample-query proof per job needs VPN → lead.
 
-## Per-task file list
+## Per-group file list + evidence
 
-- **T1** (commit `701f197`): created `scripts/ci-validate-monitoring.sh`,
-  appended `validate-monitoring` job to `.github/workflows/validate-infra.yaml`.
-- **T2** (commit `54a6e75`): rewrote `k8s/infra/monitoring/grafana-dashboards.yaml`
-  (5 ConfigMaps → 4, all `grafana_folder: InvenioRDM`).
-- **T3** (commit `d72bcd5`): rewrote `k8s/infra/monitoring/alerts.yaml`
-  (5 groups `app-slo`, `data-backups`, `capacity`, `edge`, `platform-self`, 22 rules).
-- **BLOCKER-1 fix** (commit `95a4a4f`, lead-approved): CI promtool step now
-  extract-then-check; validator reports clean `discord-receivers.yaml missing`
-  violation instead of traceback.
-- **T4** (commit `e218d85`): deleted `alertmanager-discord-deployment.yaml`,
-  `alertmanager-discord-service.yaml`, `alertmanager-discord-netpol.yaml`;
-  created `k8s/infra/monitoring/discord-receivers.yaml` (AlertmanagerConfig CR)
-  and `scripts/ci-stub-receivers.py`; modified `values.yaml` (route tree +
-  `alertmanagerConfigSelector: {}`) and `kustomization.yaml`; validator updated
-  for CRD `apiURL` spelling + CR-receiver route allowance (see deviations).
-- **T5** (commit `e9eddf9`): created `k8s/infra/monitoring/monitoring-pipecheck.yaml`,
-  registered in `kustomization.yaml`.
-- **T6** (commit `9cb47f6`): full gates green, negative case proven (below).
-- **Lead fix** (commit `9fda335`, landed mid-hotfix, untouched by worker):
-  single-level Go templates in discord receivers (`{{ .GroupLabels.alertname }}`,
-  `{{ range .Alerts }}...{{ end }}` — the double-wrapped form would have rendered
-  as literal template source in Discord; amtool cannot catch this).
-- **HOTFIX-1** (commit `8319106`): self-contained CR routes, base root-only
-  (see HOTFIX section).
-- **HOTFIX-2** (commit `fd89718`): pipecheck test alert fires then resolves
-  (see HOTFIX section).
+### G1 — velero + cloudflared (commit `04492eb`)
 
-## T1 validator initial FAIL output (verbatim)
+- `k8s/infra/velero/velero-servicemonitor.yaml` (new) + kustomization entry.
+- `external-lb/k8s/cloudflared-service.yaml`, `cloudflared-servicemonitor.yaml` (new) + kustomization entries.
+- Chart keys probed: velero chart 11.4.0 (`helm pull`, inspection only) —
+  `metrics.serviceMonitor.{enabled,autodetect,additionalLabels}` exist, but
+  `autodetect: true` suppresses the object under `helm template` (CI could never
+  prove it) → standalone manifest chosen deliberately.
+- Render-grep hits (`rendered/k8s_infra_velero.yaml`):
+  SM `velero/monitoring` labels `{release: monitoring}`, selector
+  `{app.kubernetes.io/name+instance: velero}`, endpoint `http-monitoring`;
+  `rendered/helm_velero.yaml` Service `velero` ports `[{http-monitoring, 8085}]`
+  with exactly those labels → selector match proven.
+- Cloudflared: DaemonSet args `--metrics 0.0.0.0:8080` (port proven);
+  `/metrics` path per Cloudflare docs (Prometheus endpoint on the `--metrics`
+  listener); Service `kube-system/cloudflared` port `metrics:8080` selector
+  `{app: cloudflared}` matches DaemonSet pod labels (3 occurrences in manifest);
+  SM selects it, `release: monitoring`.
+- Label decision: Prometheus `serviceMonitorSelector {release: monitoring}`,
+  `serviceMonitorNamespaceSelector {}` (from `rendered/helm_monitoring.yaml`
+  Prometheus object) → SMs match in any namespace.
+- DNS/label: job `kube-system/cloudflared` matches existing
+  `CloudflareTunnelDown` regex `.*cloudflared.*` and `Tunnel up` panel — no
+  alert/dashboard edit needed.
 
-```
-✗ ConfigMap grafana-dashboard-cluster-health: grafana_folder is 'Kubernetes', want 'InvenioRDM'
-✗ grafana-dashboard-cluster-health/cluster-health.json: title 'Cluster Health Overview' must start with 00/01/02/03
-✗ ConfigMap grafana-dashboard-traefik: grafana_folder is 'Traefik', want 'InvenioRDM'
-✗ grafana-dashboard-traefik/traefik-traffic-errors.json: title 'Traefik Traffic & Errors' must start with 00/01/02/03
-✗ ConfigMap grafana-dashboard-velero: grafana_folder is 'Velero', want 'InvenioRDM'
-✗ grafana-dashboard-velero/velero-backups.json: title 'Velero Backups' must start with 00/01/02/03
-✗ ConfigMap grafana-dashboard-minio: grafana_folder is 'MinIO', want 'InvenioRDM'
-✗ grafana-dashboard-minio/minio-capacity-availability.json: title 'MinIO Capacity & Availability' must start with 00/01/02/03
-✗ ConfigMap grafana-dashboard-invenio: grafana_folder is 'Invenio', want 'InvenioRDM'
-✗ grafana-dashboard-invenio/invenio-operations.json: title 'Invenio Operations' must start with 00/01/02/03
-✗ want exactly 4 dashboards, found 5
-✗ alert PodCrashLooping: missing annotation 'description' (+ runbook_url, dashboard)
-... (all old alerts missing runbook_url/dashboard)
-✗ Watchdog routed to 'null', want 'discord-warning'
-✗ alertmanager config has no inhibit_rules
-FileNotFoundError: .../k8s/infra/monitoring/discord-receivers.yaml   (CR did not exist yet;
-  since fixed: clean `discord-receivers.yaml missing` violation, exit stays non-zero)
-EXIT=1
-```
+### G2 — opensearch (commit `44e9fe3`)
 
-## T2 proofs + decisions
+- Modified (kept in sync, 3 copies): `k8s/apps/invenio-deps/opensearch/values.yaml`,
+  `argocd/apps/invenio-opensearch.yaml` valuesObject,
+  `scripts/ci-render-manifests.sh` OPENSEARCH_VALUES.
+- Diagnosis (pulled chart 2.32.0, AppVersion 2.19.1): NO `metricsExporter` key
+  anywhere in values/templates — old block rendered nothing. Only top-level
+  `serviceMonitor.{enabled,path,scheme,interval,labels}` + `plugins.{enabled,
+  installList}`. Without the plugin, `/_prometheus/metrics` does not exist.
+- Plugin pin (verified, not invented): tag `2.19.1.0` exists (exact OS match);
+  asset `prometheus-exporter-2.19.1.0.zip` confirmed via GitHub API (149718 B).
+  Note: upstream repo moved `aiven/…` → `opensearch-project/opensearch-prometheus-exporter`.
+- Render-grep hits (`rendered/helm_opensearch.yaml`): SM
+  `search/opensearch-cluster-master-service-monitor` labels include
+  `release: monitoring`, selector `{app.kubernetes.io/name+instance: opensearch}`
+  matches master Service, endpoint `http:9200 /_prometheus/metrics`;
+  StatefulSet renders `opensearch-plugin install -b …2.19.1.0.zip`.
+- Restarts the single OpenSearch node (plugin install) — off-peak merge.
 
-KSM-RBAC proof (`bash scripts/ci-render-manifests.sh` exit 0, then greps on
-`rendered/helm_monitoring.yaml`):
+### G3 — minio (commit `23c36e6`)
 
-- `grep -c persistentvolumes` → **5** (nonzero) → kept Released-PVs panel.
-- `grep -c '"pods"'` → **1** (nonzero) → kept OOM-kills panel
-  (`kube_pod_container_status_terminated_reason`).
-- Extra (same render, for the T2 pipecheck panel): ClusterRole covers `jobs`
-  (line 958 + `--resources=...jobs...` flag line 2056) → kept
-  `kube_job_status_succeeded` panel.
-- AM self-scrape (for T3 E-group): `grep -c alertmanager_notifications` → **7**;
-  `grep -c alertmanager_config_last_reload_successful` → **1**. Both kept.
-- KSM scrape job name in render is exactly `job="kube-state-metrics"`
-  (so T3 `KubeStateMetricsDown` regex `.*kube-state-metrics.*` matches).
-- Rendered Service names: Prometheus `monitoring-kube-prometheus-prometheus`,
-  Alertmanager **`monitoring-kube-prometheus-alertmanager`**
-  (plan guessed `monitoring-kube-alertmanager` — T5 uses the rendered name,
-  lead-approved).
-- CNPG Cluster namespace confirmed `database`
-  (`k8s/apps/invenio-deps/postgresql/cluster.yaml`) → overview "DB pods Running"
-  uses `namespace="database"`.
-- Overview `links` → `/d/invenio-app`, `/d/data-backups`, `/d/platform-health`.
-- Dropped panels (no thresholds / superseded): "Core Targets Up", "Unhealthy
-  Pods" (covered by "Targets down"), "Invenio Proxy Traffic & Errors"
-  (duplicated RPS/error per catalogue), "Invenio PVC Usage (%)" (moved to
-  overview "Max PVC usage %"), "Velero Targets Up", "MinIO Targets Up"
-  (covered by platform "Targets down").
-- Demoted `InvenioTraffic4xxRatioHigh` alert → overview "Invenio 4xx %" stat panel.
+- Modified: `k8s/infra/minio/values.yaml`.
+- Diagnosis (pulled chart 5.4.0, template read): SM renders ONLY if
+  `metrics.serviceMonitor.includeNode: true` (was unset → only a Probe rendered);
+  both objects carried `release: minio` while Prometheus selects
+  `release: monitoring` on SM/Probe alike (`probeSelector` proven in render) →
+  zero live series explained.
+- Fix: `includeNode: true` (node SM `/minio/v2/metrics/node`, selector
+  `{app+release+monitoring:"true"}` matches the Service), `interval/scrapeTimeout
+  30s/10s`, `additionalLabels: {release: monitoring}` — duplicate-`release`-key
+  render parses last-wins to `monitoring` (parse-proven).
+  `public: true` (chart default) kept → no bearer auth, no 401 class.
+- Render-grep hits (`rendered/helm_minio.yaml`): SM `minio` + Probe
+  `minio-cluster` both labelled `release: monitoring`; SM endpoint
+  `http:9000 /minio/v2/metrics/node`; Probe `minio.minio:9000
+  /minio/v2/metrics/cluster`.
 
-## T3 CNPG freshness proof
+### G4 — traefik + postgresql (commit `11e4a20`)
 
-- Docs URL (operator chart `cloudnative-pg 0.23.0` = CNPG ~1.25):
-  `https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.25/docs/src/monitoring.md`
-  fetched OK (no fallback needed).
-- Proven metric names (verbatim from that version's docs):
-  - `cnpg_collector_last_available_backup_timestamp` ("The last available
-    backup as a unix timestamp") → `CNPGBackupStale`:
-    `cnpg_collector_last_available_backup_timestamp > 0 and (time() - ...) > 26*3600`,
-    warning, `for: 1h`. The `> 0` guard added because the docs state the
-    metric "will be zero until your first backup to the object store".
-  - `cnpg_collector_pg_wal_archive_status{value="ready"|"done"}` ("Number of
-    WAL segments in the archive_status directory") → `CNPGArchivingDown`:
-    `cnpg_collector_pg_wal_archive_status{value="ready"} > 5`, warning,
-    `for: 15m`. DEVIATION (lead-accepted): the spec's `ContinuousArchiving==False`
-    is a CR status condition, not a Prometheus metric in this CNPG version; the
-    ready-file backlog is the version-documented Prometheus-native equivalent.
-- No deferrals — both freshness alerts implemented.
-- Other T3 decisions (lead-accepted, all committed):
-  - `VeleroBackupFailed` keeps its name but its expr changed from the generic
-    `velero_backup_attempt_total - velero_backup_success_total > 0` (which the
-    plan orders deleted) to `sum(increase(velero_backup_failure_total[1h])) > 0`.
-  - Renamed `InvenioTraffic5xxRatioHigh` → `Invenio5xxRatioHigh` per catalogue.
-  - Deleted with no replacement rule (dashboard panels cover them):
-    `PodNotReady`, `MinIOHighDiskUsage`, `OpenSearchClusterRed`,
-    `InvenioTraffic4xxRatioHigh` (demoted to panel), generic attempt-minus-success.
-  - `InvenioPodRestartHigh` widened per catalogue (`>5/1h`, `for: 15m`).
-  - `PodCrashLooping` (rate>0) replaced by `PodCrashLoopingWithDown` (critical,
-    `for: 15m`).
-  - Rule→dashboard mapping: A→`invenio-app` (except `TraefikServiceDown`→overview);
-    B→`data-backups`; C→`platform-health` (except `InvenioPVCUsageHigh`→overview);
-    D→`overview-invenio-rdm`; E→`platform-health`.
+- Modified: `k8s/infra/traefik/values.yaml`; `k8s/apps/invenio-deps/postgresql/cluster.yaml`;
+  new `postgres-podmonitor.yaml` + kustomization entry.
+- Traefik chart keys (39.0.6, `helm show values` + pulled-template read):
+  `metrics.prometheus.{entryPoint,addEntryPointsLabels,addServicesLabels,
+  service.enabled,disableAPICheck,serviceMonitor.{enabled,interval,
+  scrapeTimeout,additionalLabels}}` — all verified present before use.
+  Deployment already ran `--metrics.prometheus=true entrypoint=metrics` by chart
+  default; our values add the dedicated `traefik-metrics:9100` Service + SM.
+  `disableAPICheck: true` required — chart FAILs `helm template` (CI render)
+  without CRDs otherwise; in-cluster CRDs exist.
+- Render-grep hits (`rendered/helm_traefik.yaml`): Service `traefik-metrics`
+  `:9100`; Deployment args include all three `--metrics.prometheus*` flags; SM
+  `traefik/traefik` labelled `release: monitoring`, selector matches metrics
+  Service, endpoint `targetPort: metrics path: /metrics`, `jobLabel: traefik`.
+- PostgreSQL proof (chart evidence, negative): CNPG 0.23.0 Cluster CRD
+  `monitoring` properties = `{enablePodMonitor, podMonitorMetricRelabelings,
+  podMonitorRelabelings, customQueries*, disableDefaultQueries}` — NO
+  `podMonitorLabels` field → operator object cannot carry `release: monitoring`.
+  Upstream 1.25 monitoring.md (fetched): `enablePodMonitor` DEPRECATED,
+  "manually create and manage a PodMonitor" with selector `cnpg.io/cluster:
+  <name>`, metrics port `9187` named `metrics` (both quoted from docs).
+  Fix: flag `false` (no double scrape) + manual PodMonitor
+  (`rendered/k8s_apps_invenio-deps_postgresql.yaml`: `database/postgres`,
+  `release: monitoring`, selector `cnpg.io/cluster: postgres`, port `metrics`).
+- Rollout notes: traefik rolling restart (2 replicas), possible single-instance
+  PG restart on flag change — off-peak merge.
 
-## T4 chart findings (Step 1 — all pass)
+### G5 — cleanup + routing + validator (commit `2438fdd`)
 
-Pulled `prometheus-community/kube-prometheus-stack --version 69.6.0`
-(inspection only; note: pulled layout nests CRDs at
-`charts/crds/crds/crd-alertmanagerconfigs.yaml`, and Alertmanager has no
-separate subchart dir — image lives in top-level `values.yaml`):
+- Deleted `k8s/infra/monitoring/invenio-servicemonitor.yaml` + kustomization entry.
+- Dead-panel check: NO dashboard panel references job `invenio-web`
+  (only `job=` reference in all dashboards is `.*cloudflared.*`; every invenio
+  panel is KSM/traefik-backed) → SM deletion only, no JSON edit.
+- `values.yaml` inhibit_rules `source_match:/target_match_re:` →
+  `source_matchers: [severity="critical"]` /
+  `target_matchers: [severity=~"warning|info"]` (CR already used `matchers:`).
+  `amtool v0.28.0 check-config` on stub-merged tree: SUCCESS (1 inhibit rule).
+- Validator extended (`scripts/ci-validate-monitoring.sh`): invenio-SM absent
+  (file + kustomization), matchers-only routing (anchored exact-key regex;
+  `matchNames`/`matchLabels`/`matchers` safe), source-key pins for all six
+  scrapes, stale-`metricsExporter` tripwires in all three opensearch copies.
 
-- Bundled Alertmanager image tag: **`v0.28.0`** (≥v0.25 → native
-  `discord_configs` available). amtool used below is exactly v0.28.0.
-- Selector key path: **`alertmanager.alertmanagerSpec.alertmanagerConfigSelector`**
-  (`values.yaml:885 alertmanagerSpec:` → `:939 alertmanagerConfigSelector: {}`).
-  Enabled in our `values.yaml` as `alertmanagerConfigSelector: {}` (selects all
-  AlertmanagerConfigs, chart default semantics).
-- CRD `discordConfigs` support: nonzero (`grep -c` → 1; block at CRD line 228).
-- CRD `inhibitRules` support: nonzero (`grep -c` → 1; block at CRD line 56).
-- DEVIATION (plan-anticipated, CRD-spelling class): the CRD's `discordConfigs[]`
-  items use **`apiURL`** (`{name, key}` SecretKeySelector — "The secret's key
-  that contains the Discord webhook URL"), NOT `webhookUrl`. The only
-  `webhookUrl` in the CRD (2 hits, line 1970) belongs to **msteamsConfigs**
-  ("MSTeams webhook URL", required there). Our CR therefore uses
-  `apiURL: {name: alertmanager-discord-webhook, key: DISCORD_WEBHOOK_URL}`
-  (key verified against the sealed secret; secret is in namespace `monitoring`,
-  same as the CR, as the CRD requires). `sendResolved`/`title`/`message`
-  spellings match the CRD verbatim. Consequential validator + stub-script
-  updates: validator checks `apiURL` keyRef; stub maps `apiURL→webhook_url`
-  (dummy). No fallback to the pinned-bridge design needed.
-- T4 Step 6 gate: `amtool check-config` on the stub-merged config → SUCCESS
-  (3 receivers, 1 inhibit rule); validator → `OK: 4 dashboards, 22 alerts,
-  native-Discord routing valid`, exit 0.
-- T4 Step 7: `ci-render-manifests.sh` monitoring lines
-  (`✓ kustomize: k8s/infra/monitoring`, `✓ helm: monitoring`, 19 manifests);
-  staged set was exactly the 3 deletions + CR + script + values + kustomization.
+### G6 — docs (this wave)
 
-## T5 pipecheck
+- `docs/plans/active/2026-09-14-monitoring-scrapes.md` (new) + `docs/plans/README.md` index row.
+- This WORKER-REPORT.md (replaces the wave-1 report; history preserved in git).
 
-- Service DNS verified against render (both names present, multiple hits):
-  `monitoring-kube-prometheus-prometheus:9090`,
-  `monitoring-kube-alertmanager` replaced by rendered
-  `monitoring-kube-prometheus-alertmanager:9093` (lead-approved).
-- Curl image (crane-resolved, no `latest` pin):
-  **`curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777`**
-  (`latest` and `8.22.0` digests identical; config label confirms 8.22.0).
-- `ci-render-manifests.sh` → "All renders succeeded";
-  `ci-validate-selectors.sh rendered` → "All selector validations passed".
-- T7 note (pre-recorded): if the Job fails on the securityContext on VPN, the
-  documented first fix is dropping `runAsUser`/`runAsGroup`/`fsGroup`.
-
-## T6 full verification output (Step 1 — every command exit 0)
+## Full verification log (exact outputs, post-G5 unless noted)
 
 ```
-yamllint argocd/ k8s/ external-lb/k8s/   → clean (line-length warnings only, pre-existing style)
-bash scripts/ci-render-manifests.sh      → Rendered: 19 manifests / All renders succeeded
-bash scripts/ci-validate-selectors.sh rendered → All selector validations passed
-promtool check rules /tmp/rules-check.yaml (spec.groups extraction, lead-approved)
-                                         → SUCCESS: 22 rules found
-python3 scripts/ci-stub-receivers.py     → receivers: null, discord-critical, discord-warning
-amtool check-config /tmp/am-merged-check.yaml → SUCCESS (global, route, 1 inhibit rule, 3 receivers)
-bash scripts/ci-validate-monitoring.sh   → OK: 4 dashboards, 22 alerts, native-Discord routing valid
+$ yamllint argocd/ k8s/ external-lb/k8s/
+(clean — only pre-existing line-length warnings)
+
+$ bash scripts/ci-render-manifests.sh
+Rendered: 19 manifests to rendered/
+All renders succeeded
+
+$ bash scripts/ci-validate-selectors.sh rendered
+All selector validations passed
+
+$ bash scripts/ci-validate-monitoring.sh
+OK: 4 dashboards, 22 alerts, native-Discord routing valid
+
+$ promtool check rules /tmp/rules-check.yaml   (spec.groups extraction)
+Checking /tmp/rules-check.yaml
+  SUCCESS: 22 rules found
+
+$ python3 scripts/ci-stub-receivers.py && amtool check-config /tmp/am-merged-check.yaml
+receivers: null, discord-critical, discord-warning
+child routes: 3
+Checking '/tmp/am-merged-check.yaml'  SUCCESS
+(global, route, 1 inhibit rule, 3 receivers)
+
+$ ClusterRole coverage (rendered/helm_monitoring.yaml)
+monitoring-kube-prometheus-operator covers: [podmonitors, probes, servicemonitors]
+(Prometheus role covers Services/endpoints/pods for scraping — correct split.)
+
+$ git log --oneline (this branch)
+2438fdd feat(monitoring): G5 drop invenio SM, matchers migration, validator pins (#105)
+11e4a20 feat(db): G4 traefik metrics scrape + manual CNPG PodMonitor (#105)
+23c36e6 fix(storage): G3 minio ServiceMonitor selection + node metrics (#105)
+44e9fe3 feat(search): G2 fix opensearch exporter plugin + ServiceMonitor keys (#105)
+04492eb feat(monitoring): G1 velero + cloudflared scrapes (#105)
 ```
 
-(kubeconform/kube-linter run in CI after lead pushes — not run here.)
+Rule→dashboard mapping intact: no alert expr touched (only inhibit syntax +
+validator changed); every touched alert's metric family has a scrape path now
+(velero/minio/traefik/cnpg via new scrapes; KSM/AM self-scrapes unchanged).
 
-## T6 negative-case proof (Step 2)
+## Negative-case log
 
-Broke the first rule (removed `runbook_url` from `InvenioWebReplicasUnavailable`):
+Broke velero SM label (`release: monitoring` → `release: WRONG`):
 
 ```
-✗ alert InvenioWebReplicasUnavailable: missing annotation 'runbook_url'
+$ bash scripts/ci-validate-monitoring.sh
+✗ velero-servicemonitor.yaml must be a ServiceMonitor labelled release: monitoring
 
 FAILED: 1 violation(s)
-exit=1
+NEGATIVE_EXIT=1
 ```
 
-After restore (`cp /tmp/alerts.bak ...`):
+After restore (`cp /tmp/velero-sm.bak …`):
 
 ```
 OK: 4 dashboards, 22 alerts, native-Discord routing valid
+RESTORE_EXIT=0
 ```
 
-`git diff --stat k8s/infra/monitoring/alerts.yaml` after restore: empty —
-only T3's intended changes remain. The validator bites and the restore is exact.
+`git diff --stat k8s/infra/velero/velero-servicemonitor.yaml` after restore:
+empty — only G1's intended content remains. Validator bites, restore is exact.
 
-## Deviations / fixes summary (all recorded; BLOCKER-1 class lead-approved)
+## BLOCKED/OPEN (needs VPN — lead)
 
-1. **BLOCKER-1 (fixed, lead-approved):** CI promtool step is extract-then-check
-   (promtool cannot parse the PrometheusRule CR wrapper); `--ignore-unknown-fields`
-   rejected (vacuous 0-rule pass). Validator missing-CR crash → clean violation.
-2. **BLOCKER-2 (fixed in T4 commit, needs lead sign-off on the diff):**
-   the verbatim T1 validator flagged routes pointing at the CR receivers as
-   "unknown" — yet the design (and T4 Step 6 expectation `OK / exit 0`) requires
-   exactly that. amtool v0.28.0 on the merged config proves the routing correct
-   (SUCCESS), so the validator now allows route receivers present in either the
-   base config or the CR (`receivers | cr_receivers | {None}`), while still
-   enforcing base receivers = `[null]` only. Without this, `OK / exit 0` is
-   unreachable by construction.
-3. CRD spelling: CR + validator + stub use `apiURL`, not `webhookUrl`
-   (plan-anticipated deviation class; `webhookUrl` in this CRD is MSTeams-only).
-4. T2–T3 content deviations (lead-accepted): CNPG archiving expr, VeleroBackupFailed
-   expr, renames/deletions, rendered AM DNS name.
-5. Environment adaptations (no plan impact): no sudo on this host → promtool
-   v3.13.3 / amtool v0.28.0 / crane v0.22.1 installed to `~/.local/bin`
-   (darwin-arm64 builds; CI installs its own linux binaries per the workflow);
-   `helm pull` layout paths adapted (CRDs under `charts/crds/crds/`).
+1. Live proof per job (procedures + exact PromQL in the wave plan, "Lead
+   live-proof procedures" table): `up{job}==1` + one sample query each for
+   velero, cloudflared, opensearch, minio (SM + Probe), traefik, postgres;
+   plus negative check that `up{job="monitoring/invenio-web"}` is ABSENT.
+2. Grafana: previously-blank panels render (02 Data Velero/MinIO, 01 App
+   OpenSearch/PG, 00 Overview traffic, 03 Platform Tunnel up).
+3. Alerts evaluate (pending, not nodata-broken), esp. `VeleroBackupFailed/Stale`,
+   `CNPGBackupStale/ArchivingDown`, `CloudflareTunnelDown`, `TraefikHigh404Rate`.
+4. Rollout watches (off-peak merge): traefik 2-replica rollout, PG single-instance
+   restart on flag change, opensearch single-node restart on plugin install;
+   `/ping` 200 + ArgoCD all Synced+Healthy after sync.
+5. kubeconform/kube-linter verdicts arrive via CI after push (`gh pr checks --watch`).
+6. Deferred, not blocking: `opensearch_cluster_status` panel metric family —
+   exporter serves it per plugin docs, but exact series names must be confirmed
+   from the live `count by (__name__)` listing (procedure covers this); if the
+   family name differs, panel expr needs a follow-up (new issue, not this wave).
 
-## BLOCKED/OPEN (needs VPN — T7/lead, unchanged)
+## Deviations from issue #105 text (all evidenced above)
 
-- pipecheck first run (`kubectl -n monitoring get jobs`; securityContext fallback noted above).
-- Discord test delivery (`MonitoringPipeTest` arrival + resolve; first
-  `[CRITICAL]`-style title check; `Watchdog` pulse within 10 min of sync).
-- Grafana render check (one `InvenioRDM` folder, 4 dashboards, each opened once).
-- Confirm no `alertmanager-discord` pods remain anywhere.
-- kubeconform/kube-linter verdicts arrive via CI after push (`gh pr checks --watch`).
+1. Velero via standalone SM manifest, not chart `metrics.serviceMonitor`
+   (autodetect makes the chart path unprovable in CI render).
+2. `enablePodMonitor: false` + manual PodMonitor instead of flag-on
+   (CRD has no label field; upstream deprecates the flag) — needs lead sign-off.
+3. No dead dashboard panel existed to delete (verified: no `invenio-web` job
+   reference anywhere) — SM deletion only.
+4. cloudflared-scrape awkwardness did NOT materialise (Service+SM, no DaemonSet
+   edit) — no alert/panel drop needed, no sign-off required.
 
-## HOTFIX-1: self-contained AlertmanagerConfig routes (P0 — alerts were dark)
+## Lead addendum (post-worker review, same branch)
 
-- Operator-log evidence (lead-provided, live cluster):
-  `provision alertmanager configuration: failed to initialize from secret:
-  undefined receiver "discord-warning" used in route` — the base Secret must be
-  valid standalone, so Alertmanager kept the stale pre-merge config (pointing at
-  the deleted bridge). Root cause: T4 put `discord-warning`/`discord-critical`
-  route references in the base route tree while the receivers live only in the CR.
-- Branch outcome: **Branch A**. CRD `crd-alertmanagerconfigs.yaml:9930`
-  confirms `spec.route` with nested `routes` ("Child routes",
-  `x-kubernetes-preserve-unknown-fields`), so the three tier sub-routes moved
-  into `discord-receivers.yaml` `spec.route` (CRD camelCase: `matchers[{name,
-  value}]`, `repeatInterval`, `groupBy/groupWait/groupInterval`), default
-  receiver `discord-warning`. Base `values.yaml` route is root-only
-  (`receiver: null` + group timings, no sub-routes); `inhibit_rules` +
-  `receivers: [null]` stay in base.
-- Load-bearing addition (Branch A as literally specified would still go dark):
-  the CRD (`spec.route` description + `matchers` note) states the operator adds
-  a `namespace: <object namespace>` matcher to the CR's first-level route, and
-  the Alertmanager CRD (`crd-alertmanagers.yaml:1008`) defaults
-  `alertmanagerConfigMatcherStrategy.type` to `OnNamespace`. That would drop
-  every cross-namespace alert (ours carry `namespace=invenio/velero/database…`
-  or no namespace label at all, e.g. `PrometheusTargetDown`, `TraefikServiceDown`,
-  `CloudflareTunnelDown`). `values.yaml` therefore sets
-  `alertmanager.alertmanagerSpec.alertmanagerConfigMatcherStrategy: {type: None}`
-  (enum `OnNamespace|None` verified in the pulled chart 69.6.0 CRD; template
-  `templates/alertmanager/alertmanager.yaml:85-88` renders it from exactly that
-  key path). The CR route is now cluster-wide.
-- Tooling mirror: `ci-stub-receivers.py` rebuilds the operator merge (base root +
-  CR route appended as first-level child + combined receivers); merged shape
-  verified: `root(null) → child(discord-warning) → 3 tier sub-routes`, all
-  referenced receivers present — the `undefined receiver` failure is structurally
-  impossible. Validator asserts the new shape: base root-only + base receivers
-  only, strategy `None`, CR owns Watchdog (discord-warning, 5m) + tier routes
-  ⊆ CR receivers. New-shape negative proof: re-adding a base sub-route and
-  flipping strategy to `OnNamespace` yields exactly
-  `base route must be root-only` + `strategy … want 'None'`, exit 1; restore clean.
-- Spec §3 paragraph amended ("CR is self-contained…" + strategy rationale).
-
-## HOTFIX-2: pipecheck test alert resolves (spam guard)
-
-- `monitoring-pipecheck.yaml` command now POSTs a firing alert
-  (`severity: warning`, `startsAt: $START`, no `endsAt`), `sleep 30`, then POSTs
-  the same labels/annotations with `startsAt: $START`, `endsAt: <now>` (resolved).
-  No `date -d` math — `START`/`END` captured via `date -u +%FT%TZ` around the sleep.
-  `severity: info` + `endsAt 2099` are gone (routed nowhere / re-notified forever).
-- Payload logic proven locally under `/bin/sh`: firing JSON has no `endsAt`;
-  resolved `endsAt >= startsAt`; labels/annotations identical (`PAYLOAD_OK`).
-
-## HOTFIX verification output (full T6 chain re-run, every command exit 0)
-
-```
-yamllint argocd/ k8s/ external-lb/k8s/   → clean (warnings only)
-bash scripts/ci-render-manifests.sh      → Rendered: 19 manifests / All renders succeeded
-bash scripts/ci-validate-selectors.sh rendered → All selector validations passed
-promtool check rules /tmp/rules-check.yaml (extraction) → SUCCESS: 22 rules found
-python3 scripts/ci-stub-receivers.py     → receivers: null, discord-critical, discord-warning / child routes: 3
-amtool check-config /tmp/am-merged-check.yaml → SUCCESS (global, route, 1 inhibit rule, 3 receivers)
-bash scripts/ci-validate-monitoring.sh   → OK: 4 dashboards, 22 alerts, native-Discord routing valid
-negative case (runbook_url removed)      → exit 1 naming InvenioWebReplicasUnavailable; restore → OK, zero diff
-new-shape negative case (base sub-route + OnNamespace) → 2 violations, exit 1; restore → OK, zero diff
-```
+- **OpenSearch egress (would-have-broken-search):** the exporter plugin installs
+  from github.com in an initContainer on every pod creation, but namespace
+  `search` default-denies egress with no HTTPS allow (DNS allow is correctly
+  cross-namespace). Added `search-allow-egress-https` (opensearch pods →
+  443/0.0.0.0/0) to `k8s/apps/invenio-deps/opensearch/manifests/network-policy.yaml`.
+  Install step placement is initContainer (render lines ~173/219), so no
+  reinstall-on-container-restart class. Gates re-green after the addition.

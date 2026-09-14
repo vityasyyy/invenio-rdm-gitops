@@ -60,3 +60,15 @@ postJob:
 metrics:
   serviceMonitor:
     enabled: true
+    # includeNode renders the node-metrics ServiceMonitor (/minio/v2/metrics/node).
+    # Without it the chart only renders a cluster-metrics Probe, which — like
+    # the SM — carried release:minio labels and was never selected (issue #105).
+    includeNode: true
+    public: true
+    interval: 30s
+    scrapeTimeout: 10s
+    additionalLabels:
+      # Overrides the chart-default release:<release-name> label below (YAML
+      # last-key-wins; render-proven) so Prometheus (selector release:
+      # monitoring) actually selects this SM and the Probe.
+      release: monitoring

@@ -41,13 +41,17 @@ spec:
             - master
             - ingest
             - data
-          metricsExporter:
+          plugins:
             enabled: true
-            serviceMonitor:
-              enabled: true
-              namespace: monitoring
-              labels:
-                release: monitoring
+            installList:
+              - https://github.com/opensearch-project/opensearch-prometheus-exporter/releases/download/2.19.1.0/prometheus-exporter-2.19.1.0.zip
+          serviceMonitor:
+            enabled: true
+            path: /_prometheus/metrics
+            scheme: http
+            interval: 30s
+            labels:
+              release: monitoring
     # Raw manifests: namespace, netpols
     - repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
       targetRevision: main

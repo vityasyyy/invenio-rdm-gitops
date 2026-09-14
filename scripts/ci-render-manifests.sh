@@ -161,13 +161,17 @@ roles:
   - master
   - ingest
   - data
-metricsExporter:
+plugins:
   enabled: true
-  serviceMonitor:
-    enabled: true
-    namespace: monitoring
-    labels:
-      release: monitoring"
+  installList:
+    - https://github.com/opensearch-project/opensearch-prometheus-exporter/releases/download/2.19.1.0/prometheus-exporter-2.19.1.0.zip
+serviceMonitor:
+  enabled: true
+  path: /_prometheus/metrics
+  scheme: http
+  interval: 30s
+  labels:
+    release: monitoring"
 render_helm "opensearch" "opensearch" "https://opensearch-project.github.io/helm-charts/" "2.32.0" "search" "${OPENSEARCH_VALUES}"
 
 echo ""

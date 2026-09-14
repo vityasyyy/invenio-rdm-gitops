@@ -23,10 +23,19 @@ spec:
         fsGroup: 65534
         seccompProfile:
           type: RuntimeDefault
+      volumes:
+        # /tmp must be writable: readOnlyRootFilesystem + the test-alert JSON
+        # redirect. Without this the first printf fails under set -e and the
+        # Job can never succeed (seen live as instant container exits).
+        - name: tmp
+          emptyDir: {}
       containers:
         - name: pipecheck
           image: curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
           imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           command: ["/bin/sh", "-c", "set -e\nPROM=http://monitoring-kube-prometheus-prometheus.monitoring.svc:9090\nAM=http://monitoring-kube-prometheus-alertmanager.monitoring.svc:9093\ncurl -sf $PROM/-/ready >/dev/null && echo 'prometheus ready'\ncurl -sf $AM/-/ready >/dev/null && echo 'alertmanager ready'\nSTART=$(date -u +%FT%TZ)\nprintf '[{\"labels\":{\"alertname\":\"MonitoringPipeTest\",\"severity\":\"warning\"},\"annotations\":{\"summary\":\"Pipecheck test alert — safe to resolve\"},\"startsAt\":\"%s\"}]' \"$START\" > /tmp/test-alert.json\ncurl -sf -XPOST -H 'Content-Type: application/json' --data @/tmp/test-alert.json $AM/api/v2/alerts && echo 'test alert firing'\nsleep 30\nEND=$(date -u +%FT%TZ)\nprintf '[{\"labels\":{\"alertname\":\"MonitoringPipeTest\",\"severity\":\"warning\"},\"annotations\":{\"summary\":\"Pipecheck test alert — safe to resolve\"},\"startsAt\":\"%s\",\"endsAt\":\"%s\"}]' \"$START\" \"$END\" > /tmp/test-alert.json\ncurl -sf -XPOST -H 'Content-Type: application/json' --data @/tmp/test-alert.json $AM/api/v2/alerts && echo 'test alert resolved'"]
           resources:
             requests: {cpu: 50m, memory: 64Mi}
