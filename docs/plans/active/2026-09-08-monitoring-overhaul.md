@@ -132,8 +132,14 @@ a `critical` suppresses its sibling `warning` (no double-post).
   `TraefikHigh404Rate>5%/5m` (add runbook: IngressRoute + netpol + endpoints).
 - **E — Platform self (new):** `PrometheusTargetDown` (>10% targets down, 10m),
   `AlertmanagerConfigFailed`, `DiscordBridgeDown`
-  (`up{job="alertmanager-discord"}==0, 5m`), `KubeStateMetricsDown`,
-  `WatchdogMissing`.
+  (`up{job=~".*alertmanager-discord.*"} == 0, 5m` — regex because the operator
+  prefixes job names, same pattern as the existing `CloudflareTunnelDown`
+  rule), `KubeStateMetricsDown`, `AlertmanagerNotificationsFailing`
+  (`rate(alertmanager_notifications_failed_total[10m]) > 0`, critical).
+  Delivery silence itself is caught by the absent `Watchdog` pulse (runbook:
+  no heartbeat in 10m → investigate pipe) and by the pipecheck Job — a
+  `WatchdogMissing` PrometheusRule cannot detect Discord-side death because
+  nothing evaluates once the pipeline is down.
 
 Every alert carries `summary` + `description` ("so what") + `runbook_url` +
 dashboard annotation. CI enforces this (Section 4).
@@ -142,8 +148,10 @@ dashboard annotation. CI enforces this (Section 4).
 
 - **Pin the bridge:** `benjojo/alertmanager-discord:latest` → pinned
   `tag@digest` (digest resolved at implementation time; recorded in the manifest
-  and this plan). Image-updater annotation `argocd-image-updater.argoproj.io/image-list: ""`
-  (or equivalent ignore) so it cannot silently drift.
+  and this plan). No image-updater change:
+  `k8s/infra/argocd-image-updater/image-updater-cr.yaml` watches
+  `invenio-bootstrap` only, so the bridge is outside its scope — the worker
+  verifies this scope rather than adding an ignore annotation.
 - **Two receivers, one bridge:** `discord-critical` (`[CRITICAL]` title prefix,
   `repeat_interval 2h`, `group_wait 30s`) and `discord-warning` (quiet,
   `repeat_interval 12h`), same sealed `alertmanager-discord-webhook`, split at
@@ -255,7 +263,7 @@ once per change; the steady `Watchdog` pulse proves it stays up.
 | Bridge image pinned to a digest that later needs security update | Stale image | Image-updater ignore documented; renewal is a T1 digest bump with a test alert |
 | PostSync Job fails on transient Prometheus scrape delay | ArgoCD sync red noise | Job retries with backoff; `for:` windows and 2h grace on `CNPGBackupStale` |
 | Two receivers post to the same webhook = duplicates if routing misconfigured | Discord spam | Inhibit rule + `continue: false`; test alert exercised in canary |
-| Watchdog route mis-set to `null` again | Silence returns | CI assertion + `WatchdogMissing` alert + pipecheck checks the receiver name |
+| Watchdog route mis-set to `null` again | Silence returns | CI assertion (script greps the Watchdog receiver name) + `AlertmanagerNotificationsFailing` + pipecheck checks the receiver name |
 
 ## Open Questions
 
