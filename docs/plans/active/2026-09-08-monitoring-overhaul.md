@@ -2,7 +2,7 @@
 
 > **Date:** 2026-09-08
 > **Tier:** T2 (`feat/<issue>-monitoring-overhaul`)
-> **Status:** Design approved by operator (2026-09-08), amended to native-Discord delivery (2026-09-14, see §3); implementation planning complete, awaiting worker dispatch approval
+> **Status:** IMPLEMENTED on branch, awaiting lead verification + VPN live-checks
 > **Scope:** `k8s/infra/monitoring/**`, `.github/workflows/validate-infra.yaml`, `scripts/ci-validate-monitoring.sh`, docs. Out of scope: chart version bumps, sealed-secret rotations, other components' manifests.
 > **Companion docs:** `docs/plans/active/2026-09-03-architecture-and-dr.md` (failure modes), `docs/cluster-assessment-2026-09-05.md` (live baseline).
 

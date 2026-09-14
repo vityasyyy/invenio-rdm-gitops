@@ -1,8 +1,9 @@
-# WORKER-REPORT — monitoring overhaul (#96) — PARTIAL (T1–T3 committed, BLOCKED)
+# WORKER-REPORT — monitoring overhaul (#96) — COMPLETE (T1–T6, awaiting lead/T7)
 
-> Status: T1, T2, T3 committed on `feat/96-monitoring-overhaul`. T4–T6 NOT
-> started — blocked on the promtool-vs-CR question in BLOCKED/OPEN below.
-> This report will be extended as work resumes.
+> Status: T1–T6 committed on `feat/96-monitoring-overhaul`, all static gates
+> green, negative case proven. Branch left unpushed for lead verification.
+> Live delivery proof (pipecheck first run, Discord test delivery, Grafana
+> render check) needs VPN → T7/lead.
 
 ## Per-task file list
 
@@ -12,7 +13,19 @@
   (5 ConfigMaps → 4, all `grafana_folder: InvenioRDM`).
 - **T3** (commit `d72bcd5`): rewrote `k8s/infra/monitoring/alerts.yaml`
   (5 groups `app-slo`, `data-backups`, `capacity`, `edge`, `platform-self`, 22 rules).
-- T4–T6: pending (bridge files still present, no CR yet, no pipecheck yet).
+- **BLOCKER-1 fix** (commit `95a4a4f`, lead-approved): CI promtool step now
+  extract-then-check; validator reports clean `discord-receivers.yaml missing`
+  violation instead of traceback.
+- **T4** (commit `e218d85`): deleted `alertmanager-discord-deployment.yaml`,
+  `alertmanager-discord-service.yaml`, `alertmanager-discord-netpol.yaml`;
+  created `k8s/infra/monitoring/discord-receivers.yaml` (AlertmanagerConfig CR)
+  and `scripts/ci-stub-receivers.py`; modified `values.yaml` (route tree +
+  `alertmanagerConfigSelector: {}`) and `kustomization.yaml`; validator updated
+  for CRD `apiURL` spelling + CR-receiver route allowance (see deviations).
+- **T5** (commit `e9eddf9`): created `k8s/infra/monitoring/monitoring-pipecheck.yaml`,
+  registered in `kustomization.yaml`.
+- **T6** (this report + spec status flip, commit pending): full gates green,
+  negative case proven (below).
 
 ## T1 validator initial FAIL output (verbatim)
 
@@ -29,17 +42,13 @@
 ✗ grafana-dashboard-invenio/invenio-operations.json: title 'Invenio Operations' must start with 00/01/02/03
 ✗ want exactly 4 dashboards, found 5
 ✗ alert PodCrashLooping: missing annotation 'description' (+ runbook_url, dashboard)
-... (all old alerts missing runbook_url/dashboard; full list in shell history)
+... (all old alerts missing runbook_url/dashboard)
 ✗ Watchdog routed to 'null', want 'discord-warning'
 ✗ alertmanager config has no inhibit_rules
-FileNotFoundError: .../k8s/infra/monitoring/discord-receivers.yaml   (CR does not exist yet)
+FileNotFoundError: .../k8s/infra/monitoring/discord-receivers.yaml   (CR did not exist yet;
+  since fixed: clean `discord-receivers.yaml missing` violation, exit stays non-zero)
 EXIT=1
 ```
-
-Note: the verbatim T1 script crashes with `FileNotFoundError` when
-`discord-receivers.yaml` is absent instead of reporting a clean violation.
-Still exit non-zero as expected; T4 will create the file. No script change
-made (plan content kept verbatim).
 
 ## T2 proofs + decisions
 
@@ -56,10 +65,10 @@ KSM-RBAC proof (`bash scripts/ci-render-manifests.sh` exit 0, then greps on
   `grep -c alertmanager_config_last_reload_successful` → **1**. Both kept.
 - KSM scrape job name in render is exactly `job="kube-state-metrics"`
   (so T3 `KubeStateMetricsDown` regex `.*kube-state-metrics.*` matches).
-- Rendered Service names (for T5 — differ from plan guess):
-  Prometheus `monitoring-kube-prometheus-prometheus` (matches plan),
+- Rendered Service names: Prometheus `monitoring-kube-prometheus-prometheus`,
   Alertmanager **`monitoring-kube-prometheus-alertmanager`**
-  (plan guessed `monitoring-kube-alertmanager` — T5 must use the rendered name).
+  (plan guessed `monitoring-kube-alertmanager` — T5 uses the rendered name,
+  lead-approved).
 - CNPG Cluster namespace confirmed `database`
   (`k8s/apps/invenio-deps/postgresql/cluster.yaml`) → overview "DB pods Running"
   uses `namespace="database"`.
@@ -70,12 +79,8 @@ KSM-RBAC proof (`bash scripts/ci-render-manifests.sh` exit 0, then greps on
   overview "Max PVC usage %"), "Velero Targets Up", "MinIO Targets Up"
   (covered by platform "Targets down").
 - Demoted `InvenioTraffic4xxRatioHigh` alert → overview "Invenio 4xx %" stat panel.
-- T2 Step 3 check: dashboard violations gone; only alert/CR/routing/bridge
-  violations remained. T3 Step 4 check: alert violations gone; only
-  `Watchdog routed to 'null'` + `no inhibit_rules` + missing-CR
-  `FileNotFoundError` remain (all T4 scope).
 
-## T3 CNPG freshness proof (Step 1)
+## T3 CNPG freshness proof
 
 - Docs URL (operator chart `cloudnative-pg 0.23.0` = CNPG ~1.25):
   `https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.25/docs/src/monitoring.md`
@@ -89,11 +94,11 @@ KSM-RBAC proof (`bash scripts/ci-render-manifests.sh` exit 0, then greps on
   - `cnpg_collector_pg_wal_archive_status{value="ready"|"done"}` ("Number of
     WAL segments in the archive_status directory") → `CNPGArchivingDown`:
     `cnpg_collector_pg_wal_archive_status{value="ready"} > 5`, warning,
-    `for: 15m`. DEVIATION NOTE: the spec's `ContinuousArchiving==False` is a
-    CR status condition, not a Prometheus metric in this CNPG version; the
+    `for: 15m`. DEVIATION (lead-accepted): the spec's `ContinuousArchiving==False`
+    is a CR status condition, not a Prometheus metric in this CNPG version; the
     ready-file backlog is the version-documented Prometheus-native equivalent.
 - No deferrals — both freshness alerts implemented.
-- Other T3 decisions (recorded, all committed):
+- Other T3 decisions (lead-accepted, all committed):
   - `VeleroBackupFailed` keeps its name but its expr changed from the generic
     `velero_backup_attempt_total - velero_backup_success_total > 0` (which the
     plan orders deleted) to `sum(increase(velero_backup_failure_total[1h])) > 0`.
@@ -107,71 +112,116 @@ KSM-RBAC proof (`bash scripts/ci-render-manifests.sh` exit 0, then greps on
   - Rule→dashboard mapping: A→`invenio-app` (except `TraefikServiceDown`→overview);
     B→`data-backups`; C→`platform-health` (except `InvenioPVCUsageHigh`→overview);
     D→`overview-invenio-rdm`; E→`platform-health`.
-  - `KubeStateMetricsDown` regex verified against render (`job="kube-state-metrics"`).
-- promtool on extracted rules: `SUCCESS: 22 rules found` (procedure below).
 
-## Chart findings (T4 — not started)
+## T4 chart findings (Step 1 — all pass)
 
-Pending: bundled AM tag, CRD `discordConfigs`/`inhibitRules` support,
-`alertmanagerConfigSelector` key path.
+Pulled `prometheus-community/kube-prometheus-stack --version 69.6.0`
+(inspection only; note: pulled layout nests CRDs at
+`charts/crds/crds/crd-alertmanagerconfigs.yaml`, and Alertmanager has no
+separate subchart dir — image lives in top-level `values.yaml`):
 
-## Curl image (T5 — not started)
+- Bundled Alertmanager image tag: **`v0.28.0`** (≥v0.25 → native
+  `discord_configs` available). amtool used below is exactly v0.28.0.
+- Selector key path: **`alertmanager.alertmanagerSpec.alertmanagerConfigSelector`**
+  (`values.yaml:885 alertmanagerSpec:` → `:939 alertmanagerConfigSelector: {}`).
+  Enabled in our `values.yaml` as `alertmanagerConfigSelector: {}` (selects all
+  AlertmanagerConfigs, chart default semantics).
+- CRD `discordConfigs` support: nonzero (`grep -c` → 1; block at CRD line 228).
+- CRD `inhibitRules` support: nonzero (`grep -c` → 1; block at CRD line 56).
+- DEVIATION (plan-anticipated, CRD-spelling class): the CRD's `discordConfigs[]`
+  items use **`apiURL`** (`{name, key}` SecretKeySelector — "The secret's key
+  that contains the Discord webhook URL"), NOT `webhookUrl`. The only
+  `webhookUrl` in the CRD (2 hits, line 1970) belongs to **msteamsConfigs**
+  ("MSTeams webhook URL", required there). Our CR therefore uses
+  `apiURL: {name: alertmanager-discord-webhook, key: DISCORD_WEBHOOK_URL}`
+  (key verified against the sealed secret; secret is in namespace `monitoring`,
+  same as the CR, as the CRD requires). `sendResolved`/`title`/`message`
+  spellings match the CRD verbatim. Consequential validator + stub-script
+  updates: validator checks `apiURL` keyRef; stub maps `apiURL→webhook_url`
+  (dummy). No fallback to the pinned-bridge design needed.
+- T4 Step 6 gate: `amtool check-config` on the stub-merged config → SUCCESS
+  (3 receivers, 1 inhibit rule); validator → `OK: 4 dashboards, 22 alerts,
+  native-Discord routing valid`, exit 0.
+- T4 Step 7: `ci-render-manifests.sh` monitoring lines
+  (`✓ kustomize: k8s/infra/monitoring`, `✓ helm: monitoring`, 19 manifests);
+  staged set was exactly the 3 deletions + CR + script + values + kustomization.
 
-Pending: tag + digest.
+## T5 pipecheck
 
-## Verification log (so far)
+- Service DNS verified against render (both names present, multiple hits):
+  `monitoring-kube-prometheus-prometheus:9090`,
+  `monitoring-kube-alertmanager` replaced by rendered
+  `monitoring-kube-prometheus-alertmanager:9093` (lead-approved).
+- Curl image (crane-resolved, no `latest` pin):
+  **`curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777`**
+  (`latest` and `8.22.0` digests identical; config label confirms 8.22.0).
+- `ci-render-manifests.sh` → "All renders succeeded";
+  `ci-validate-selectors.sh rendered` → "All selector validations passed".
+- T7 note (pre-recorded): if the Job fails on the securityContext on VPN, the
+  documented first fix is dropping `runAsUser`/`runAsGroup`/`fsGroup`.
 
-- `yamllint .github/workflows/validate-infra.yaml` → exit 0 (line-length
-  warnings only, matching pre-existing style) after adding the missing trailing
-  newline the append dropped.
-- `bash scripts/ci-render-manifests.sh` → exit 0.
-- `bash scripts/ci-validate-monitoring.sh` after T3 → only T4-scope violations
-  (see T2 section above).
-- promtool (installed v3.13.3 darwin-arm64 to `~/.local/bin`, no sudo on this
-  host; CI still installs its own per the committed job): extracted-rules check
-  green; literal plan command red — see BLOCKED/OPEN.
-- Negative case (T6 Step 2): not run yet.
+## T6 full verification output (Step 1 — every command exit 0)
 
-## BLOCKED/OPEN
+```
+yamllint argocd/ k8s/ external-lb/k8s/   → clean (line-length warnings only, pre-existing style)
+bash scripts/ci-render-manifests.sh      → Rendered: 19 manifests / All renders succeeded
+bash scripts/ci-validate-selectors.sh rendered → All selector validations passed
+promtool check rules /tmp/rules-check.yaml (spec.groups extraction, lead-approved)
+                                         → SUCCESS: 22 rules found
+python3 scripts/ci-stub-receivers.py     → receivers: null, discord-critical, discord-warning
+amtool check-config /tmp/am-merged-check.yaml → SUCCESS (global, route, 1 inhibit rule, 3 receivers)
+bash scripts/ci-validate-monitoring.sh   → OK: 4 dashboards, 22 alerts, native-Discord routing valid
+```
 
-### BLOCKER-1 (plan bug, stops T4–T6): `promtool check rules` cannot parse the PrometheusRule CR
+(kubeconform/kube-linter run in CI after lead pushes — not run here.)
 
-- Exact command (T3 Step 3 / T6 Step 1 / committed T1 CI step /
-  acceptance criteria):
-  `promtool check rules k8s/infra/monitoring/alerts.yaml`
-- Exact output (promtool v3.13.3):
-  ```
-  Checking k8s/infra/monitoring/alerts.yaml
-    FAILED:
-  k8s/infra/monitoring/alerts.yaml: yaml: unmarshal errors:
-    line 1: field apiVersion not found in type rulefmt.RuleGroups
-    line 2: field kind not found in type rulefmt.RuleGroups
-    line 3: field metadata not found in type rulefmt.RuleGroups
-    line 6: field spec not found in type rulefmt.RuleGroups
-  ```
-- Diagnosis: `promtool check rules` only accepts raw rule files
-  (`{groups: [...]}` at top level). Our file must stay a
-  `monitoring.coreos.com/v1 PrometheusRule` CR (the cluster consumes it via
-  kustomize), so the literal command can never succeed — the plan step, the
-  committed T1 CI step, and the acceptance criterion contradict the required
-  file shape. No plan fallback covers this.
-- Ruled out: `promtool check rules --ignore-unknown-fields` exits 0 but reports
-  `SUCCESS: 0 rules found` — a vacuous pass that would let broken PromQL through.
-  Rejected as a dishonest gate; do not use.
-- Proven: extracting `spec.groups` and checking the extract gives
-  `SUCCESS: 22 rules found` (5 groups / 22 alerts, matching the committed file).
-- Proposed fix (needs lead approval): change the CI step
-  "Check PrometheusRule syntax" to extract-then-check:
-  ```yaml
-        - name: Check PrometheusRule syntax
-          run: |
-            python3 -c "import yaml; d=yaml.safe_load(open('k8s/infra/monitoring/alerts.yaml')); yaml.safe_dump({'groups': d['spec']['groups']}, open('/tmp/rules-check.yaml','w'))"
-            promtool check rules /tmp/rules-check.yaml
-  ```
-  and mirror it in T6 Step 1. Everything else in T1–T3 stays as-is.
-- Committed green: T1 (`701f197`), T2 (`54a6e75`), T3 (`d72bcd5`) — validator
-  alert-half green, rules PromQL-valid per extraction check.
+## T6 negative-case proof (Step 2)
 
-### OPEN (needs VPN, for T7/lead — unchanged)
+Broke the first rule (removed `runbook_url` from `InvenioWebReplicasUnavailable`):
 
-- pipecheck first run, Discord test delivery, Grafana render check.
+```
+✗ alert InvenioWebReplicasUnavailable: missing annotation 'runbook_url'
+
+FAILED: 1 violation(s)
+exit=1
+```
+
+After restore (`cp /tmp/alerts.bak ...`):
+
+```
+OK: 4 dashboards, 22 alerts, native-Discord routing valid
+```
+
+`git diff --stat k8s/infra/monitoring/alerts.yaml` after restore: empty —
+only T3's intended changes remain. The validator bites and the restore is exact.
+
+## Deviations / fixes summary (all recorded; BLOCKER-1 class lead-approved)
+
+1. **BLOCKER-1 (fixed, lead-approved):** CI promtool step is extract-then-check
+   (promtool cannot parse the PrometheusRule CR wrapper); `--ignore-unknown-fields`
+   rejected (vacuous 0-rule pass). Validator missing-CR crash → clean violation.
+2. **BLOCKER-2 (fixed in T4 commit, needs lead sign-off on the diff):**
+   the verbatim T1 validator flagged routes pointing at the CR receivers as
+   "unknown" — yet the design (and T4 Step 6 expectation `OK / exit 0`) requires
+   exactly that. amtool v0.28.0 on the merged config proves the routing correct
+   (SUCCESS), so the validator now allows route receivers present in either the
+   base config or the CR (`receivers | cr_receivers | {None}`), while still
+   enforcing base receivers = `[null]` only. Without this, `OK / exit 0` is
+   unreachable by construction.
+3. CRD spelling: CR + validator + stub use `apiURL`, not `webhookUrl`
+   (plan-anticipated deviation class; `webhookUrl` in this CRD is MSTeams-only).
+4. T2–T3 content deviations (lead-accepted): CNPG archiving expr, VeleroBackupFailed
+   expr, renames/deletions, rendered AM DNS name.
+5. Environment adaptations (no plan impact): no sudo on this host → promtool
+   v3.13.3 / amtool v0.28.0 / crane v0.22.1 installed to `~/.local/bin`
+   (darwin-arm64 builds; CI installs its own linux binaries per the workflow);
+   `helm pull` layout paths adapted (CRDs under `charts/crds/crds/`).
+
+## BLOCKED/OPEN (needs VPN — T7/lead, unchanged)
+
+- pipecheck first run (`kubectl -n monitoring get jobs`; securityContext fallback noted above).
+- Discord test delivery (`MonitoringPipeTest` arrival + resolve; first
+  `[CRITICAL]`-style title check; `Watchdog` pulse within 10 min of sync).
+- Grafana render check (one `InvenioRDM` folder, 4 dashboards, each opened once).
+- Confirm no `alertmanager-discord` pods remain anywhere.
+- kubeconform/kube-linter verdicts arrive via CI after push (`gh pr checks --watch`).
