@@ -210,3 +210,13 @@ empty — only G1's intended content remains. Validator bites, restore is exact.
    reference anywhere) — SM deletion only.
 4. cloudflared-scrape awkwardness did NOT materialise (Service+SM, no DaemonSet
    edit) — no alert/panel drop needed, no sign-off required.
+
+## Lead addendum (post-worker review, same branch)
+
+- **OpenSearch egress (would-have-broken-search):** the exporter plugin installs
+  from github.com in an initContainer on every pod creation, but namespace
+  `search` default-denies egress with no HTTPS allow (DNS allow is correctly
+  cross-namespace). Added `search-allow-egress-https` (opensearch pods →
+  443/0.0.0.0/0) to `k8s/apps/invenio-deps/opensearch/manifests/network-policy.yaml`.
+  Install step placement is initContainer (render lines ~173/219), so no
+  reinstall-on-container-restart class. Gates re-green after the addition.
