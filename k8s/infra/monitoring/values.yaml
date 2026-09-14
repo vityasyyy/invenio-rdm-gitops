@@ -81,6 +81,13 @@ alertmanager:
   enabled: true
   alertmanagerSpec:
     alertmanagerConfigSelector: {}
+    # Branch-A requirement: the discord-receivers AlertmanagerConfig carries the
+    # tier sub-routes for ALL namespaces. Default OnNamespace would inject a
+    # namespace="monitoring" matcher on the CR route and drop every
+    # cross-namespace alert, so matching must be cluster-wide (chart 69.6.0
+    # CRD crd-alertmanagers.yaml: enum OnNamespace|None, default OnNamespace).
+    alertmanagerConfigMatcherStrategy:
+      type: None
     resources:
       requests:
         cpu: 50m
@@ -100,26 +107,14 @@ alertmanager:
     global:
       resolve_timeout: 5m
     route:
+      # Root only. The base Secret must be valid standalone (Alertmanager
+      # rejects undefined receivers), so tier sub-routes live in the
+      # discord-receivers AlertmanagerConfig CR (spec.route), not here.
       group_by: ["alertname", "namespace", "service"]
       group_wait: 30s
       group_interval: 5m
       repeat_interval: 4h
       receiver: "null"
-      routes:
-        - match:
-            alertname: Watchdog
-          receiver: "discord-warning"
-          repeat_interval: 5m
-        - match:
-            severity: critical
-          receiver: "discord-critical"
-          repeat_interval: 2h
-          continue: false
-        - match:
-            severity: warning
-          receiver: "discord-warning"
-          repeat_interval: 12h
-          continue: false
     inhibit_rules:
       - source_match:
           severity: critical
