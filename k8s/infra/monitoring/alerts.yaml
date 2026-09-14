@@ -5,31 +5,7 @@ metadata:
   namespace: monitoring
 spec:
   groups:
-    - name: cluster-health
-      rules:
-        - alert: PodCrashLooping
-          expr: rate(kube_pod_container_status_restarts_total[15m]) > 0
-          for: 5m
-          labels:
-            severity: critical
-          annotations:
-            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash looping"
-        - alert: PodNotReady
-          expr: kube_pod_status_phase{phase!="Running"} == 1
-          for: 10m
-          labels:
-            severity: warning
-        - alert: HighMemoryUsage
-          expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.1
-          for: 5m
-          labels:
-            severity: warning
-        - alert: NodeDiskPressure
-          expr: kube_node_status_condition{condition="DiskPressure",status="true"} == 1
-          for: 5m
-          labels:
-            severity: critical
-    - name: invenio-operations
+    - name: app-slo
       rules:
         - alert: InvenioWebReplicasUnavailable
           expr: |
@@ -43,21 +19,10 @@ spec:
             severity: critical
           annotations:
             summary: "Invenio web replicas unavailable"
-            description: "invenio/invenio-web has fewer available replicas than desired for more than 10m."
-        - alert: InvenioPodRestartHigh
-          expr: |
-            increase(
-              kube_pod_container_status_restarts_total{namespace="invenio"}[30m]
-            ) > 3
-          for: 5m
-          labels:
-            severity: warning
-          annotations:
-            summary: "Invenio pod restarts are elevated"
-            description: >-
-              Container {{ $labels.container }} in pod
-              {{ $labels.pod }} restarted more than 3 times in 30m.
-        - alert: InvenioTraffic5xxRatioHigh
+            description: "invenio/invenio-web has fewer available replicas than desired for more than 10m. Deposits and search may be degraded."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+            dashboard: "https://grafana.vityasy.me/d/invenio-app"
+        - alert: Invenio5xxRatioHigh
           expr: |
             100 * (
               sum(rate(
@@ -78,6 +43,134 @@ spec:
           annotations:
             summary: "Invenio 5xx ratio is high"
             description: "Traefik reports more than 2% 5xx responses for invenio-web over the last 10m."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+            dashboard: "https://grafana.vityasy.me/d/invenio-app"
+        - alert: TraefikServiceDown
+          expr: |
+            count(traefik_service_server_up) by (service) == 0
+            and on(service) count(traefik_service_requests_total) by (service) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Traefik backend {{ $labels.service }} has no healthy servers"
+            description: "All backend servers for this Traefik service are down while it still receives traffic."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+            dashboard: "https://grafana.vityasy.me/d/overview-invenio-rdm"
+        - alert: InvenioPodRestartHigh
+          expr: |
+            sum(increase(
+              kube_pod_container_status_restarts_total{namespace="invenio"}[1h]
+            )) > 5
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Invenio pod restarts are elevated"
+            description: "Invenio pods restarted more than 5 times in the last hour. Check crash causes before it becomes an outage."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+            dashboard: "https://grafana.vityasy.me/d/invenio-app"
+    - name: data-backups
+      rules:
+        - alert: VeleroBackupFailed
+          expr: |
+            sum(increase(velero_backup_failure_total[1h])) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Velero backup failed"
+            description: "At least one Velero backup failed in the last hour. Check velero backup logs; cluster disaster recovery is at risk."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+            dashboard: "https://grafana.vityasy.me/d/data-backups"
+        - alert: VeleroBackupStale
+          expr: time() - velero_backup_timestamp > 8 * 24 * 3600
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "No Velero backup in over 8 days"
+            description: "The last successful Velero backup was more than 8 days ago. Verify the Velero schedule and storage."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+            dashboard: "https://grafana.vityasy.me/d/data-backups"
+        - alert: PostgreSQLHighConnections
+          expr: cnpg_collection_connections_total / cnpg_collection_connections_max > 0.8
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PostgreSQL connection usage above 80%"
+            description: "Cluster {{ $labels.cluster_name }} is using more than 80% of available connections. Scale the pool or investigate leaks."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+            dashboard: "https://grafana.vityasy.me/d/data-backups"
+        - alert: CNPGReplicationLagHigh
+          expr: cnpg_collection_replication_lag > 30
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PostgreSQL replication lag is high"
+            description: "Cluster {{ $labels.cluster_name }} has replication lag above 30 seconds."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+            dashboard: "https://grafana.vityasy.me/d/data-backups"
+        - alert: CNPGBackupStale
+          expr: |
+            cnpg_collector_last_available_backup_timestamp > 0
+            and (time() - cnpg_collector_last_available_backup_timestamp) > 26 * 3600
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "No CNPG backup in over 26 hours"
+            description: "The last available CloudNativePG backup is older than 26h (daily schedule + 2h grace). Point-in-time recovery coverage has a gap."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+            dashboard: "https://grafana.vityasy.me/d/data-backups"
+        - alert: CNPGArchivingDown
+          expr: |
+            cnpg_collector_pg_wal_archive_status{value="ready"} > 5
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "CNPG WAL archiving is falling behind"
+            description: "More than 5 WAL segments are waiting to be archived for 15m. Continuous archiving may be broken; point-in-time recovery is at risk."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+            dashboard: "https://grafana.vityasy.me/d/data-backups"
+        - alert: VeleroPluginCrashlooping
+          expr: |
+            sum(rate(
+              kube_pod_container_status_restarts_total{namespace="velero"}[15m]
+            )) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Velero pods are restarting"
+            description: "Velero containers restarted in the last 15m (plugin crashloop class, see issue #91). Backups may silently stop."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+            dashboard: "https://grafana.vityasy.me/d/data-backups"
+    - name: capacity
+      rules:
+        - alert: HighMemoryUsage
+          expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node memory available below 10%"
+            description: "A node has less than 10% memory available. Add headroom or evict before the kernel OOM-killer decides."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+            dashboard: "https://grafana.vityasy.me/d/platform-health"
+        - alert: NodeDiskPressure
+          expr: kube_node_status_condition{condition="DiskPressure",status="true"} == 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Node {{ $labels.node }} is under disk pressure"
+            description: "kubelet reports DiskPressure on this node. Pods will be evicted; free disk or expand the volume."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+            dashboard: "https://grafana.vityasy.me/d/platform-health"
         - alert: InvenioPVCUsageHigh
           expr: |
             100 * (
@@ -93,81 +186,50 @@ spec:
             severity: warning
           annotations:
             summary: "Invenio PVC usage is high"
-            description: "Persistent volume usage in namespace invenio is above 80%."
-        - alert: InvenioTraffic4xxRatioHigh
+            description: "Persistent volume usage in namespace invenio is above 80%. Expand the claim before writes fail."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+            dashboard: "https://grafana.vityasy.me/d/overview-invenio-rdm"
+        - alert: OOMKillsIncreasing
           expr: |
-            100 * (
-              sum(rate(
-                traefik_service_requests_total{
-                  service=~"invenio-web.*",code=~"4.."
-                }[10m]
-              )) / clamp_min(
-                sum(rate(
-                  traefik_service_requests_total{
-                    service=~"invenio-web.*"
-                  }[10m]
-                )), 0.001
-              )
-            ) > 10
-          for: 10m
+            sum(rate(
+              kube_pod_container_status_terminated_reason{reason="OOMKilled"}[30m]
+            )) > 0
+          for: 15m
           labels:
             severity: warning
           annotations:
-            summary: "Invenio 4xx ratio is high (>10%)"
-            description: >-
-              Traefik reports more than 10% 4xx responses for invenio-web
-              over the last 10m. This may indicate a routing or network
-              policy issue.
-    - name: velero.rules
-      rules:
-        - alert: VeleroBackupFailed
-          expr: velero_backup_attempt_total - velero_backup_success_total > 0
-          for: 5m
+            summary: "Containers are being OOM-killed"
+            description: "At least one container was OOM-killed in the last 30m. Raise the memory limit or fix the leak."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+            dashboard: "https://grafana.vityasy.me/d/platform-health"
+        - alert: PodCrashLoopingWithDown
+          expr: |
+            sum by (namespace, pod) (
+              rate(kube_pod_container_status_restarts_total[15m])
+            ) > 0
+            and on (namespace, pod) sum by (namespace, pod) (
+              kube_pod_status_phase{phase="Running"}
+            ) == 0
+          for: 15m
           labels:
             severity: critical
           annotations:
-            summary: "Velero backup failed"
-            description: "Velero backup has failed attempts. Check velero backup logs."
-        - alert: VeleroBackupStale
-          expr: time() - velero_backup_timestamp > 8 * 24 * 3600
-          for: 1h
-          labels:
-            severity: warning
-          annotations:
-            summary: "No Velero backup in over 8 days"
-            description: "The last successful Velero backup was more than 8 days ago."
-    - name: database.rules
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash looping and down"
+            description: "A pod is restarting and has no Running phase left. A single transient restart never fires this; investigate the crash."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+            dashboard: "https://grafana.vityasy.me/d/platform-health"
+    - name: edge
       rules:
-        - alert: PostgreSQLHighConnections
-          expr: cnpg_collection_connections_total / cnpg_collection_connections_max > 0.8
-          for: 5m
-          labels:
-            severity: warning
-          annotations:
-            summary: "PostgreSQL connection usage above 80%"
-            description: "Cluster {{ $labels.cluster_name }} is using more than 80% of available connections."
-    - name: minio.rules
-      rules:
-        - alert: MinIOHighDiskUsage
-          expr: minio_cluster_disk_free_bytes / minio_cluster_disk_total_bytes < 0.2
-          for: 10m
-          labels:
-            severity: warning
-          annotations:
-            summary: "MinIO disk usage above 80%"
-            description: "MinIO has less than 20% free disk space."
-    - name: opensearch.rules
-      rules:
-        - alert: OpenSearchClusterRed
-          expr: opensearch_cluster_status == 2
-          for: 5m
+        - alert: CloudflareTunnelDown
+          expr: up{job=~".*cloudflared.*"} == 0
+          for: 3m
           labels:
             severity: critical
           annotations:
-            summary: "OpenSearch cluster status is red"
-            description: "OpenSearch cluster is in RED state. Some shards are unavailable."
-    - name: traefik-routing
-      rules:
+            summary: "Cloudflare tunnel is down"
+            description: "cloudflared is not reporting as up. External access is likely broken; check the tunnel pod, IngressRoute, and network policies."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+            dashboard: "https://grafana.vityasy.me/d/overview-invenio-rdm"
         - alert: TraefikHigh404Rate
           expr: |
             100 * (
@@ -179,36 +241,48 @@ spec:
             severity: critical
           annotations:
             summary: "Traefik 404 rate is above 5%"
-            description: >-
-              High proportion of 404 responses from Traefik. Likely a
-              routing, network policy, or missing service issue.
-        - alert: TraefikServiceDown
-          expr: |
-            count(traefik_service_server_up) by (service) == 0
-            and on(service) count(traefik_service_requests_total) by (service) > 0
-          for: 5m
+            description: "High proportion of 404 responses from Traefik. Check IngressRoute, network policies, and service endpoints."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+            dashboard: "https://grafana.vityasy.me/d/overview-invenio-rdm"
+    - name: platform-self
+      rules:
+        - alert: PrometheusTargetDown
+          expr: count(up == 0) / count(up) > 0.1
+          for: 10m
           labels:
             severity: critical
           annotations:
-            summary: "Traefik backend {{ $labels.service }} has no healthy servers"
-            description: "All backend servers for this Traefik service are down."
-    - name: cloudflared-tunnel
-      rules:
-        - alert: CloudflareTunnelDown
-          expr: up{job=~".*cloudflared.*"} == 0
-          for: 3m
+            summary: "More than 10% of Prometheus targets are down"
+            description: "Over 10% of scrape targets are down for 10m. Monitoring itself has a blind spot; fix scraping before trusting dashboards."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/docs/plans/active/2026-09-08-monitoring-overhaul.md"
+            dashboard: "https://grafana.vityasy.me/d/platform-health"
+        - alert: KubeStateMetricsDown
+          expr: up{job=~".*kube-state-metrics.*"} == 0
+          for: 10m
           labels:
             severity: critical
           annotations:
-            summary: "Cloudflare tunnel is down"
-            description: "cloudflared is not reporting as up. External access is likely broken."
-    - name: cnpg-replication
-      rules:
-        - alert: CNPGReplicationLagHigh
-          expr: cnpg_collection_replication_lag > 30
-          for: 5m
+            summary: "kube-state-metrics is down"
+            description: "kube-state-metrics is not being scraped. Most Kubernetes-state alerts and panels are blind until it recovers."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/docs/plans/active/2026-09-08-monitoring-overhaul.md"
+            dashboard: "https://grafana.vityasy.me/d/platform-health"
+        - alert: AlertmanagerNotificationsFailing
+          expr: sum(rate(alertmanager_notifications_failed_total[10m])) > 0
+          for: 10m
           labels:
-            severity: warning
+            severity: critical
           annotations:
-            summary: "PostgreSQL replication lag is high"
-            description: "Cluster {{ $labels.cluster_name }} has replication lag above 30 seconds."
+            summary: "Alertmanager notifications are failing"
+            description: "Alertmanager failed to deliver notifications in the last 10m. Discord delivery may be broken; check the Alertmanager logs and webhook secret."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/docs/plans/active/2026-09-08-monitoring-overhaul.md"
+            dashboard: "https://grafana.vityasy.me/d/platform-health"
+        - alert: AlertmanagerConfigFailed
+          expr: alertmanager_config_last_reload_successful == 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Alertmanager configuration failed to reload"
+            description: "The last Alertmanager configuration reload failed. Routing changes are not active; fix the config and check the operator logs."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/docs/plans/active/2026-09-08-monitoring-overhaul.md"
+            dashboard: "https://grafana.vityasy.me/d/platform-health"

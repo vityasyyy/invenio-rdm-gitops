@@ -279,3 +279,43 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           config: .gitleaks.toml
+
+  validate-monitoring:
+    name: Validate Monitoring Rules & Dashboards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yamllint (pyyaml) and jq
+        run: pip install yamllint
+
+      - name: Install promtool (match bundled Prometheus major)
+        run: |
+          PROM_TAG=$(curl -s --max-time 20 https://api.github.com/repos/prometheus/prometheus/releases | jq -r '[.[].tag_name | select(startswith("v3."))] | first // empty')
+          [ -z "$PROM_TAG" ] && PROM_TAG="v3.3.0"
+          echo "Using promtool ${PROM_TAG}"
+          curl -sL "https://github.com/prometheus/prometheus/releases/download/${PROM_TAG}/prometheus-${PROM_TAG#v}.linux-amd64.tar.gz" | tar xz -C /tmp
+          sudo mv "/tmp/prometheus-${PROM_TAG#v}.linux-amd64/promtool" /usr/local/bin/
+          promtool --version
+
+      - name: Install amtool (match chart-bundled Alertmanager, T4 record)
+        run: |
+          AM_TAG="${AM_TAG:-v0.28.0}"
+          echo "Using amtool ${AM_TAG}"
+          curl -sL "https://github.com/prometheus/alertmanager/releases/download/${AM_TAG}/alertmanager-${AM_TAG#v}.linux-amd64.tar.gz" | tar xz -C /tmp
+          sudo mv "/tmp/alertmanager-${AM_TAG#v}.linux-amd64/amtool" /usr/local/bin/
+          amtool --version
+
+      - name: Check PrometheusRule syntax (extract spec.groups — promtool cannot parse the CR wrapper)
+        run: |
+          python3 -c "import yaml; d=yaml.safe_load(open('k8s/infra/monitoring/alerts.yaml')); yaml.safe_dump({'groups': d['spec']['groups']}, open('/tmp/rules-check.yaml','w'))"
+          promtool check rules /tmp/rules-check.yaml
+
+      - name: Check Alertmanager routing (base + CR receivers as native stub)
+        run: |
+          if [ ! -f scripts/ci-stub-receivers.py ]; then echo "SKIP: stub script lands in T4"; exit 0; fi
+          python3 scripts/ci-stub-receivers.py
+          amtool check-config /tmp/am-merged-check.yaml
+
+      - name: Validate dashboards, alerts, routing, CR
+        run: bash scripts/ci-validate-monitoring.sh
