@@ -5,7 +5,6 @@ resources:
   - alerts.yaml
   - grafana-admin-secret.yaml
   - grafana-dashboards.yaml
-  - invenio-servicemonitor.yaml
   - networkpolicy-kube-api.yaml
   - alertmanager-discord-secret.yaml
   - discord-receivers.yaml

@@ -2,7 +2,10 @@
 # Validates monitoring dashboards (JSON + single folder + uid/title/tags),
 # alert rules (severity/summary/runbook/dashboard/for annotations + Watchdog
 # routed to Discord, never to null), the native-Discord receiver CR, and the
-# absence of the deleted bridge stack. Exit non-zero on violation.
+# absence of the deleted bridge stack. Issue #105 adds: invenio-SM absence,
+# matchers-only routing, and source-key pins for every new scrape (velero,
+# cloudflared, minio, opensearch, traefik, postgres PodMonitor).
+# Exit non-zero on violation.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -12,6 +15,7 @@ python3 - "$MON" <<'PY'
 import json, os, sys, yaml
 
 mon = sys.argv[1]
+REPO_ROOT = mon.rstrip("/").removesuffix("/k8s/infra/monitoring")
 errors = []
 def err(msg):
     errors.append(msg)
@@ -141,6 +145,88 @@ for dead in ("alertmanager-discord-deployment.yaml",
 grafana_flag = values.get("grafana", {}).get("defaultDashboardsEnabled", True)
 if grafana_flag is not False:
     err("grafana.defaultDashboardsEnabled must be false (drop chart-bundled dashboard noise)")
+
+# Issue #105: no old-style Alertmanager routing keys remain (match:/match_re: in
+# routes, source/target_match(_re): in inhibit rules). Anchored exact-key match
+# so matchNames/matchLabels/matchers never trip it.
+import re
+_old_route_key = re.compile(r"(?m)^\s*(match|match_re|source_match|source_match_re|target_match|target_match_re)\s*:")
+for fname in ("values.yaml", "discord-receivers.yaml"):
+    body = open(os.path.join(mon, fname)).read()
+    for m in _old_route_key.finditer(body):
+        err(f"{fname}: old-style routing key {m.group(1)!r} — use matchers: (issue #105)")
+
+# Issue #105: invenio-web ServiceMonitor is deleted (endpoint serves nothing).
+if os.path.exists(os.path.join(mon, "invenio-servicemonitor.yaml")):
+    err("invenio-servicemonitor.yaml must be deleted (endpoint serves nothing)")
+if "invenio-servicemonitor.yaml" in kus:
+    err("kustomization.yaml must not list invenio-servicemonitor.yaml")
+
+# Issue #105: every new scrape is wired in source (render-grep proof lives in
+# WORKER-REPORT.md; these assertions pin the source keys so regressions fail CI).
+def _load(rel):
+    with open(os.path.join(REPO_ROOT, rel)) as fh:
+        return yaml.safe_load(fh)
+
+vel = _load("k8s/infra/velero/velero-servicemonitor.yaml")
+if vel.get("kind") != "ServiceMonitor" or (vel.get("metadata", {}).get("labels") or {}).get("release") != "monitoring":
+    err("velero-servicemonitor.yaml must be a ServiceMonitor labelled release: monitoring")
+elif vel["spec"]["endpoints"][0].get("port") != "http-monitoring":
+    err("velero ServiceMonitor must scrape port http-monitoring (:8085)")
+
+cf_svc = _load("external-lb/k8s/cloudflared-service.yaml")
+cf_sm = _load("external-lb/k8s/cloudflared-servicemonitor.yaml")
+if [p.get("port") for p in cf_svc["spec"].get("ports", [])] != [8080]:
+    err("cloudflared Service must expose port 8080")
+if cf_sm.get("kind") != "ServiceMonitor" or (cf_sm.get("metadata", {}).get("labels") or {}).get("release") != "monitoring":
+    err("cloudflared-servicemonitor.yaml must be a ServiceMonitor labelled release: monitoring")
+elif cf_sm["spec"]["endpoints"][0].get("port") != "metrics":
+    err("cloudflared ServiceMonitor must scrape port name metrics")
+
+mino = _load("k8s/infra/minio/values.yaml")["metrics"]["serviceMonitor"]
+if mino.get("includeNode") is not True:
+    err("minio metrics.serviceMonitor.includeNode must be true (else only an unselected Probe renders)")
+if (mino.get("additionalLabels") or {}).get("release") != "monitoring":
+    err("minio metrics.serviceMonitor.additionalLabels.release must be monitoring")
+
+for rel in ("k8s/apps/invenio-deps/opensearch/values.yaml",):
+    osv = _load(rel)
+    if "metricsExporter" in osv:
+        err(f"{rel}: stale metricsExporter key (chart 2.32.0 has no such key)")
+    if not osv.get("serviceMonitor", {}).get("enabled"):
+        err(f"{rel}: serviceMonitor.enabled must be true")
+    if (osv.get("serviceMonitor", {}).get("labels") or {}).get("release") != "monitoring":
+        err(f"{rel}: serviceMonitor.labels.release must be monitoring")
+    if not (osv.get("plugins", {}).get("installList") or []):
+        err(f"{rel}: plugins.installList must carry the verified exporter zip")
+argo_os = open(os.path.join(REPO_ROOT, "argocd/apps/invenio-opensearch.yaml")).read()
+if "metricsExporter" in argo_os:
+    err("argocd/apps/invenio-opensearch.yaml: stale metricsExporter key")
+if "serviceMonitor:" not in argo_os or "prometheus-exporter-2.19.1.0.zip" not in argo_os:
+    err("argocd/apps/invenio-opensearch.yaml: must carry serviceMonitor + verified exporter zip")
+render_sh = open(os.path.join(REPO_ROOT, "scripts/ci-render-manifests.sh")).read()
+if "metricsExporter" in render_sh:
+    err("scripts/ci-render-manifests.sh: stale metricsExporter key in OPENSEARCH_VALUES")
+if "prometheus-exporter-2.19.1.0.zip" not in render_sh:
+    err("scripts/ci-render-manifests.sh: OPENSEARCH_VALUES must carry the verified exporter zip")
+
+trm = _load("k8s/infra/traefik/values.yaml")["metrics"]["prometheus"]
+if (trm.get("service") or {}).get("enabled") is not True:
+    err("traefik metrics.prometheus.service.enabled must be true")
+if (trm.get("serviceMonitor") or {}).get("enabled") is not True:
+    err("traefik metrics.prometheus.serviceMonitor.enabled must be true")
+if ((trm.get("serviceMonitor") or {}).get("additionalLabels") or {}).get("release") != "monitoring":
+    err("traefik serviceMonitor.additionalLabels.release must be monitoring")
+
+pgc_docs = list(yaml.safe_load_all(open(os.path.join(REPO_ROOT, "k8s/apps/invenio-deps/postgresql/cluster.yaml"))))
+pgc = next(d for d in pgc_docs if d and d.get("kind") == "Cluster")
+if (pgc["spec"].get("monitoring") or {}).get("enablePodMonitor") is not False:
+    err("postgresql cluster.yaml monitoring.enablePodMonitor must be false (manual PodMonitor owns the scrape)")
+pgm = _load("k8s/apps/invenio-deps/postgresql/postgres-podmonitor.yaml")
+if pgm.get("kind") != "PodMonitor" or (pgm.get("metadata", {}).get("labels") or {}).get("release") != "monitoring":
+    err("postgres-podmonitor.yaml must be a PodMonitor labelled release: monitoring")
+elif (pgm["spec"].get("selector", {}).get("matchLabels") or {}).get("cnpg.io/cluster") != "postgres":
+    err("postgres PodMonitor must select matchLabels cnpg.io/cluster: postgres")
 
 if errors:
     print(f"\nFAILED: {len(errors)} violation(s)")
