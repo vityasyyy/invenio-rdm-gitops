@@ -37,7 +37,7 @@ instead of coverage): **A** app serving, **B** data safety, **C** capacity,
 | 1 | One `InvenioRDM` Grafana folder, `00 Overview` as the 30-second entry point, max 3 drill-downs | Kills the scatter; answers "is it healthy and what broke" without CLI |
 | 2 | Every panel has a threshold or action meaning; remove duplicated/no-op panels | Bloat removal without losing A–E coverage |
 | 3 | Every alert actionable: severity routing, anti-flap `for:`, `runbook_url` + dashboard link | Alerts must never page without an action |
-| 4 | Two Discord tiers via native `discord_config` + `Watchdog` heartbeat | Silence becomes visible; critical vs quiet information; no bridge to operate |
+| 4 | Two Discord tiers via native `discord_config`, no heartbeat spam | Critical vs quiet information; silence covered by failure alerts + pipecheck; no bridge to operate |
 | 5 | Pipe is self-monitored and provable (PostSync pipecheck, test alert, `amtool`) | "Wired up" becomes verifiable, not assumed |
 | 6 | CI catches bad rules/dashboards statically; live delivery proven in-cluster | Bugs stop at PR time; delivery stops silently rotting |
 
@@ -75,7 +75,6 @@ flowchart LR
     PROM --> AM
     ACR -.->|selects| AM
     AM -->|discord-critical / discord-warning| DC
-    AM -.->|Watchdog pulse every 5m| DC
     PROM --> GF
     PC --> PROM
     PC --> AM
@@ -105,13 +104,16 @@ ConfigMaps collapse into this single file.
 **Routing (native `discord_config`, no bridge):** `critical` → `discord-critical`
 receiver (`[CRITICAL]` title prefix via Alertmanager templating) +
 `runbook_url` + dashboard link; `warning` → quiet `discord-warning` + same
-links; `Watchdog` (always firing) → `discord-warning` heartbeat so `>10m`
-silence = broken pipe. `group_wait 30s`, `group_interval 5m`,
+links. `Watchdog` (always firing) falls through to the base root receiver
+(`null`) by design (issue #110) — no heartbeat-to-human: every outage it
+could signal is covered better by `AlertmanagerNotificationsFailing`, the
+pipecheck hook, and up-based target alerts. `group_wait 30s`,
+`group_interval 5m`,
 `repeat_interval` 2h critical / 12h warning. Inhibit rule: a `critical`
 suppresses its sibling `warning` (no double-post). Receivers live in an
 `AlertmanagerConfig` CR (webhook URL from the existing sealed
-`alertmanager-discord-webhook` by key — never plaintext in git); the base
-route tree in `values.yaml` references them.
+`alertmanager-discord-webhook` by key — never plaintext in git); tier
+sub-routes live in the CR (the base Secret must stay valid standalone).
 
 **Keep / fix / delete map:**
 
@@ -140,10 +142,11 @@ route tree in `values.yaml` references them.
   (`rate(alertmanager_notifications_failed_total[10m]) > 0`, critical —
   carries a discord `reason` label on recent AM). There is deliberately no
   bridge-health alert: the bridge is deleted (see §3), so the failure mode
-  does not exist. Delivery silence itself is caught by the absent `Watchdog`
-  pulse (runbook: no heartbeat in 10m → investigate pipe) and by the
-  pipecheck Job — a `WatchdogMissing` PrometheusRule cannot detect
-  Discord-side death because nothing evaluates once the pipeline is down.
+  does not exist. Delivery silence itself is caught by
+  `AlertmanagerNotificationsFailing` (fires on failed Discord POSTs, with the
+  failure reason), by the pipecheck Job failing the ArgoCD sync, and by
+  up-based target alerts from Prometheus — a heartbeat to humans would only
+  train muting (issue #110).
 
 Every alert carries `summary` + `description` ("so what") + `runbook_url` +
 dashboard annotation. CI enforces this (Section 4).
@@ -167,9 +170,8 @@ whole failure mode (`DiscordBridgeDown`) that vanishes when the bridge does.
   `discord-warning` (quiet, `repeat_interval 12h`), both `discord_configs`
   with the webhook URL from the sealed Secret and `message` templates carrying
   the runbook link. The CR is self-contained: route sub-tree + receivers
-  (`spec.route`: Watchdog → `discord-warning` every 5m;
-  `severity: critical` → `discord-critical`; `severity: warning` →
-  `discord-warning`; default receiver `discord-warning`); the base in
+  (`spec.route`: `severity: critical` → `discord-critical`;
+  `severity: warning` → `discord-warning`; default receiver `discord-warning`); the base in
   `values.yaml` keeps root (`receiver: null`) + inhibit critical-over-warning
   only, so the base Secret stays valid standalone. `values.yaml` also sets
   `alertmanagerConfigMatcherStrategy: {type: None}` so the CR route applies
@@ -182,11 +184,12 @@ whole failure mode (`DiscordBridgeDown`) that vanishes when the bridge does.
   in `helm show values`. If any of this does not fit, the fallback is the
   previously approved pinned-bridge design (recorded in git history) — but
   that outcome is not expected.
-- **Proof of delivery:** `Watchdog → discord-warning` every 5m; a PostSync
-  `monitoring-pipecheck` Job (in-cluster) checks Prometheus/Alertmanager
-  `/-/ready` and fires a `MonitoringPipeTest` alert; sync shows red in ArgoCD
-  if the pipe is broken. Human confirms the test message lands once per
-  change (runbook one-liner).
+- **Proof of delivery:** a PostSync `monitoring-pipecheck` Job (in-cluster)
+  checks Prometheus/Alertmanager `/-/ready` and fires a `MonitoringPipeTest`
+  alert that auto-resolves; sync shows red in ArgoCD if the pipe is broken.
+  Human confirms the test message lands once per change (runbook one-liner);
+  ongoing silence is covered by `AlertmanagerNotificationsFailing` (with the
+  discord failure reason) rather than a heartbeat.
 
 ## Section 4 — CI/verify: prove it before and after merge
 
@@ -202,13 +205,15 @@ was), plus `scripts/ci-validate-monitoring.sh`
 which extracts each `data.*.json` from `grafana-dashboards.yaml`, runs
 `jq empty` on each, asserts every dashboard has `uid + title + tags`, every
 alert has `severity + summary + runbook_url + dashboard`, every dashboard
-carries `grafana_folder: InvenioRDM` (scatter cannot regress), and asserts
-the Watchdog route targets `discord-warning` (never `null`).
+  carries `grafana_folder: InvenioRDM` (scatter cannot regress), asserts no
+  Watchdog route targets Discord (heartbeat-to-human removed, issue #110),
+  and asserts guarded `{{ with }}` annotations in discord message templates.
 
 **Live (in-cluster):** `deploy-verify.yaml` keeps ArgoCD Sync + `/ping` smoke
 (no new runner→VPN dependency). The `monitoring-pipecheck` PostSync Job proves
-delivery where the cluster lives. Human confirms the test message in Discord
-once per change; the steady `Watchdog` pulse proves it stays up.
+  delivery where the cluster lives. Human confirms the test message in Discord
+  once per change; ongoing pipe health is evidenced by successful deliveries
+  (no `AlertmanagerNotificationsFailing`) rather than a heartbeat.
 
 ## Section 5 — Workflow: planning → branch → PR → verification → cleanup
 
@@ -236,7 +241,7 @@ once per change; the steady `Watchdog` pulse proves it stays up.
 5. **Merge + cleanup + rollback:** squash-merge only; close the spawned pane,
    remove worktree + worker branch; move this plan to `completed/` + update
    index; `git status` clean. Rollback: `git revert <squash-sha>` → ArgoCD
-   auto-syncs back ~30s → Watchdog pulse confirms. No migrations, no
+   auto-syncs back ~30s → a fresh MonitoringPipeTest confirms. No migrations, no
    destructive edits.
 
 ## Files Overview
@@ -245,7 +250,7 @@ once per change; the steady `Watchdog` pulse proves it stays up.
 |---|---|---|
 | `k8s/infra/monitoring/grafana-dashboards.yaml` | Modified | 5 scattered ConfigMaps → 4 dashboards, one folder, links, thresholds |
 | `k8s/infra/monitoring/alerts.yaml` | Modified | Rewrite into A–E groups; runbook/dashboard annotations |
-| `k8s/infra/monitoring/values.yaml` | Modified | Alertmanager route tree (Watchdog/critical/warning) + inhibit; references CR receivers |
+| `k8s/infra/monitoring/values.yaml` | Modified | Alertmanager root route + inhibit (tier routes live in the CR, base stays standalone-valid) |
 | `k8s/infra/monitoring/discord-receivers.yaml` | New | `AlertmanagerConfig` CR: `discord-critical` + `discord-warning` receivers (secret keyRef, templates) |
 | `k8s/infra/monitoring/alertmanager-discord-deployment.yaml` | Deleted | Bridge removed — failure mode deleted with it |
 | `k8s/infra/monitoring/alertmanager-discord-service.yaml` | Deleted | Bridge removed |
@@ -266,7 +271,7 @@ once per change; the steady `Watchdog` pulse proves it stays up.
   `for:`, `runbook_url`, dashboard annotations; delete noise alerts.
 - [ ] **G3**: Discord native — delete bridge Deployment/Service/NetPol, add
   `AlertmanagerConfig` CR with two `discord_configs` receivers, rewire
-  `values.yaml` routes, `Watchdog` heartbeat, PostSync pipecheck Job.
+  `values.yaml` routes, PostSync pipecheck Job.
 - [ ] **G4**: CI — `promtool` + `amtool check-config` +
   `scripts/ci-validate-monitoring.sh` job in `validate-infra.yaml`.
 - [ ] **G5**: Docs — this plan + `docs/plans/README.md` row; update cluster
@@ -277,7 +282,7 @@ once per change; the steady `Watchdog` pulse proves it stays up.
 - [ ] ArgoCD `monitoring` + `monitoring-extras` Synced+Healthy; `validate-infra.yaml` and `deploy-verify.yaml` green on the PR.
 - [ ] Grafana shows exactly one `InvenioRDM` folder with 4 dashboards, no other monitoring dashboards from this repo.
 - [ ] `promtool check rules` passes in CI; `ci-validate-monitoring.sh` fails on a deliberately broken dashboard/annotation (worker verifies negative case).
-- [ ] `MonitoringPipeTest` alert delivered to Discord and confirmed by the operator; `Watchdog` pulse visible.
+- [ ] `MonitoringPipeTest` alert delivered to Discord and confirmed by the operator; no Watchdog posts for 30+ min afterwards.
 - [ ] `AlertmanagerNotificationsFailing` / `AlertmanagerConfigFailed` / `PrometheusTargetDown` fire when their condition is simulated (at least one exercised in a canary); no `alertmanager-discord` Deployment/Service remains.
 - [ ] No alert fires on a single pod restart; no alert without `runbook_url` + dashboard annotation.
 - [ ] `deploy-verify.yaml` smoke (`/ping` 200) passes after merge; rollback path (`git revert`) documented in the PR.
@@ -287,10 +292,10 @@ once per change; the steady `Watchdog` pulse proves it stays up.
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Alert rewrite misses a signal the old rules covered | Blind spot | Keep/delete map above is exhaustive; CI asserts annotations; operator reviews diff vs old `alerts.yaml` |
-| AlertmanagerConfig selector plumbing differs from the chart docs | Receivers never merge, alerts go nowhere | Worker proves `alertmanagerConfigSelector` key path + CRD schema from pulled chart 69.6.0 before writing the CR; pipecheck + Watchdog pulse confirm live; fallback is the git-history pinned-bridge design |
+| AlertmanagerConfig selector plumbing differs from the chart docs | Receivers never merge, alerts go nowhere | Worker proves `alertmanagerConfigSelector` key path + CRD schema from pulled chart 69.6.0 before writing the CR; pipecheck + failed-notification alert confirm live; fallback is the git-history pinned-bridge design |
 | PostSync Job fails on transient Prometheus scrape delay | ArgoCD sync red noise | Job retries with backoff; `for:` windows and 2h grace on `CNPGBackupStale` |
 | Two receivers post to the same webhook = duplicates if routing misconfigured | Discord spam | Inhibit rule + `continue: false`; test alert exercised in canary |
-| Watchdog route mis-set to `null` again | Silence returns | CI assertion (script greps the Watchdog receiver name) + `AlertmanagerNotificationsFailing` + pipecheck checks the receiver name |
+| Watchdog routed to Discord again | Channel spam returns, muting risk | CI asserts no Watchdog→Discord route + `AlertmanagerNotificationsFailing` + pipecheck cover silence |
 
 ## Open Questions
 

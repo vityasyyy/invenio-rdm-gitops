@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Validates monitoring dashboards (JSON + single folder + uid/title/tags),
-# alert rules (severity/summary/runbook/dashboard/for annotations + Watchdog
-# routed to Discord, never to null), the native-Discord receiver CR, and the
-# absence of the deleted bridge stack. Issue #105 adds: invenio-SM absence,
-# matchers-only routing, and source-key pins for every new scrape (velero,
-# cloudflared, minio, opensearch, traefik, postgres PodMonitor).
+# alert rules (severity/summary/runbook/dashboard/for annotations), the
+# native-Discord receiver CR (Watchdog must NOT route to Discord, issue #110;
+# messages must guard empty annotations), and the absence of the deleted
+# bridge stack. Issue #105 adds: invenio-SM absence, matchers-only routing,
+# and source-key pins for every new scrape (velero, cloudflared, minio,
+# opensearch, traefik, postgres PodMonitor).
 # Exit non-zero on violation.
 set -euo pipefail
 
@@ -106,13 +107,12 @@ if cr is not None:
     if not cr_route.get("routes"):
         err("CR spec.route must carry the tier sub-routes")
     else:
+        # No heartbeat-to-human by design (issue #110): a Watchdog route to any
+        # Discord receiver reintroduces channel spam. Silence is covered by
+        # NotificationsFailing, the pipecheck hook, and up-based target alerts.
         wd = [r for r in cr_route["routes"] if _matchers(r).get("alertname") == "Watchdog"]
-        if not wd:
-            err("no Watchdog route in CR spec.route.routes")
-        elif wd[0].get("receiver") != "discord-warning":
-            err(f"Watchdog routed to {wd[0].get('receiver')!r}, want 'discord-warning'")
-        elif wd[0].get("repeatInterval") != "5m":
-            err(f"Watchdog repeatInterval is {wd[0].get('repeatInterval')!r}, want '5m'")
+        if wd:
+            err(f"Watchdog must not route to Discord (found receiver {wd[0].get('receiver')!r})")
         for r in cr_route["routes"]:
             if r.get("receiver") not in cr_receivers:
                 err(f"CR route references unknown receiver {r.get('receiver')!r}")
@@ -124,6 +124,10 @@ if cr is not None:
             url = (dc.get("apiURL") or {})
             if url.get("name") != "alertmanager-discord-webhook" or not url.get("key"):
                 err(f"CR receiver {r.get('name')}: apiURL must keyRef the sealed alertmanager-discord-webhook Secret")
+            # Guarded annotations: chart-default alerts carry no runbook_url /
+            # dashboard, so unguarded lines render empty (issue #110).
+            if "{{ with .Annotations" not in str(dc.get("message", "")):
+                err(f"CR receiver {r.get('name')}: message must guard annotations with {{{{ with }}}}")
 
 for dead in ("alertmanager-discord-deployment.yaml",
              "alertmanager-discord-service.yaml",
