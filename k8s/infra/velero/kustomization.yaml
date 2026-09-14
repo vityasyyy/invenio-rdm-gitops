@@ -5,3 +5,4 @@ resources:
   - backup-schedule.yaml
   - limit-range.yaml
   - velero-servicemonitor.yaml
+  - velero-scrape-netpol.yaml
