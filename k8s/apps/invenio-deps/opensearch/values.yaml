@@ -87,11 +87,17 @@ roles:
   - ingest
   - data
 
-# Metrics exporter
-metricsExporter:
+# Prometheus metrics via exporter plugin + ServiceMonitor (issue #105).
+# Chart 2.32.0 keys are top-level `serviceMonitor` + `plugins`: the previous
+# `metricsExporter` block matched no chart key and rendered nothing.
+plugins:
   enabled: true
-  serviceMonitor:
-    enabled: true
-    namespace: monitoring
-    labels:
-      release: monitoring
+  installList:
+    - https://github.com/opensearch-project/opensearch-prometheus-exporter/releases/download/2.19.1.0/prometheus-exporter-2.19.1.0.zip
+serviceMonitor:
+  enabled: true
+  path: /_prometheus/metrics
+  scheme: http
+  interval: 30s
+  labels:
+    release: monitoring
