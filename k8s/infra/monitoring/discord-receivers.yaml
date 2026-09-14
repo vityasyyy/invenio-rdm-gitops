@@ -1,0 +1,23 @@
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: discord-receivers
+  namespace: monitoring
+spec:
+  receivers:
+    - name: discord-critical
+      discordConfigs:
+        - apiURL:
+            name: alertmanager-discord-webhook
+            key: DISCORD_WEBHOOK_URL
+          title: '[CRITICAL] {{ "{{ .GroupLabels.alertname }}" }}'
+          message: '{{ "{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}\nRunbook: {{ .Annotations.runbook_url }}\nDashboard: {{ .Annotations.dashboard }}\n{{ end }}" }}'
+          sendResolved: true
+    - name: discord-warning
+      discordConfigs:
+        - apiURL:
+            name: alertmanager-discord-webhook
+            key: DISCORD_WEBHOOK_URL
+          title: '[WARNING] {{ "{{ .GroupLabels.alertname }}" }}'
+          message: '{{ "{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}\nRunbook: {{ .Annotations.runbook_url }}\nDashboard: {{ .Annotations.dashboard }}\n{{ end }}" }}'
+          sendResolved: true

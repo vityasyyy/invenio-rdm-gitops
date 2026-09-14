@@ -61,6 +61,19 @@ if n_alerts == 0:
     err("no alert rules found")
 
 values = yaml.safe_load(open(os.path.join(mon, "values.yaml")))
+try:
+    cr = yaml.safe_load(open(os.path.join(mon, "discord-receivers.yaml")))
+except FileNotFoundError:
+    err("discord-receivers.yaml missing")
+    cr = None
+if cr is None:
+    cr_receivers = set()
+elif cr.get("kind") != "AlertmanagerConfig":
+    err("discord-receivers.yaml kind must be AlertmanagerConfig")
+    cr = None
+    cr_receivers = set()
+else:
+    cr_receivers = {r.get("name") for r in cr.get("spec", {}).get("receivers", [])}
 route = values["alertmanager"]["config"]["route"]
 routes = route.get("routes", [])
 receivers = {r.get("name") for r in values["alertmanager"]["config"].get("receivers", [])}
@@ -70,26 +83,15 @@ if not wd:
 elif wd[0].get("receiver") != "discord-warning":
     err(f"Watchdog routed to {wd[0].get('receiver')!r}, want 'discord-warning'")
 for r in routes:
-    if r.get("receiver") not in (receivers | {None}):
+    if r.get("receiver") not in (receivers | cr_receivers | {None}):
         err(f"route references unknown receiver {r.get('receiver')!r}")
 if "discord-critical" in receivers or "discord-warning" in receivers:
     err("base receivers must be [null] only — discord receivers live in the AlertmanagerConfig CR")
 if not values["alertmanager"]["config"].get("inhibit_rules"):
     err("alertmanager config has no inhibit_rules")
 
-try:
-    cr = yaml.safe_load(open(os.path.join(mon, "discord-receivers.yaml")))
-except FileNotFoundError:
-    err("discord-receivers.yaml missing")
-    cr = None
-if cr is None:
-    pass
-elif cr.get("kind") != "AlertmanagerConfig":
-    err("discord-receivers.yaml kind must be AlertmanagerConfig")
-    cr = None
 if cr is not None:
     crspec = cr.get("spec", {})
-    cr_receivers = {r.get("name") for r in crspec.get("receivers", [])}
     if cr_receivers != {"discord-critical", "discord-warning"}:
         err(f"CR receivers are {cr_receivers}, want exactly discord-critical + discord-warning")
     for r in crspec.get("receivers", []):
@@ -97,9 +99,9 @@ if cr is not None:
         if not dcs:
             err(f"CR receiver {r.get('name')}: no discordConfigs")
         for dc in dcs:
-            url = (dc.get("webhookUrl") or {})
+            url = (dc.get("apiURL") or {})
             if url.get("name") != "alertmanager-discord-webhook" or not url.get("key"):
-                err(f"CR receiver {r.get('name')}: webhookUrl must keyRef the sealed alertmanager-discord-webhook Secret")
+                err(f"CR receiver {r.get('name')}: apiURL must keyRef the sealed alertmanager-discord-webhook Secret")
 
 for dead in ("alertmanager-discord-deployment.yaml",
              "alertmanager-discord-service.yaml",
