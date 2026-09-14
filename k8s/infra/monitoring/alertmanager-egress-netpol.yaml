@@ -1,0 +1,36 @@
+# Alertmanager egress: Discord delivery + cluster DNS.
+#
+# The monitoring namespace default-denies egress. Alertmanager must reach
+# discord.com:443 (native discord_config receivers, issue #96) and resolve
+# DNS via CoreDNS (kube-system). The pre-existing
+# allow-monitoring-egress-to-internet only permits pod-CIDRs and
+# same-namespace DNS, and the bridge's own NetPol was deleted with it —
+# without this file every notification fails with DNS i/o timeouts.
+# 443-to-0.0.0.0/0 mirrors the established invenio-allow-egress-https pattern.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alertmanager-egress
+  namespace: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  podSelector:
+    matchLabels:
+      alertmanager: monitoring-kube-prometheus-alertmanager
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
