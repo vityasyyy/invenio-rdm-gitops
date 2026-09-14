@@ -1,7 +1,8 @@
-# WORKER-REPORT — monitoring overhaul (#96) — COMPLETE (T1–T6, awaiting lead/T7)
+# WORKER-REPORT — monitoring overhaul (#96) — COMPLETE + HOTFIXES (awaiting lead/T7)
 
-> Status: T1–T6 committed on `feat/96-monitoring-overhaul`, all static gates
-> green, negative case proven. Branch left unpushed for lead verification.
+> Status: T1–T6 plus HOTFIX-1 (self-contained CR routes) + HOTFIX-2 (resolving
+> pipecheck alert) committed on `feat/96-monitoring-overhaul`, all static gates
+> green, negative cases proven. Branch left unpushed for lead verification.
 > Live delivery proof (pipecheck first run, Discord test delivery, Grafana
 > render check) needs VPN → T7/lead.
 
@@ -24,8 +25,15 @@
   for CRD `apiURL` spelling + CR-receiver route allowance (see deviations).
 - **T5** (commit `e9eddf9`): created `k8s/infra/monitoring/monitoring-pipecheck.yaml`,
   registered in `kustomization.yaml`.
-- **T6** (this report + spec status flip, commit pending): full gates green,
-  negative case proven (below).
+- **T6** (commit `9cb47f6`): full gates green, negative case proven (below).
+- **Lead fix** (commit `9fda335`, landed mid-hotfix, untouched by worker):
+  single-level Go templates in discord receivers (`{{ .GroupLabels.alertname }}`,
+  `{{ range .Alerts }}...{{ end }}` — the double-wrapped form would have rendered
+  as literal template source in Discord; amtool cannot catch this).
+- **HOTFIX-1** (commit `8319106`): self-contained CR routes, base root-only
+  (see HOTFIX section).
+- **HOTFIX-2** (commit `fd89718`): pipecheck test alert fires then resolves
+  (see HOTFIX section).
 
 ## T1 validator initial FAIL output (verbatim)
 
@@ -225,3 +233,66 @@ only T3's intended changes remain. The validator bites and the restore is exact.
 - Grafana render check (one `InvenioRDM` folder, 4 dashboards, each opened once).
 - Confirm no `alertmanager-discord` pods remain anywhere.
 - kubeconform/kube-linter verdicts arrive via CI after push (`gh pr checks --watch`).
+
+## HOTFIX-1: self-contained AlertmanagerConfig routes (P0 — alerts were dark)
+
+- Operator-log evidence (lead-provided, live cluster):
+  `provision alertmanager configuration: failed to initialize from secret:
+  undefined receiver "discord-warning" used in route` — the base Secret must be
+  valid standalone, so Alertmanager kept the stale pre-merge config (pointing at
+  the deleted bridge). Root cause: T4 put `discord-warning`/`discord-critical`
+  route references in the base route tree while the receivers live only in the CR.
+- Branch outcome: **Branch A**. CRD `crd-alertmanagerconfigs.yaml:9930`
+  confirms `spec.route` with nested `routes` ("Child routes",
+  `x-kubernetes-preserve-unknown-fields`), so the three tier sub-routes moved
+  into `discord-receivers.yaml` `spec.route` (CRD camelCase: `matchers[{name,
+  value}]`, `repeatInterval`, `groupBy/groupWait/groupInterval`), default
+  receiver `discord-warning`. Base `values.yaml` route is root-only
+  (`receiver: null` + group timings, no sub-routes); `inhibit_rules` +
+  `receivers: [null]` stay in base.
+- Load-bearing addition (Branch A as literally specified would still go dark):
+  the CRD (`spec.route` description + `matchers` note) states the operator adds
+  a `namespace: <object namespace>` matcher to the CR's first-level route, and
+  the Alertmanager CRD (`crd-alertmanagers.yaml:1008`) defaults
+  `alertmanagerConfigMatcherStrategy.type` to `OnNamespace`. That would drop
+  every cross-namespace alert (ours carry `namespace=invenio/velero/database…`
+  or no namespace label at all, e.g. `PrometheusTargetDown`, `TraefikServiceDown`,
+  `CloudflareTunnelDown`). `values.yaml` therefore sets
+  `alertmanager.alertmanagerSpec.alertmanagerConfigMatcherStrategy: {type: None}`
+  (enum `OnNamespace|None` verified in the pulled chart 69.6.0 CRD; template
+  `templates/alertmanager/alertmanager.yaml:85-88` renders it from exactly that
+  key path). The CR route is now cluster-wide.
+- Tooling mirror: `ci-stub-receivers.py` rebuilds the operator merge (base root +
+  CR route appended as first-level child + combined receivers); merged shape
+  verified: `root(null) → child(discord-warning) → 3 tier sub-routes`, all
+  referenced receivers present — the `undefined receiver` failure is structurally
+  impossible. Validator asserts the new shape: base root-only + base receivers
+  only, strategy `None`, CR owns Watchdog (discord-warning, 5m) + tier routes
+  ⊆ CR receivers. New-shape negative proof: re-adding a base sub-route and
+  flipping strategy to `OnNamespace` yields exactly
+  `base route must be root-only` + `strategy … want 'None'`, exit 1; restore clean.
+- Spec §3 paragraph amended ("CR is self-contained…" + strategy rationale).
+
+## HOTFIX-2: pipecheck test alert resolves (spam guard)
+
+- `monitoring-pipecheck.yaml` command now POSTs a firing alert
+  (`severity: warning`, `startsAt: $START`, no `endsAt`), `sleep 30`, then POSTs
+  the same labels/annotations with `startsAt: $START`, `endsAt: <now>` (resolved).
+  No `date -d` math — `START`/`END` captured via `date -u +%FT%TZ` around the sleep.
+  `severity: info` + `endsAt 2099` are gone (routed nowhere / re-notified forever).
+- Payload logic proven locally under `/bin/sh`: firing JSON has no `endsAt`;
+  resolved `endsAt >= startsAt`; labels/annotations identical (`PAYLOAD_OK`).
+
+## HOTFIX verification output (full T6 chain re-run, every command exit 0)
+
+```
+yamllint argocd/ k8s/ external-lb/k8s/   → clean (warnings only)
+bash scripts/ci-render-manifests.sh      → Rendered: 19 manifests / All renders succeeded
+bash scripts/ci-validate-selectors.sh rendered → All selector validations passed
+promtool check rules /tmp/rules-check.yaml (extraction) → SUCCESS: 22 rules found
+python3 scripts/ci-stub-receivers.py     → receivers: null, discord-critical, discord-warning / child routes: 3
+amtool check-config /tmp/am-merged-check.yaml → SUCCESS (global, route, 1 inhibit rule, 3 receivers)
+bash scripts/ci-validate-monitoring.sh   → OK: 4 dashboards, 22 alerts, native-Discord routing valid
+negative case (runbook_url removed)      → exit 1 naming InvenioWebReplicasUnavailable; restore → OK, zero diff
+new-shape negative case (base sub-route + OnNamespace) → 2 violations, exit 1; restore → OK, zero diff
+```
