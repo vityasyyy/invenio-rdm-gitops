@@ -10,3 +10,4 @@ resources:
   - alertmanager-discord-secret.yaml
   - discord-receivers.yaml
   - loki-networkpolicy.yaml
+  - monitoring-pipecheck.yaml
