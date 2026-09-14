@@ -5,4 +5,5 @@ resources:
   - app-user-sealed-secret.yaml
   - minio-backup-sealed-secret.yaml
   - cluster.yaml
+  - postgres-podmonitor.yaml
   - network-policy.yaml

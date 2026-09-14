@@ -87,6 +87,27 @@ global:
   checkNewVersion: true
   sendAnonymousUsage: false
 
+# Prometheus metrics + scrape (issue #105). Chart 39.0.6 keys verified via
+# `helm show values` (metrics.prometheus.service/serviceMonitor/disableAPICheck).
+# metrics.prometheus itself defaults enabled (entryPoint metrics = ports.metrics
+# 9100 above); the dedicated Service + ServiceMonitor need explicit opt-in.
+# disableAPICheck: CI renders with `helm template` (no CRDs installed) — the
+# CRDs exist in-cluster via the monitoring stack.
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addServicesLabels: true
+    service:
+      enabled: true
+    disableAPICheck: true
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+      scrapeTimeout: 10s
+      additionalLabels:
+        release: monitoring
+
 # Two replicas for HA
 deployment:
   replicas: 2
