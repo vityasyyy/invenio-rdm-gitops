@@ -2,7 +2,7 @@
 
 > **Date:** 2026-09-08
 > **Tier:** T2 (`feat/<issue>-monitoring-overhaul`)
-> **Status:** Design approved by operator (2026-09-08); spec awaiting user review before implementation planning
+> **Status:** Design approved by operator (2026-09-08), amended to native-Discord delivery (2026-09-14, see §3); implementation planning complete, awaiting worker dispatch approval
 > **Scope:** `k8s/infra/monitoring/**`, `.github/workflows/validate-infra.yaml`, `scripts/ci-validate-monitoring.sh`, docs. Out of scope: chart version bumps, sealed-secret rotations, other components' manifests.
 > **Companion docs:** `docs/plans/active/2026-09-03-architecture-and-dr.md` (failure modes), `docs/cluster-assessment-2026-09-05.md` (live baseline).
 
@@ -21,8 +21,10 @@ the operator, each traceable to the repo:
 3. **Alerts not wired up** — `alerts.yaml` opens with `PodCrashLooping:
    rate(...) > 0` (fires on any single restart); `critical` and `warning` both
    route to the same `discord` receiver; `Watchdog -> null` hides pipeline
-   death; the Discord bridge (`benjojo/alertmanager-discord:latest`) is
-   unpinned, has no probes, no ServiceMonitor, and is unmonitored itself.
+   death; and Discord delivery depends on a third-party bridge Deployment
+   (`benjojo/alertmanager-discord:latest`, unpinned, no probes, unmonitored)
+   that Alertmanager's native `discord_config` receiver (available since AM
+   v0.25; ours is ~v0.27/0.28 via chart 69.6.0) makes entirely unnecessary.
 
 The operator's keep-list (all five signal groups are required; noise is cut
 instead of coverage): **A** app serving, **B** data safety, **C** capacity,
@@ -35,8 +37,8 @@ instead of coverage): **A** app serving, **B** data safety, **C** capacity,
 | 1 | One `InvenioRDM` Grafana folder, `00 Overview` as the 30-second entry point, max 3 drill-downs | Kills the scatter; answers "is it healthy and what broke" without CLI |
 | 2 | Every panel has a threshold or action meaning; remove duplicated/no-op panels | Bloat removal without losing A–E coverage |
 | 3 | Every alert actionable: severity routing, anti-flap `for:`, `runbook_url` + dashboard link | Alerts must never page without an action |
-| 4 | Two Discord tiers on one bridge + `Watchdog` heartbeat | Silence becomes visible; critical vs quiet information |
-| 5 | Pipe is self-monitored and provable (ServiceMonitor, PostSync pipecheck, test alert) | "Wired up" becomes verifiable, not assumed |
+| 4 | Two Discord tiers via native `discord_config` + `Watchdog` heartbeat | Silence becomes visible; critical vs quiet information; no bridge to operate |
+| 5 | Pipe is self-monitored and provable (PostSync pipecheck, test alert, `amtool`) | "Wired up" becomes verifiable, not assumed |
 | 6 | CI catches bad rules/dashboards statically; live delivery proven in-cluster | Bugs stop at PR time; delivery stops silently rotting |
 
 ## Architecture
@@ -55,9 +57,8 @@ flowchart LR
     subgraph Monitoring[monitoring namespace]
         PROM[Prometheus<br/>7d, 10Gi NFS]
         PR[PrometheusRule<br/>alerts.yaml]
-        AM[Alertmanager]
-        BR[alertmanager-discord<br/>pinned digest]
-        SM[ServiceMonitor<br/>bridge + alertmanager]
+        AM[Alertmanager<br/>native discord receivers]
+        ACR[AlertmanagerConfig CR<br/>discord-critical / warning]
         PC[PostSync pipecheck Job]
     end
 
@@ -72,14 +73,12 @@ flowchart LR
     VEL --> PROM
     PR --> PROM
     PROM --> AM
-    SM --> PROM
-    AM -->|discord-critical / discord-warning| BR
-    BR --> DC
-    AM -.->|Watchdog pulse every 5m| BR
+    ACR -.->|selects| AM
+    AM -->|discord-critical / discord-warning| DC
+    AM -.->|Watchdog pulse every 5m| DC
     PROM --> GF
     PC --> PROM
     PC --> AM
-    PC --> BR
 ```
 
 **Key principle:** one entry-point dashboard answers health in 30 seconds; every
@@ -103,11 +102,16 @@ ConfigMaps collapse into this single file.
 
 ## Section 2 — Alerts: same 5 signals, every alert earns its place
 
-**Routing:** `critical` → `[CRITICAL]` mention + `runbook_url` + dashboard link;
-`warning` → quiet `[WARNING]` + same links; `Watchdog` (always firing) →
-`discord-warning` heartbeat so `>10m` silence = broken pipe. `group_wait 30s`,
-`group_interval 5m`, `repeat_interval` 2h critical / 12h warning. Inhibit rule:
-a `critical` suppresses its sibling `warning` (no double-post).
+**Routing (native `discord_config`, no bridge):** `critical` → `discord-critical`
+receiver (`[CRITICAL]` title prefix via Alertmanager templating) +
+`runbook_url` + dashboard link; `warning` → quiet `discord-warning` + same
+links; `Watchdog` (always firing) → `discord-warning` heartbeat so `>10m`
+silence = broken pipe. `group_wait 30s`, `group_interval 5m`,
+`repeat_interval` 2h critical / 12h warning. Inhibit rule: a `critical`
+suppresses its sibling `warning` (no double-post). Receivers live in an
+`AlertmanagerConfig` CR (webhook URL from the existing sealed
+`alertmanager-discord-webhook` by key — never plaintext in git); the base
+route tree in `values.yaml` references them.
 
 **Keep / fix / delete map:**
 
@@ -131,44 +135,54 @@ a `critical` suppresses its sibling `warning` (no double-post).
 - **D — Edge:** keep `CloudflareTunnelDown (up==0, 3m)`, keep
   `TraefikHigh404Rate>5%/5m` (add runbook: IngressRoute + netpol + endpoints).
 - **E — Platform self (new):** `PrometheusTargetDown` (>10% targets down, 10m),
-  `AlertmanagerConfigFailed`, `DiscordBridgeDown`
-  (`up{job=~".*alertmanager-discord.*"} == 0, 5m` — regex because the operator
-  prefixes job names, same pattern as the existing `CloudflareTunnelDown`
-  rule), `KubeStateMetricsDown`, `AlertmanagerNotificationsFailing`
-  (`rate(alertmanager_notifications_failed_total[10m]) > 0`, critical).
-  Delivery silence itself is caught by the absent `Watchdog` pulse (runbook:
-  no heartbeat in 10m → investigate pipe) and by the pipecheck Job — a
-  `WatchdogMissing` PrometheusRule cannot detect Discord-side death because
-  nothing evaluates once the pipeline is down.
+  `AlertmanagerConfigFailed`, `KubeStateMetricsDown`,
+  `AlertmanagerNotificationsFailing`
+  (`rate(alertmanager_notifications_failed_total[10m]) > 0`, critical —
+  carries a discord `reason` label on recent AM). There is deliberately no
+  bridge-health alert: the bridge is deleted (see §3), so the failure mode
+  does not exist. Delivery silence itself is caught by the absent `Watchdog`
+  pulse (runbook: no heartbeat in 10m → investigate pipe) and by the
+  pipecheck Job — a `WatchdogMissing` PrometheusRule cannot detect
+  Discord-side death because nothing evaluates once the pipeline is down.
 
 Every alert carries `summary` + `description` ("so what") + `runbook_url` +
 dashboard annotation. CI enforces this (Section 4).
 
-## Section 3 — Discord pipe: make "wired up" provable
+## Section 3 — Discord delivery: delete the bridge, go native
 
-- **Pin the bridge:** `benjojo/alertmanager-discord:latest` → pinned
-  `tag@digest` (digest resolved at implementation time; recorded in the manifest
-  and this plan). No image-updater change:
-  `k8s/infra/argocd-image-updater/image-updater-cr.yaml` watches
-  `invenio-bootstrap` only, so the bridge is outside its scope — the worker
-  verifies this scope rather than adding an ignore annotation.
-- **Two receivers, one bridge:** `discord-critical` (`[CRITICAL]` title prefix,
-  `repeat_interval 2h`, `group_wait 30s`) and `discord-warning` (quiet,
-  `repeat_interval 12h`), same sealed `alertmanager-discord-webhook`, split at
-  the Alertmanager `route` level. If the bridge build supports role mentions we
-  use them; fallback is the title prefix (implementation verifies and documents
-  which).
-- **Observable pipe:** new `ServiceMonitor` for the bridge Service (`:9093`,
-  30s) plus Alertmanager self-scrape; this makes E-group alerts real. Add
-  HTTP readiness/liveness probes (use the bridge health endpoint if exposed,
-  else TCP 9093 — verified at implementation). `readOnlyRootFilesystem: true`
-  + `emptyDir /tmp` if the image tolerates it; otherwise keep the exception
-  with an explicit comment (no silent security regression).
+Alertmanager has shipped a native `discord_config` receiver since v0.25
+(`webhook_url` / `webhook_url_file`, templated `title`/`message`/`content`);
+chart 69.6.0 bundles ~v0.27/0.28, so the third-party bridge is pure overhead:
+an unpinned image, a Deployment + Service + NetworkPolicy to operate, and a
+whole failure mode (`DiscordBridgeDown`) that vanishes when the bridge does.
+
+- **Delete the bridge stack:** remove `alertmanager-discord-deployment.yaml`,
+  `alertmanager-discord-service.yaml`, `alertmanager-discord-netpol.yaml`
+  (and their `kustomization.yaml` entries). The SealedSecret
+  `alertmanager-discord-webhook` STAYS — the new receiver references it by
+  key, so the URL never appears in plaintext.
+- **Two native receivers in one `AlertmanagerConfig` CR** (new file
+  `k8s/infra/monitoring/discord-receivers.yaml`, namespace `monitoring`):
+  `discord-critical` (`[CRITICAL]` title prefix, `repeat_interval 2h`) and
+  `discord-warning` (quiet, `repeat_interval 12h`), both `discord_configs`
+  with the webhook URL from the sealed Secret and `message` templates carrying
+  the runbook link. The base route tree in `values.yaml` (Watchdog →
+  `discord-warning` every 5m; `severity: critical` → `discord-critical`;
+  `severity: warning` → `discord-warning`; inhibit critical-over-warning)
+  references these receivers.
+- **Prove the plumbing statically:** the worker pulls chart 69.6.0
+  (`helm pull prometheus-community/kube-prometheus-stack --version 69.6.0`),
+  confirms the bundled Alertmanager image is ≥v0.25, reads the
+  `alertmanagerconfigs` CRD schema for `route`/`receivers.discordConfigs`/
+  `inhibitRules` support, and finds the `alertmanagerConfigSelector` key path
+  in `helm show values`. If any of this does not fit, the fallback is the
+  previously approved pinned-bridge design (recorded in git history) — but
+  that outcome is not expected.
 - **Proof of delivery:** `Watchdog → discord-warning` every 5m; a PostSync
-  `monitoring-pipecheck` Job (in-cluster) checks Prometheus unhealthy-targets
-  %, Alertmanager config reload, bridge health, and fires a
-  `MonitoringPipeTest` alert; sync shows red in ArgoCD if the pipe is broken.
-  Human confirms the test message lands once per change (runbook one-liner).
+  `monitoring-pipecheck` Job (in-cluster) checks Prometheus/Alertmanager
+  `/-/ready` and fires a `MonitoringPipeTest` alert; sync shows red in ArgoCD
+  if the pipe is broken. Human confirms the test message lands once per
+  change (runbook one-liner).
 
 ## Section 4 — CI/verify: prove it before and after merge
 
@@ -177,11 +191,15 @@ only). Proof splits in two.
 
 **Static (CI, no cluster):** new `validate-monitoring` job in
 `validate-infra.yaml` running `promtool check rules
-k8s/infra/monitoring/alerts.yaml`, plus `scripts/ci-validate-monitoring.sh`
+k8s/infra/monitoring/alerts.yaml` plus `amtool check-config` against the
+rendered Alertmanager configuration (the whole routing tree *including* the
+discord receivers is statically provable now — the bridge's behavior never
+was), plus `scripts/ci-validate-monitoring.sh`
 which extracts each `data.*.json` from `grafana-dashboards.yaml`, runs
 `jq empty` on each, asserts every dashboard has `uid + title + tags`, every
-alert has `severity + summary + runbook_url + dashboard`, and every dashboard
-carries `grafana_folder: InvenioRDM` (scatter cannot regress).
+alert has `severity + summary + runbook_url + dashboard`, every dashboard
+carries `grafana_folder: InvenioRDM` (scatter cannot regress), and asserts
+the Watchdog route targets `discord-warning` (never `null`).
 
 **Live (in-cluster):** `deploy-verify.yaml` keeps ArgoCD Sync + `/ping` smoke
 (no new runner→VPN dependency). The `monitoring-pipecheck` PostSync Job proves
@@ -201,8 +219,9 @@ once per change; the steady `Watchdog` pulse proves it stays up.
    *values*, chart versions, other components; output `WORKER-REPORT.md`;
    escalation = stop and report. Secrets (if any) typed by the operator via
    `herd attach`, never by the lead.
-3. **Task groups:** G1 dashboards (Sec 1) → G2 alerts (Sec 2) → G3 bridge pin +
-   ServiceMonitor + pipecheck (Sec 3) → G4 CI script + workflow job (Sec 4) →
+3. **Task groups:** G1 dashboards (Sec 1) → G2 alerts (Sec 2) → G3 native Discord
+   (Sec 3: delete bridge, add CR, rewire routes) + pipecheck → G4 CI script +
+   amtool + workflow job (Sec 4) →
    G5 docs/index (this file + `docs/plans/README.md`).
 4. **Verification:** worker runs `yamllint`, `ci-render-manifests.sh` +
    kubeconform + `ci-validate-selectors.sh` + `ci-validate-monitoring.sh` +
@@ -222,10 +241,13 @@ once per change; the steady `Watchdog` pulse proves it stays up.
 |---|---|---|
 | `k8s/infra/monitoring/grafana-dashboards.yaml` | Modified | 5 scattered ConfigMaps → 4 dashboards, one folder, links, thresholds |
 | `k8s/infra/monitoring/alerts.yaml` | Modified | Rewrite into A–E groups; runbook/dashboard annotations |
-| `k8s/infra/monitoring/values.yaml` | Modified | Alertmanager routes/receivers + inhibit; bridge probes/resources |
-| `k8s/infra/monitoring/alertmanager-discord-deployment.yaml` | Modified | Digests pin, probes, security context, image-updater ignore |
-| `k8s/infra/monitoring/alertmanager-discord-servicemonitor.yaml` | New | Scrape bridge + Alertmanager (`up{job="alertmanager-discord"}`) |
-| `k8s/infra/monitoring/monitoring-pipecheck.yaml` | New | PostSync Job proving targets/config/bridge/test-alert delivery |
+| `k8s/infra/monitoring/values.yaml` | Modified | Alertmanager route tree (Watchdog/critical/warning) + inhibit; references CR receivers |
+| `k8s/infra/monitoring/discord-receivers.yaml` | New | `AlertmanagerConfig` CR: `discord-critical` + `discord-warning` receivers (secret keyRef, templates) |
+| `k8s/infra/monitoring/alertmanager-discord-deployment.yaml` | Deleted | Bridge removed — failure mode deleted with it |
+| `k8s/infra/monitoring/alertmanager-discord-service.yaml` | Deleted | Bridge removed |
+| `k8s/infra/monitoring/alertmanager-discord-netpol.yaml` | Deleted | Bridge removed |
+| `k8s/infra/monitoring/alertmanager-discord-secret.yaml` | Kept | Still the sealed webhook source, now referenced by the CR |
+| `k8s/infra/monitoring/monitoring-pipecheck.yaml` | New | PostSync Job proving Prometheus/Alertmanager ready + test-alert delivery |
 | `k8s/infra/monitoring/kustomization.yaml` | Modified | Add new resources |
 | `.github/workflows/validate-infra.yaml` | Modified | New `validate-monitoring` job (promtool + script) |
 | `scripts/ci-validate-monitoring.sh` | New | Dashboard JSON + annotation + folder assertions |
@@ -238,10 +260,11 @@ once per change; the steady `Watchdog` pulse proves it stays up.
   `02 Data & Backups` + `03 Platform`, cross-links, thresholds.
 - [ ] **G2**: Alerts — rewrite `alerts.yaml` into groups A–E with severity,
   `for:`, `runbook_url`, dashboard annotations; delete noise alerts.
-- [ ] **G3**: Bridge hardening — digest pin, probes, ServiceMonitor, two
-  receivers, `Watchdog` heartbeat, PostSync pipecheck Job.
-- [ ] **G4**: CI — `promtool` + `scripts/ci-validate-monitoring.sh` job in
-  `validate-infra.yaml`.
+- [ ] **G3**: Discord native — delete bridge Deployment/Service/NetPol, add
+  `AlertmanagerConfig` CR with two `discord_configs` receivers, rewire
+  `values.yaml` routes, `Watchdog` heartbeat, PostSync pipecheck Job.
+- [ ] **G4**: CI — `promtool` + `amtool check-config` +
+  `scripts/ci-validate-monitoring.sh` job in `validate-infra.yaml`.
 - [ ] **G5**: Docs — this plan + `docs/plans/README.md` row; update cluster
   assessment if live state changes.
 
@@ -251,7 +274,7 @@ once per change; the steady `Watchdog` pulse proves it stays up.
 - [ ] Grafana shows exactly one `InvenioRDM` folder with 4 dashboards, no other monitoring dashboards from this repo.
 - [ ] `promtool check rules` passes in CI; `ci-validate-monitoring.sh` fails on a deliberately broken dashboard/annotation (worker verifies negative case).
 - [ ] `MonitoringPipeTest` alert delivered to Discord and confirmed by the operator; `Watchdog` pulse visible.
-- [ ] `DiscordBridgeDown` / `AlertmanagerConfigFailed` / `PrometheusTargetDown` fire when their condition is simulated (at least one exercised in a canary).
+- [ ] `AlertmanagerNotificationsFailing` / `AlertmanagerConfigFailed` / `PrometheusTargetDown` fire when their condition is simulated (at least one exercised in a canary); no `alertmanager-discord` Deployment/Service remains.
 - [ ] No alert fires on a single pod restart; no alert without `runbook_url` + dashboard annotation.
 - [ ] `deploy-verify.yaml` smoke (`/ping` 200) passes after merge; rollback path (`git revert`) documented in the PR.
 
@@ -260,16 +283,15 @@ once per change; the steady `Watchdog` pulse proves it stays up.
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Alert rewrite misses a signal the old rules covered | Blind spot | Keep/delete map above is exhaustive; CI asserts annotations; operator reviews diff vs old `alerts.yaml` |
-| Bridge image pinned to a digest that later needs security update | Stale image | Image-updater ignore documented; renewal is a T1 digest bump with a test alert |
+| AlertmanagerConfig selector plumbing differs from the chart docs | Receivers never merge, alerts go nowhere | Worker proves `alertmanagerConfigSelector` key path + CRD schema from pulled chart 69.6.0 before writing the CR; pipecheck + Watchdog pulse confirm live; fallback is the git-history pinned-bridge design |
 | PostSync Job fails on transient Prometheus scrape delay | ArgoCD sync red noise | Job retries with backoff; `for:` windows and 2h grace on `CNPGBackupStale` |
 | Two receivers post to the same webhook = duplicates if routing misconfigured | Discord spam | Inhibit rule + `continue: false`; test alert exercised in canary |
 | Watchdog route mis-set to `null` again | Silence returns | CI assertion (script greps the Watchdog receiver name) + `AlertmanagerNotificationsFailing` + pipecheck checks the receiver name |
 
 ## Open Questions
 
-1. Bridge build health endpoint path (`/-/healthy` vs TCP) — resolved during implementation.
-2. Role-mention templating support in `benjojo/alertmanager-discord` — resolved during implementation; fallback documented.
-3. PostSync pipecheck and the existing `invenio-setup-job` hook interplay — keep hooks in their own paths; verify no ArgoCD hook ordering conflict at implementation.
+1. `AlertmanagerConfig` selector key path + `inhibitRules` CRD support in chart 69.6.0 — resolved statically by the worker (`helm pull` + CRD read) before writing the CR.
+2. PostSync pipecheck and the existing `invenio-setup-job` hook interplay — keep hooks in their own paths; verify no ArgoCD hook ordering conflict at implementation.
 
 ## Operator actions (unchanged, owned elsewhere)
 
