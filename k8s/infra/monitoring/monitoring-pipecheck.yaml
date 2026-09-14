@@ -29,7 +29,7 @@ spec:
           imagePullPolicy: IfNotPresent
           command: ["/bin/sh", "-c", "set -e\nPROM=http://monitoring-kube-prometheus-prometheus.monitoring.svc:9090\nAM=http://monitoring-kube-prometheus-alertmanager.monitoring.svc:9093\ncurl -sf $PROM/-/ready >/dev/null && echo 'prometheus ready'\ncurl -sf $AM/-/ready >/dev/null && echo 'alertmanager ready'\nSTART=$(date -u +%FT%TZ)\nprintf '[{\"labels\":{\"alertname\":\"MonitoringPipeTest\",\"severity\":\"warning\"},\"annotations\":{\"summary\":\"Pipecheck test alert — safe to resolve\"},\"startsAt\":\"%s\"}]' \"$START\" > /tmp/test-alert.json\ncurl -sf -XPOST -H 'Content-Type: application/json' --data @/tmp/test-alert.json $AM/api/v2/alerts && echo 'test alert firing'\nsleep 30\nEND=$(date -u +%FT%TZ)\nprintf '[{\"labels\":{\"alertname\":\"MonitoringPipeTest\",\"severity\":\"warning\"},\"annotations\":{\"summary\":\"Pipecheck test alert — safe to resolve\"},\"startsAt\":\"%s\",\"endsAt\":\"%s\"}]' \"$START\" \"$END\" > /tmp/test-alert.json\ncurl -sf -XPOST -H 'Content-Type: application/json' --data @/tmp/test-alert.json $AM/api/v2/alerts && echo 'test alert resolved'"]
           resources:
-            requests: {cpu: 25m, memory: 32Mi}
+            requests: {cpu: 50m, memory: 64Mi}
             limits: {cpu: 100m, memory: 64Mi}
           securityContext:
             allowPrivilegeEscalation: false
