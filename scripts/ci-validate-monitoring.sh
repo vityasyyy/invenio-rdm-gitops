@@ -136,6 +136,8 @@ if "discord-receivers.yaml" not in kus:
     err("kustomization.yaml must list discord-receivers.yaml")
 if "alertmanager-egress-netpol.yaml" not in kus:
     err("kustomization.yaml must list alertmanager-egress-netpol.yaml")
+if "pipecheck-egress-netpol.yaml" not in kus:
+    err("kustomization.yaml must list pipecheck-egress-netpol.yaml")
 for dead in ("alertmanager-discord-deployment.yaml",
              "alertmanager-discord-service.yaml",
              "alertmanager-discord-netpol.yaml"):
