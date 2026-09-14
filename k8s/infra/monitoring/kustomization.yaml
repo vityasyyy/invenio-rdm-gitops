@@ -11,3 +11,4 @@ resources:
   - alertmanager-egress-netpol.yaml
   - loki-networkpolicy.yaml
   - monitoring-pipecheck.yaml
+  - pipecheck-egress-netpol.yaml

@@ -47,7 +47,12 @@ spec:
         - protocol: TCP
           port: 443
     - to:
-        - podSelector:
+        # NOTE: namespaceSelector MUST be present — CoreDNS (k8s-app: kube-dns)
+        # lives in kube-system. Without it this stanza matches only this
+        # namespace (which has no kube-dns pods) and ALL cluster DNS breaks
+        # (proven live 2026-09-14: Grafana blank, pipecheck DNS failure).
+        - namespaceSelector: {}
+          podSelector:
             matchLabels:
               k8s-app: kube-dns
       ports:
