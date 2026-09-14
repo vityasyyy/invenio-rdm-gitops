@@ -66,6 +66,8 @@ spec:
       kind: 'PodDisruptionBudget'
     - group: 'monitoring.coreos.com'
       kind: 'ServiceMonitor'
+    - group: 'monitoring.coreos.com'
+      kind: 'PodMonitor'
     - group: ''
       kind: ResourceQuota
     - group: ''
