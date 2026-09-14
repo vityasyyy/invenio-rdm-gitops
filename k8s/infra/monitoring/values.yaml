@@ -28,6 +28,10 @@ prometheus:
 
 # Grafana configuration
 grafana:
+  # Do not deploy the chart-bundled dashboards (12x monitoring-kube-prometheus-*
+  # noise next to our one InvenioRDM folder). Sidecar-discovered dashboards
+  # (grafana-dashboards.yaml) are unaffected. Issue #102.
+  defaultDashboardsEnabled: false
   resources:
     requests:
       cpu: 100m

@@ -130,11 +130,17 @@ for dead in ("alertmanager-discord-deployment.yaml",
 kus = open(os.path.join(mon, "kustomization.yaml")).read()
 if "discord-receivers.yaml" not in kus:
     err("kustomization.yaml must list discord-receivers.yaml")
+if "alertmanager-egress-netpol.yaml" not in kus:
+    err("kustomization.yaml must list alertmanager-egress-netpol.yaml")
 for dead in ("alertmanager-discord-deployment.yaml",
              "alertmanager-discord-service.yaml",
              "alertmanager-discord-netpol.yaml"):
     if dead in kus:
         err(f"kustomization.yaml must not list {dead}")
+
+grafana_flag = values.get("grafana", {}).get("defaultDashboardsEnabled", True)
+if grafana_flag is not False:
+    err("grafana.defaultDashboardsEnabled must be false (drop chart-bundled dashboard noise)")
 
 if errors:
     print(f"\nFAILED: {len(errors)} violation(s)")
