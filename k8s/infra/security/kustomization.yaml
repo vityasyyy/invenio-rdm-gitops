@@ -9,6 +9,7 @@ resources:
   - network-policies/cloudflared-allow.yaml
   - network-policies/monitoring-allow.yaml
   - network-policies/minio-allow.yaml
+  - network-policies/traefik-allow.yaml
   - network-policies/invenio-netpol.yaml
   - limit-ranges/default-limits.yaml
   - resource-quotas/argocd-quota.yaml
