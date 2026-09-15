@@ -36,7 +36,10 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
 ---
-# Allow Prometheus to scrape targets across all namespaces + DNS
+# Allow Prometheus to scrape targets across all namespaces + DNS.
+# The port list MUST stay in sync with scraped targets (validator asserts
+# 8085/9000/9100 present): a missing port fails closed with scrape timeouts
+# (proven live 2026-09-15 for velero :8085 and minio :9000, issue #117).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -52,6 +55,10 @@ spec:
     - to:
         - namespaceSelector: {}
       ports:
+        - port: 8085
+          protocol: TCP
+        - port: 9000
+          protocol: TCP
         - port: 9090
           protocol: TCP
         - port: 9093

@@ -253,6 +253,16 @@ mina = open(os.path.join(REPO_ROOT, "k8s/infra/security/network-policies/minio-a
 if "kubernetes.io/metadata.name: monitoring" not in mina:
     err("minio-allow.yaml must admit the monitoring namespace (Prometheus scrape :9000)")
 
+# Issue #117: Prometheus egress allowlist must cover every scraped port, and
+# traefik ns must admit the scrape. Missing ports fail closed with timeouts.
+monallow = open(os.path.join(REPO_ROOT, "k8s/infra/security/network-policies/monitoring-allow.yaml")).read()
+for port in ("8085", "9000", "9100"):
+    if f"port: {port}" not in monallow:
+        err(f"monitoring-allow.yaml allow-prometheus-egress must include port {port}")
+seckus = open(os.path.join(REPO_ROOT, "k8s/infra/security/kustomization.yaml")).read()
+if "network-policies/traefik-allow.yaml" not in seckus:
+    err("security kustomization must list network-policies/traefik-allow.yaml")
+
 if errors:
     print(f"\nFAILED: {len(errors)} violation(s)")
     sys.exit(1)
