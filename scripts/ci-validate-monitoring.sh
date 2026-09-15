@@ -101,22 +101,35 @@ def _matchers(route):
 
 if cr is not None:
     crspec = cr.get("spec", {})
-    if cr_receivers != {"discord-critical", "discord-warning"}:
-        err(f"CR receivers are {cr_receivers}, want exactly discord-critical + discord-warning")
+    if cr_receivers != {"discord-critical", "discord-warning", "blackhole"}:
+        err(f"CR receivers are {cr_receivers}, want exactly discord-critical + discord-warning + blackhole")
     cr_route = crspec.get("route") or {}
     if not cr_route.get("routes"):
         err("CR spec.route must carry the tier sub-routes")
     else:
-        # No heartbeat-to-human by design (issue #110): a Watchdog route to any
-        # Discord receiver reintroduces channel spam. Silence is covered by
+        # Heartbeats to blackhole by design (issues #110, #123): Watchdog and
+        # InfoInhibitor carry severity `none`, which matches neither tier
+        # sub-route — but the CR root route has no matchers, so without
+        # explicit blackhole routes they land in discord-warning (InfoInhibitor
+        # reached Discord live 2026-09-15). A heartbeat route to any Discord
+        # receiver reintroduces channel spam. Silence is covered by
         # NotificationsFailing, the pipecheck hook, and up-based target alerts.
-        wd = [r for r in cr_route["routes"] if _matchers(r).get("alertname") == "Watchdog"]
-        if wd:
-            err(f"Watchdog must not route to Discord (found receiver {wd[0].get('receiver')!r})")
+        # The receiver is named `blackhole` (not `null`) because the base
+        # Secret already owns `null` and duplicate names are invalid.
+        for hb in ("Watchdog", "InfoInhibitor"):
+            hbr = [r for r in cr_route["routes"] if _matchers(r).get("alertname") == hb]
+            if not hbr:
+                err(f"{hb} must route to the blackhole receiver (no route found)")
+            elif hbr[0].get("receiver") != "blackhole":
+                err(f"{hb} must not route to Discord (found receiver {hbr[0].get('receiver')!r})")
         for r in cr_route["routes"]:
             if r.get("receiver") not in cr_receivers:
                 err(f"CR route references unknown receiver {r.get('receiver')!r}")
     for r in crspec.get("receivers", []):
+        if r.get("name") == "blackhole":
+            if r.get("discordConfigs") or r.get("webhookConfigs"):
+                err("CR receiver blackhole must stay empty (blackhole)")
+            continue
         dcs = r.get("discordConfigs", [])
         if not dcs:
             err(f"CR receiver {r.get('name')}: no discordConfigs")
@@ -266,6 +279,15 @@ for port in ("8085", "9000", "9100", "9153", "10250", "10257", "10259", "2381"):
         err(f"monitoring-allow.yaml allow-prometheus-egress must include port {port}")
 if "10.17.117.0/24" not in monallow:
     err("monitoring-allow.yaml allow-prometheus-egress must carry the node-subnet ipBlock (issue #119)")
+
+# Issue #123: RKE2 binds controller-manager :10257, scheduler :10259 and etcd
+# :2381 to localhost (live `connection refused` 2026-09-15) — the chart must
+# not create those monitors, or their TargetDown warnings spam Discord
+# forever. The matching alert rules are already off in values.yaml.
+for comp in ("kubeEtcd", "kubeScheduler", "kubeControllerManager"):
+    block = values.get(comp) or {}
+    if block.get("enabled", True):
+        err(f"values.yaml {comp}.enabled must be false (RKE2 localhost-only, issue #123)")
 seckus = open(os.path.join(REPO_ROOT, "k8s/infra/security/kustomization.yaml")).read()
 if "network-policies/traefik-allow.yaml" not in seckus:
     err("security kustomization must list network-policies/traefik-allow.yaml")

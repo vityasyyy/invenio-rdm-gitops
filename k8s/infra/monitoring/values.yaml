@@ -141,6 +141,20 @@ defaultRules:
     kubeProxy: false
     kubeControllerManager: false
 
+# Unreachable control-plane scrapes (issue #123). RKE2 binds
+# kube-controller-manager :10257, kube-scheduler :10259 and etcd :2381 to
+# localhost — Prometheus gets `connection refused` (proven live 2026-09-15;
+# no NetworkPolicy can fix a port nothing listens on). The matching alert
+# rules are already off above; leaving the monitors on only feeds permanent
+# TargetDown warnings, so the scrapes go off too. Re-enable if the control
+# plane ever exposes these ports off-localhost.
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+
 # Kube State Metrics
 kubeStateMetrics:
   enabled: true

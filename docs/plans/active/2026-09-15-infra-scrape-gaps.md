@@ -1,6 +1,11 @@
 # Infra scrape gaps — Prometheus egress for host-network targets (#119)
 
-Status: fix implemented in worktree, all static gates green, awaiting lead live-proof (no VPN in worker session).
+Status: MERGED (#122, squash `92a0389`) + Deploy Verify green. Lead live-proof
+DONE 2026-09-15 (VPN): NetworkPolicy synced with ipBlock stanza; 31/34
+targets `up` — kubelet x9, coredns x2, node-exporter x2, operator recovered;
+KubeletDown + 4 TargetDowns resolved. Residual: controller/scheduler/etcd
+`connection refused` (RKE2 localhost-only) → owned by #123 plan below.
+Original worker text follows.
 
 ## Problem
 

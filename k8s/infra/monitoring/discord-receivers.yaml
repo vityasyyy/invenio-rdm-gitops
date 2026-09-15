@@ -8,10 +8,13 @@ spec:
   # a first-level child of the base root; with alertmanagerConfigMatcherStrategy
   # None (see values.yaml) it applies cluster-wide, not just namespace monitoring.
   # CRD camelCase: groupBy/groupWait/groupInterval/repeatInterval/matchers.
-  # NOTE: no Watchdog heartbeat route by design (issue #110). A heartbeat to a
-  # human channel trains muting and proves nothing that NotificationsFailing,
-  # the pipecheck hook, and up-based target alerts don't cover better. Watchdog
-  # falls through to the base root receiver (null).
+  # NOTE: Watchdog/InfoInhibitor heartbeat routes to the empty `blackhole`
+  # receiver below (issue #123) — named to avoid colliding with the base
+  # Secret's `null` receiver (duplicate names are invalid). Both carry severity `none`, which matches
+  # neither tier sub-route — but the CR root route itself has no matchers, so
+  # without explicit blackhole routes they land in discord-warning (proven live:
+  # InfoInhibitor reached Discord 2026-09-15). The #111 fall-through-to-base
+  # theory was wrong: the CR root receiver catches everything first.
   route:
     receiver: discord-warning
     groupBy: ["alertname", "namespace", "service"]
@@ -19,6 +22,16 @@ spec:
     groupInterval: 5m
     repeatInterval: 4h
     routes:
+      - receiver: blackhole
+        matchers:
+          - name: alertname
+            value: Watchdog
+        continue: false
+      - receiver: blackhole
+        matchers:
+          - name: alertname
+            value: InfoInhibitor
+        continue: false
       - receiver: discord-critical
         matchers:
           - name: severity
@@ -32,6 +45,7 @@ spec:
         repeatInterval: 12h
         continue: false
   receivers:
+    - name: blackhole
     - name: discord-critical
       discordConfigs:
         - apiURL:
