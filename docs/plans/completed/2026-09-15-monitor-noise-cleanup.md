@@ -44,7 +44,19 @@ pins (receivers exactly critical+warning+blackhole; blackhole stays empty).
 - Traefik SM duplicate question (from #119 plan): still open, needs live
   targets-page proof.
 
-## Lead live-proof procedures (needs VPN)
+## Lead live-proof — DONE 2026-09-15 (VPN, post-merge `b57945e` + Deploy Verify green)
+
+1. DONE — `up{job=~"kube-controller-manager|kube-scheduler|kube-etcd"}`: 0
+   series; 31 active targets, 0 down.
+2. DONE — all 3 TargetDowns resolved (stale-series decay ~5 min after SM
+   deletion; verified empty).
+3. DONE — Alertmanager API: Watchdog + InfoInhibitor received by
+   `monitoring/discord-receivers/blackhole` (nothing to Discord).
+4. DONE — Grafana backing series live: `up{job="kubelet"}==1` x9,
+   `node_uname_info` x2, `up{job="coredns"}` x2.
+5. DONE — ArgoCD all Synced+Healthy (post-sync wait); Deploy Verify green.
+
+## Lead live-proof procedures (needs VPN) — superseded by above
 
 1. `up{job=~"kube-controller-manager|kube-scheduler|kube-etcd"}` ABSENT
    (targets gone, not just `up==0`).
