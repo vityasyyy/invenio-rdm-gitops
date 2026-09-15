@@ -38,8 +38,12 @@ spec:
 ---
 # Allow Prometheus to scrape targets across all namespaces + DNS.
 # The port list MUST stay in sync with scraped targets (validator asserts
-# 8085/9000/9100 present): a missing port fails closed with scrape timeouts
-# (proven live 2026-09-15 for velero :8085 and minio :9000, issue #117).
+# 8085/9000/9100/9153/10250/10257/10259/2381 present): a missing port fails
+# closed with scrape timeouts (proven live 2026-09-15 for velero :8085 and
+# minio :9000, issue #117; and for all 17 infra targets, issue #119).
+# Host-IP targets (kubelet, node-exporter, control-plane, etcd) NEVER match
+# the namespaceSelector stanza below — it only matches pod IPs — so they are
+# covered by the dedicated ipBlock stanza for the node subnet instead.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -82,6 +86,29 @@ spec:
         - port: 9187
           protocol: TCP
         - port: 8001
+          protocol: TCP
+        - port: 9153
+          protocol: TCP
+        - port: 10250
+          protocol: TCP
+    # Issue #119: host-network scrape targets. Kubelet :10250 (all nodes),
+    # node-exporter :9100 (hostNetwork DaemonSet, so the destination is the
+    # host IP, not a pod IP), and control-plane :10257/:10259/:2381 live on
+    # node host IPs 10.17.117.x, which no namespaceSelector can ever match.
+    # Least-privilege: node subnet only, scrape ports only.
+    - to:
+        - ipBlock:
+            cidr: 10.17.117.0/24
+      ports:
+        - port: 9100
+          protocol: TCP
+        - port: 10250
+          protocol: TCP
+        - port: 10257
+          protocol: TCP
+        - port: 10259
+          protocol: TCP
+        - port: 2381
           protocol: TCP
     - to: []
       ports:

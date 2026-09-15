@@ -255,10 +255,17 @@ if "kubernetes.io/metadata.name: monitoring" not in mina:
 
 # Issue #117: Prometheus egress allowlist must cover every scraped port, and
 # traefik ns must admit the scrape. Missing ports fail closed with timeouts.
+# Issue #119: infra scrapes add pod ports (coredns :9153, operator :10250)
+# plus a host-subnet ipBlock for targets no namespaceSelector can match
+# (kubelet :10250, node-exporter :9100 hostNetwork, controller :10257,
+# scheduler :10259, etcd :2381). Kube-proxy :10249 deliberately absent — no
+# live targets observed (least-privilege: add only on evidence).
 monallow = open(os.path.join(REPO_ROOT, "k8s/infra/security/network-policies/monitoring-allow.yaml")).read()
-for port in ("8085", "9000", "9100"):
+for port in ("8085", "9000", "9100", "9153", "10250", "10257", "10259", "2381"):
     if f"port: {port}" not in monallow:
         err(f"monitoring-allow.yaml allow-prometheus-egress must include port {port}")
+if "10.17.117.0/24" not in monallow:
+    err("monitoring-allow.yaml allow-prometheus-egress must carry the node-subnet ipBlock (issue #119)")
 seckus = open(os.path.join(REPO_ROOT, "k8s/infra/security/kustomization.yaml")).read()
 if "network-policies/traefik-allow.yaml" not in seckus:
     err("security kustomization must list network-policies/traefik-allow.yaml")
