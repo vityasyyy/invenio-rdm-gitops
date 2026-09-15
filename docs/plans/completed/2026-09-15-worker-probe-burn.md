@@ -36,7 +36,23 @@ resolve. No quota/replica/overcommit impact.
 - `invenio-web-hpa` maxed (memory 77%/80% at 2/2): observe; web pods are
   small (1m CPU) — raise maxReplicas if traffic-driven, separate decision.
 
-## Lead live-proof procedures (needs VPN)
+## Lead live-proof — DONE 2026-09-15 (VPN, post-merge `46720d4` + Deploy Verify green)
+
+Rollout clean (new RS, old pods drained, 0 restarts). New pods carry
+liveness 300/25 + readiness 120/25 (verified in live spec).
+
+1. DONE — `kubectl top`: workers 677/838m → **1m/1m** each (~10 min
+   post-Ready; far better than the ~135m estimate — the 11.4s measured
+   probe cost included one-off import overhead).
+2. DONE — worker HPA util 186% → **35%** (memory 48%).
+3. DECAYING (seen mid-path, deterministic) — `CPUThrottlingHigh` already
+   `pending` on one instance, `KubeHpaMaxedOut` still firing on windowed
+   history; no driving series remain (1m pods), so both clear as `for:`
+   windows roll past the fix (~15 min). Scale-in to 1 replica expected on
+   HPA stabilization.
+4. DONE — ArgoCD all Synced+Healthy; Deploy Verify green.
+
+## Lead live-proof procedures (needs VPN) — superseded by above
 
 1. Post-sync: `kubectl top pods -n invenio` — workers well under pre-change
    677/838m within ~10 min (old pods replaced by rollout).
