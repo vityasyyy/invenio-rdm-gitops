@@ -92,6 +92,12 @@ spec:
             limits:
               cpu: 1000m
               memory: 2Gi
+          # Probe cadence (issue #127): each exec run re-imports the whole app
+          # (~11s CPU measured live) — tight periods burned ~570m/pod with
+          # empty queues. Stretched periods keep failure math equivalent
+          # (startup 12x15s, liveness 3x300s, readiness 3x120s) while cutting
+          # probe burn ~4x. Timeouts stay under periods (readiness timeout
+          # previously exceeded its period, piling overlapping runs).
           startupProbe:
             exec:
               command:
@@ -109,8 +115,8 @@ spec:
                 - -c
                 - celery -A invenio_app.celery inspect ping -d celery@$(hostname) --timeout 30
             initialDelaySeconds: 30
-            periodSeconds: 60
-            timeoutSeconds: 45
+            periodSeconds: 300
+            timeoutSeconds: 25
             failureThreshold: 3
           readinessProbe:
             exec:
@@ -119,8 +125,8 @@ spec:
                 - -c
                 - celery -A invenio_app.celery inspect ping -d celery@$(hostname) --timeout 15
             initialDelaySeconds: 60
-            periodSeconds: 30
-            timeoutSeconds: 35
+            periodSeconds: 120
+            timeoutSeconds: 25
             failureThreshold: 3
           securityContext:
             allowPrivilegeEscalation: false
