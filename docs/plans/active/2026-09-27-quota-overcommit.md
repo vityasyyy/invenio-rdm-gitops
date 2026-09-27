@@ -142,3 +142,10 @@ raise that namespace first, then re-check the aggregate stays < 34.8Gi.
    This cluster-level alert will still carry no namespace by design.
 4. **ouroboros**: named in the brief but absent from the repo — confirm whether it exists
    in-cluster and, if so, which manifests govern it.
+
+## 9. Live verification — post-merge 218235e (2026-09-27, VPN, operator)
+
+- [x] All new hards live: invenio 8Gi/used 2816Mi (34%), monitoring 6Gi/2240Mi (37%), database 4Gi/384Mi, search 2Gi/512Mi, redis 1Gi/128Mi, minio 2Gi/384Mi, argocd 3Gi/1536Mi. Aggregate 28.5Gi = 1.23x allocatable — alert threshold (>1.5x) cleared with margin.
+- [x] Lead reconciliation applied: invenio 7Gi -> 8Gi to fit HPA 4/4 worst-surge (~7.4Gi).
+- [x] Post-merge invenio rollout fit quota (new web pod scheduled, setup Job completed, no FailedCreate in events).
+- [ ] Still open: `argocd-image-updater`/CNPG live request values (estimates held); two 12h Discord windows for silence.
