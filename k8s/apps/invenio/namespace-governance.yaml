@@ -8,7 +8,13 @@ metadata:
 spec:
   hard:
     requests.cpu: "6"
-    requests.memory: "12Gi"
+    # NOTE (2026-09-27, quota-overcommit; lead reconciliation for #131):
+    # requests.memory 12Gi -> 8Gi (worker proposed 7Gi; lead raised to 8Gi
+    # to fit HPA max 4/4 rollout surge: (5x544Mi web)+(5x800Mi worker)+
+    # scheduler 288Mi+setup Job 0.5Gi worst pattern ~= 7.4Gi. 8Gi = 1.1x
+    # worst pattern and keeps aggregate 28.5Gi = 1.23x node allocatable,
+    # still clears KubeMemoryQuotaOvercommit (>1.5x threshold).
+    requests.memory: "8Gi"
     limits.cpu: "16"
     limits.memory: "32Gi"
     pods: "30"

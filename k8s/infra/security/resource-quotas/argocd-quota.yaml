@@ -6,7 +6,12 @@ metadata:
 spec:
   hard:
     requests.cpu: "3"
-    requests.memory: "4Gi"
+    # NOTE (2026-09-27, quota-overcommit): requests.memory 4Gi -> 3Gi.
+    # Steady ~1.1Gi (7 components + image-updater est.) / staggered-surge
+    # ~1.7Gi; 3Gi = 1.76x worst-simultaneous (rollouts staggered in
+    # practice). Contributes -1Gi toward the aggregate budget. CPU/limits
+    # untouched.
+    requests.memory: "3Gi"
     limits.cpu: "7"
     limits.memory: "8Gi"
     pods: "20"

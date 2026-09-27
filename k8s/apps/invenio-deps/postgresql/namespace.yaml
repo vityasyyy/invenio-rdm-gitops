@@ -18,7 +18,11 @@ metadata:
 spec:
   hard:
     requests.cpu: "4"
-    requests.memory: "8Gi"
+    # NOTE (2026-09-27, quota-overcommit): requests.memory 8Gi -> 4Gi.
+    # Steady ~0.25Gi (single CNPG instance, LimitRange-filled); 4Gi allows
+    # 3-instance HA + backup Jobs with 5x headroom. Contributes -4Gi toward
+    # the aggregate budget. CPU/limits untouched.
+    requests.memory: "4Gi"
     limits.cpu: "8"
     limits.memory: "16Gi"
     pods: "15"

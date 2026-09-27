@@ -18,7 +18,11 @@ metadata:
 spec:
   hard:
     requests.cpu: "1"
-    requests.memory: "2Gi"
+    # NOTE (2026-09-27, quota-overcommit): requests.memory 2Gi -> 1Gi.
+    # Steady 0.125Gi (single redis-master, maxSurge 0 so no surge); 1Gi = 8x
+    # steady. Contributes -1Gi toward the aggregate budget. CPU/limits
+    # untouched.
+    requests.memory: "1Gi"
     limits.cpu: "2"
     limits.memory: "4Gi"
     pods: "5"
