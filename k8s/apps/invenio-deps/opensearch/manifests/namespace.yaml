@@ -18,7 +18,11 @@ metadata:
 spec:
   hard:
     requests.cpu: "2"
-    requests.memory: "4Gi"
+    # NOTE (2026-09-27, quota-overcommit): requests.memory 4Gi -> 2Gi.
+    # Steady ~0.64Gi (single replica 512Mi + LimitRange-filled init 128Mi);
+    # 2Gi = 3.2x steady, allows 3x scale. Contributes -2Gi toward the
+    # aggregate budget. CPU/limits untouched.
+    requests.memory: "2Gi"
     limits.cpu: "4"
     limits.memory: "8Gi"
     pods: "10"

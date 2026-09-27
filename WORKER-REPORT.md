@@ -1,3 +1,20 @@
+# Wave Report: alert triage (issue #131) — HPA + quota workers
+
+Integrated by lead from `agent/alert-hpa-metrics` and `agent/alert-quota`.
+See `docs/plans/active/2026-09-27-hpa-maxed-out.md` and `docs/plans/active/2026-09-27-quota-overcommit.md`.
+
+## Lead reconciliation (2026-09-27)
+- Conflict: HPA worker staged max 4/4; quota worker sized invenio 7Gi for
+  max 2+2 with 2->3 growth. Worst-pattern at 4/4 + rollout surge + setup
+  Job ~= 7.4Gi > 7Gi -> potential FailedCreate wedge at peak.
+- Decision: invenio quota 7Gi -> 8Gi (aggregate 28.5Gi = 1.23x node
+  allocatable, still clears the >1.5x alert threshold). Worker reports
+  below are preserved verbatim as historical record.
+- Open live gates (VPN needed): `describe hpa` pinning metric, apiservice
+  health, `describe resourcequota` fill, two 6am/6pm soak windows.
+
+---
+# PART A — alert-hpa
 # WORKER-REPORT: KubeHpaMaxedOut (web + worker) + KubeAggregatedAPIDown (v1beta1.metrics.k8s.io)
 
 Branch: `agent/alert-hpa-metrics` · Date: 2026-09-27 · Scope: diagnosis + fix-ready changeset, UNMERGED (see §8; live gates open)
@@ -219,3 +236,55 @@ Deliberately NOT touched: `namespace-governance.yaml` (quota/limitrange — othe
 - Q5 (replicas-field removal vs ArgoCD): removal applied per §3; first post-merge sync must be watched for diff-fighting (no `ignoreDifferences` for replicas exists). If ArgoCD flaps, follow-up is an `ignoreDifferences` stanza — not added pre-emptively.
 
 Rollback: `git revert` this change set + ArgoCD sync (hitless, 1–2 scale cycles); emergency clamp `kubectl -n invenio scale deploy/invenio-web --replicas=2`. Never merge to main from this worker.
+
+---
+# PART B — alert-quota
+# WORKER-REPORT — alert-quota (KubeMemoryQuotaOvercommit)
+
+Branch: `agent/alert-quota`. **Not merged to main** (per constraints). No secrets touched.
+No HPA/deployment/replica edits (owned by alert-hpa worker).
+
+## What changed
+
+Lowered `requests.memory` ResourceQuota hards (only that field; CPU/limits/LimitRanges untouched)
+so the cluster-aggregate quota sum clears the `KubeMemoryQuotaOvercommit` >1.5x threshold:
+
+- `k8s/apps/invenio/namespace-governance.yaml`: 12Gi → 7Gi
+- `k8s/infra/security/resource-quotas/monitoring-quota.yaml`: 12Gi → 6Gi
+- `k8s/apps/invenio-deps/postgresql/namespace.yaml`: 8Gi → 4Gi
+- `k8s/apps/invenio-deps/opensearch/manifests/namespace.yaml`: 4Gi → 2Gi
+- `k8s/apps/invenio-deps/redis/manifests/namespace.yaml`: 2Gi → 1Gi
+- `k8s/infra/security/resource-quotas/minio-quota.yaml`: 4Gi → 2Gi
+- `k8s/infra/security/resource-quotas/argocd-quota.yaml`: 4Gi → 3Gi
+- velero (2Gi) + default (512Mi): kept by design (DR safety / already minimal)
+
+Docs: created `docs/plans/active/2026-09-27-quota-overcommit.md` (audit table, decision log,
+PromQL + kubectl gates, rollback, open questions).
+
+Root cause (evidence): the alert is cluster-aggregate
+`sum(hard requests.memory) / sum(node allocatable) > 1.5`, not per-namespace usage.
+Before: 48.5Gi / 23.2Gi (3×7918Mi) = 2.09 → constantly firing. After: 27.5Gi / 23.2Gi = 1.19.
+Per-namespace audit ranked all namespaces ≤27% of their own quota — no single firing namespace
+exists, so none was guessed. The ~6am/6pm cadence is the warning-tier `repeatInterval: 12h`,
+not a CronJob (Velero Sun 3am, CNPG daily 2am).
+
+## Verification (this machine)
+
+- `kustomize build` exit 0: `k8s/infra/security`, `k8s/apps/invenio`,
+  `k8s/apps/invenio-deps/postgresql`, `k8s/apps/invenio-deps/opensearch/manifests`,
+  `k8s/apps/invenio-deps/redis/manifests`. Rendered `requests.memory` confirmed:
+  7Gi / 6Gi / 4Gi / 2Gi / 1Gi / 3Gi / 2Gi / 512Mi.
+- `yamllint` clean on all touched quota files (exit 0).
+- `kubectl cluster-info`: connection refused (10.17.104.130) — expected, no cluster access.
+
+## What remains (open live gates for operator)
+
+1. Sync + check aggregate ratio PromQL < 1.5 (query in plan doc §6).
+2. `kubectl describe resourcequota -A` per-namespace fill check (expect <50% steady).
+3. Confirm live `argocd-image-updater` (est. 128Mi) and CNPG container requests (est. ≤256Mi).
+4. Watch one invenio rollout (surge fits 7Gi) + two 12h Discord windows for silence.
+5. Coordinate with alert-hpa worker before any HPA max raise (7Gi fits 2→3 with 1.1Gi slack;
+   do not lower invenio further without their sign-off).
+6. Follow-ups NOT in this change set: Discord namespace rendering, ouroboros existence check.
+
+Rollback: revert the quota commit(s); ArgoCD self-heals. Raising quotas is non-blocking.

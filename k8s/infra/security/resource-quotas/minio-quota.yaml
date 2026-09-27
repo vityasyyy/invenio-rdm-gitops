@@ -6,7 +6,10 @@ metadata:
 spec:
   hard:
     requests.cpu: "2"
-    requests.memory: "4Gi"
+    # NOTE (2026-09-27, quota-overcommit): requests.memory 4Gi -> 2Gi.
+    # Steady 0.25Gi (observed ~250Mi) / surge 0.5Gi; 2Gi = 4x surge.
+    # Contributes -2Gi toward the aggregate budget. CPU/limits untouched.
+    requests.memory: "2Gi"
     limits.cpu: "4"
     limits.memory: "8Gi"
     pods: "10"

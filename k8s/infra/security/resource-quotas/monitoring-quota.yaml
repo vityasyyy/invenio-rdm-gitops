@@ -6,7 +6,12 @@ metadata:
 spec:
   hard:
     requests.cpu: "6"
-    requests.memory: "12Gi"
+    # NOTE (2026-09-27, quota-overcommit): requests.memory 12Gi -> 6Gi.
+    # Steady ~2.7Gi (prometheus-stack + loki share this namespace) / surge
+    # ~3.25Gi. 6Gi = 1.85x surge, 2.2x steady. Contributes -6Gi toward the
+    # <34.8Gi aggregate budget (KubeMemoryQuotaOvercommit fires at >1.5x
+    # node allocatable). CPU/limits untouched.
+    requests.memory: "6Gi"
     # NOTE (2026-09-06, #74): limits.cpu was 16 with 15.4 in use (96%) —
     # every monitoring rollout wedged on FailedCreate during the rolling
     # surge (old + new pods must fit simultaneously). Raised to 24 to cover
