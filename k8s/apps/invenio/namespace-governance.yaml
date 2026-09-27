@@ -8,13 +8,13 @@ metadata:
 spec:
   hard:
     requests.cpu: "6"
-    # NOTE (2026-09-27, quota-overcommit): requests.memory 12Gi -> 7Gi.
-    # Steady ~2.1Gi / HPA-max ~2.9Gi / rollout-surge ~4.5Gi (+0.5Gi setup Job
-    # transient = 5.0Gi worst pattern). 7Gi = 1.4x worst pattern, 2.4x max,
-    # and reserves HPA 2->3 growth (alert-hpa worker to confirm). Aggregate
-    # quota sum was 2.09x node allocatable (fires KubeMemoryQuotaOvercommit
-    # at >1.5x); this cut contributes -5Gi toward the <34.8Gi budget.
-    requests.memory: "7Gi"
+    # NOTE (2026-09-27, quota-overcommit; lead reconciliation for #131):
+    # requests.memory 12Gi -> 8Gi (worker proposed 7Gi; lead raised to 8Gi
+    # to fit HPA max 4/4 rollout surge: (5x544Mi web)+(5x800Mi worker)+
+    # scheduler 288Mi+setup Job 0.5Gi worst pattern ~= 7.4Gi. 8Gi = 1.1x
+    # worst pattern and keeps aggregate 28.5Gi = 1.23x node allocatable,
+    # still clears KubeMemoryQuotaOvercommit (>1.5x threshold).
+    requests.memory: "8Gi"
     limits.cpu: "16"
     limits.memory: "32Gi"
     pods: "30"
