@@ -2,9 +2,9 @@
 
 Branch: `agent/alert-hpa-metrics` · Alerts: `KubeHpaMaxedOut` (invenio-web-hpa, invenio-worker-hpa, 15m, ~6am/6pm) + `KubeAggregatedAPIDown` (v1beta1.metrics.k8s.io, 80% over 10m)
 
-## Status: DIAGNOSIS ONLY — no manifest edits
+## Status: FIX-READY CHANGESET STAGED, UNMERGED — live gates open
 
-Worker report: `WORKER-REPORT.md` (worktree root). This plan tracks the follow-through.
+Worker report: `WORKER-REPORT.md` (worktree root, §8 holds the exact diff + verification output). This plan tracks the follow-through.
 
 ## Findings (manifest evidence)
 
@@ -21,6 +21,12 @@ Worker report: `WORKER-REPORT.md` (worktree root). This plan tracks the follow-t
 1. `invenio-hpa.yaml`: web min 1→2 / max 2→4, worker max 2→4, add `behavior:` (scaleUp 60s / scaleDown 300s). Option B: CPU-only or mem 80→90 if memory-wedged.
 2. `invenio-deployment.yaml`: remove static `replicas: 2` (HPA owns it).
 3. No quota/limitrange edits (other worker). No metrics-server manifests (RKE2 live-only). No alert silencing.
+
+## Decision log (2026-09-27 changeset)
+
+- Applied: web min 1→2 / max 2→4, worker max 2→4, `behavior:` on both (scaleUp 60s, scaleDown 300s); removed static `replicas: 2` from web Deployment. Verified: `kustomize build` OK, `yamllint` clean.
+- Deferred (ambiguous, recorded in WORKER-REPORT.md §8): memory-metric drop/raise (Q1), quota sign-off for max 4 (Q2 — static math fits ≈3.35/6 req, live usage unknown), 6am/6pm driver fix (Q3), metrics-server patch path (Q4, live-only), ArgoCD replicas `ignoreDifferences` (Q5 — watch first sync, add only if it flaps).
+- Untouched by design: quota/limitrange (other worker), metrics-server manifests (RKE2 live-only), upstream alert rules (no silencing).
 
 ## Operator live-proof checklist (needs VPN)
 

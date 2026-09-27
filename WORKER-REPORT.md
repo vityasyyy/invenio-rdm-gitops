@@ -1,7 +1,7 @@
 # WORKER-REPORT: KubeHpaMaxedOut (web + worker) + KubeAggregatedAPIDown (v1beta1.metrics.k8s.io)
 
-Branch: `agent/alert-hpa-metrics` · Date: 2026-09-27 · Scope: diagnosis only, no manifest edits applied
-Method: systematic-debugging Phases 1–3 (manifest evidence; no cluster access — `kubectl` returns `connection refused`, see §5)
+Branch: `agent/alert-hpa-metrics` · Date: 2026-09-27 · Scope: diagnosis + fix-ready changeset, UNMERGED (see §8; live gates open)
+Method: systematic-debugging Phases 1–4 (manifest evidence; no cluster access — `kubectl` returns `connection refused`, see §5/§8)
 
 ## 1. Root-cause hypothesis
 
@@ -159,3 +159,63 @@ Acceptance: outside peaks both HPAs sit below max with per-metric utilization un
 - When §3 is later applied: revert is `git revert <merge-SHA>` (HPA + deployment replicas) followed by ArgoCD sync; HPA reverts are hitless (replica count re-converges within 1–2 sync/scale cycles). If scale-up overshoots quota, `kubectl -n invenio scale deploy/invenio-web --replicas=2` as immediate manual clamp, then revert the PR.
 - metrics-server live actions (restart/resize) are out-of-band: record the exact command + pod state before/after; restart is safe (HPA holds last count on missing metrics, recovers on return).
 - Risk if §3 applied without §5 answers: raising max without quota sign-off can wedge scheduling (Pending pods); dropping memory metric without proof can mask a real memory leak → OOMKills. Hence gate on live data.
+
+## 8. Fix-ready changeset (applied 2026-09-27, UNMERGED — live gates open)
+
+### What changed (exact diff)
+
+`k8s/apps/invenio/invenio-hpa.yaml`:
+- `invenio-web-hpa`: `minReplicas` 1→2, `maxReplicas` 2→4, added `behavior:` (scaleUp stabilization 60s / 100% per 60s; scaleDown stabilization 300s / 50% per 120s).
+- `invenio-worker-hpa`: `minReplicas` 1 (unchanged), `maxReplicas` 2→4, added identical `behavior:` block.
+- Metrics untouched: CPU 70% + memory 80% kept (driver ambiguous — Q1 open, so no metric dropped).
+
+`k8s/apps/invenio/invenio-deployment.yaml`:
+- Removed static `replicas: 2`; HPA now owns the replica count (comment left in place explaining why).
+
+Deliberately NOT touched: `namespace-governance.yaml` (quota/limitrange — other worker owns; read-only check only), any metrics-server manifest (none created — RKE2 addon, live-only), `alerts.yaml` / upstream kube-prometheus rules (no silencing).
+
+```diff
+# invenio-hpa.yaml (both HPAs; web min 1->2, both max 2->4, +behavior)
++  behavior:
++    scaleUp:
++      stabilizationWindowSeconds: 60
++      policies:
++        - type: Percent
++          value: 100
++          periodSeconds: 60
++    scaleDown:
++      stabilizationWindowSeconds: 300
++      policies:
++        - type: Percent
++          value: 50
++          periodSeconds: 120
+# invenio-deployment.yaml
+-  replicas: 2
++  # replicas intentionally omitted: invenio-web-hpa owns the replica count
+```
+
+### Verification commands and output (this machine, 2026-09-27)
+
+- `kustomize build k8s/apps/invenio > /tmp/invenio-build.yaml` → `BUILD_OK`; rendered output contains 2 `HorizontalPodAutoscaler` objects, both with `behavior:` blocks (verified via grep on built YAML).
+- `yamllint k8s/apps/invenio/invenio-hpa.yaml k8s/apps/invenio/invenio-deployment.yaml` → `YAMLLINT_CLEAN` (exit 0, no findings).
+- `kubectl get hpa -n invenio` and `kubectl get apiservice v1beta1.metrics.k8s.io` (read-only attempts) → `dial tcp 10.17.104.130:443: connect: connection refused` (fresh 22:08 UTC). Cluster unreachable as expected; live gates below remain OPEN.
+- Quota math (static, read-only): worst-case new app usage = web 4×(250m/1000m) + worker 4×(500m/1000m) + scheduler (100m/500m) + setup-job transient (250m/1000m) ≈ 3.35 CPU req / 9.5 CPU lim vs quota req 6 / lim 16. Fits ON PAPER, but live `describe resourcequota` usage (including any other invenio-namespace consumers) is unknown — Q2 stays open, quota worker sign-off required before merge.
+
+### What remains — open live gates (from §5, all unrun against the cluster)
+
+- §5.0: `describe hpa` both — which metric pins, any `FailedGetResourceMetric` during metrics dips.
+- §5.1: `top pods` web/worker at peak vs threshold math (web 175m/410Mi, worker 350m/615Mi).
+- §5.2: `get apiservice v1beta1.metrics.k8s.io -o yaml` + metrics-server pods/logs/events (KubeAggregatedAPIDown triage — live-only, no repo change).
+- §5.3: 6am/6pm driver — scheduler/worker logs, Velero/CNPG overlap, Traefik traffic.
+- §5.4: `describe resourcequota/limitrange` — headroom for max 4.
+- §5.5 (post-merge): two 6am/6pm windows without 15m pin; metrics API Available=True steady; ArgoCD Synced+Healthy; Deploy Verify green.
+
+### Answers needed for Q1–Q5 (all OPEN — recorded, not guessed)
+
+- Q1 (memory-vs-CPU driver): ambiguous from manifests alone. DECISION: kept dual-metric; did NOT drop/raise the memory target. Operator must answer from live `describe hpa` + PromQL (`kube_hpa_status_target_metric`) before any metric tuning.
+- Q2 (quota headroom): static math fits but live usage unknown. DECISION: max 4 staged but merge gated on quota worker's `describe resourcequota` sign-off.
+- Q3 (6am/6pm driver): beat vs backup vs traffic undetermined without logs. DECISION: no schedule/concurrency changes made; HPA headroom absorbs any of the three.
+- Q4 (metrics-server path): RKE2 out-of-band patch vs vendored override undecided; no runbook annotation added (upstream rules untouched). Operator call.
+- Q5 (replicas-field removal vs ArgoCD): removal applied per §3; first post-merge sync must be watched for diff-fighting (no `ignoreDifferences` for replicas exists). If ArgoCD flaps, follow-up is an `ignoreDifferences` stanza — not added pre-emptively.
+
+Rollback: `git revert` this change set + ArgoCD sync (hitless, 1–2 scale cycles); emergency clamp `kubectl -n invenio scale deploy/invenio-web --replicas=2`. Never merge to main from this worker.
