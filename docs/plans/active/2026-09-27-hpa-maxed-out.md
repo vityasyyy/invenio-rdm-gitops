@@ -44,3 +44,11 @@ Q1 driving metric per HPA (CPU vs memory) → metric choice. Q2 approved max (qu
 ## Rollback
 
 Zero manifest changes on this branch — nothing to roll back. Future §3 merge reverts via `git revert` + ArgoCD sync; manual clamp `kubectl scale deploy/invenio-web --replicas=2` if quota wedges.
+
+## Live verification — post-merge 218235e (2026-09-27, VPN, operator)
+
+- [x] `describe hpa` both: **memory is the driving metric** (ScalingActive=True on memory, CPU ~0-1m idle). No `FailedGetResourceMetric`. ScalingLimited=False both.
+- [x] `top pods`: web 487Mi (25d-old pod, 95% of request) + 235Mi (31m-old post-merge pod) = 70% avg; worker 389/402Mi = 51%. **Web pods show slow memory growth over weeks** — follow-up: watch for leak vs normal uwsgi growth.
+- [x] apiservice `v1beta1.metrics.k8s.io` Available=True, raw metrics API responds. Backend is `rke2-metrics-server` (single replica, 9 restarts, 71d old) — SPOF explains past 80% flapping. Follow-up: 2 replicas out-of-band (RKE2 config, not repo).
+- [x] Post-merge sync clean: setup Job completed, new web pod Running, no ArgoCD diff-fighting on removed `replicas:` field.
+- [ ] Still open: two 6am/6pm soak windows without 15m max-pin; 6am/6pm driver (beat logs only show start 2026-09-23 — inconclusive).
