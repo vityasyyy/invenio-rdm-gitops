@@ -3,6 +3,8 @@ kind: PrometheusRule
 metadata:
   name: cluster-health-alerts
   namespace: monitoring
+  labels:
+    release: monitoring
 spec:
   groups:
     - name: app-slo

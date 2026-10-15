@@ -8,7 +8,7 @@ import yaml
 EXPECTED_EXCLUSION = {
     "apiGroups": ["velero.io"],
     "kinds": ["Backup", "Restore"],
-    "clusters": ["https://kubernetes.default.svc"],
+    "clusters": ["https://kubernetes.default.svc", "https://10.43.0.1:443"],
 }
 
 
