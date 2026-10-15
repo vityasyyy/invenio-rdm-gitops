@@ -165,8 +165,8 @@ is still web min 2 / max 5 and worker min 2 / max 4.
 
 Conclusion: freeing node memory does not help redis — the fix requires a manifest change
 (raise the memory limit, e.g. to 1Gi, and/or set `maxmemory` with an eviction policy, and/or
-clean the stale `temp-*.rdb`). Per task constraints this is **reported, not changed**, in this
-session.
+clean the stale `temp-*.rdb`). This assessment records the finding; no manifest
+change was made.
 
 ## Deadlock chain (why the right-sizing cannot self-heal yet)
 
@@ -202,5 +202,4 @@ session.
 
 Recovery is **incomplete / blocked on redis**. The right-sizing is correct in main and will
 apply once web can become healthy; the redis 512Mi limit vs 548Mi dataset is the hard blocker
-and needs a manifest decision (raise limit / set maxmemory / trim stale RDB). See
-`.superpowers/sdd/2026-08-14-cluster-recovery-and-ugm-migration/task-3-report.md`.
+and needs a manifest decision (raise limit / set maxmemory / trim stale RDB).

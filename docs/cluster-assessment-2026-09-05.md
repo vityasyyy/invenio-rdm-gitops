@@ -2,11 +2,11 @@
 
 Date: 2026-09-05
 Context: `btd-rke2` (Rancher-managed RKE2, reachable only via university VPN)
-Scope: lead-verified live-state snapshot for the docs-sync wave. Companion to
+Scope: read-only cluster-state snapshot. Companion to
 `docs/cluster-assessment-2026-09-02.md` (email-confirmation baseline) and
 `docs/cluster-assessment-2026-08-14.md` (recovery baseline). All values below
-are lead-verified live state — no cluster mutations were performed from this
-docs-only sync (read-only `kubectl` per brief constraints).
+are observed live state; no cluster mutations were performed. The assessment
+used read-only `kubectl` commands.
 
 ## Summary
 
@@ -17,8 +17,8 @@ worker-02 kubelet streaming works again (university IT killed + restarted
 worker-02, then reconnected the agent session), and postgres reconciled to
 spec 1 / status 1 / ready 1 with Ready + ContinuousArchiving True. The
 remaining red item is the **backup scheduler deadlock** (stuck since
-2026-08-21, `already exists` error) — owned by the backup-diag worker, not
-this sync. The machineID collision is unchanged, so flap risk remains.
+2026-08-21, `already exists` error). The machineID collision is unchanged, so
+flap risk remains.
 
 ## Cluster State
 
@@ -71,13 +71,12 @@ execution: blocking failed Backup deleted, `manual-backup-verify-20260905`
 exists` in 30 min of operator logs. Daily schedule resumes on its own.
 (Plan: `docs/plans/active/2026-09-02-db-recovery.md`.)
 
-### (c) Backup scheduler deadlock — stuck since 2026-08-21 — OWNED BY backup-diag WORKER
+### (c) Backup scheduler deadlock — stuck since 2026-08-21 — UNRESOLVED
 
 ScheduledBackup `postgres-daily-backup` has not advanced since
 2026-08-21T02:02:00Z: every Backup CR creation fails with an `already exists`
-error on `postgres-daily-backup-20260821030200`. Diagnosis + fix belong to the
-backup-diag worker (`docs/plans/active/2026-09-05-backup-scheduler-deadlock.md`
-— do not duplicate here).
+error on `postgres-daily-backup-20260821030200`. Investigation and remediation
+are tracked in `docs/plans/active/2026-09-05-backup-scheduler-deadlock.md`.
 
 ### (d) Memory overcommit persists after zombie removal — NEW BASELINE, plan created
 
@@ -93,11 +92,10 @@ Right-size + rebalance plan created from issue #74:
 `MAIL_PASSWORD` still placeholders. (Plan:
 `docs/plans/active/2026-09-02-email-confirmation.md`.)
 
-### (f) 3 Released PVs — postgres-1, postgres-2, old redis-data — Task 16 scope
+### (f) Released PVs — postgres-1, postgres-2, old redis-data
 
-The postgres scale-down released two more PVs. Cleanup (PV delete + NFS admin
-coordination for `/export/kube-btd/`) belongs to Task 16 of the
-codebase-improvements plan.
+The postgres scale-down released two more PVs. Cleanup requires deleting the
+PVs and coordinating with the NFS administrator for `/export/kube-btd/`.
 
 ### (g) Hygiene: sealed key single copy, `keys.txt` present
 
@@ -107,16 +105,16 @@ with no backup found — still the highest-priority operator action. `keys.txt`
 
 ## Concerns Requiring Follow-up
 
-1. **Backup scheduler deadlock** (finding c) — backup-diag worker owns it.
+1. **Backup scheduler deadlock** (finding c) — remediation remains open.
 2. **machineID collision flap risk** (finding a) — university IT ticket.
 3. **Worker-02 overcommit 354% limits** (finding d) — issue #74 plan created.
 4. **Sealed-secrets key single copy** (finding g) — back up now.
 5. **SMTP credentials** (finding e) — operator supplies relay creds.
-6. **Released PVs** (finding f) — Task 16 cleanup.
+6. **Released PVs** (finding f) — PV deletion and NFS administrator coordination.
 7. **Off-site backup + restore drills** — still pending (need completed backup first).
 
 ## Status
 
 Healthiest baseline since recovery (17/17 Synced+Healthy). Streaming + postgres
-reconcile resolved; backup scheduler deadlock is the active red item (other
-worker); machineID, memory, SMTP, key-backup, and off-site remain queued.
+reconcile resolved; backup scheduler deadlock is the active red item;
+machineID, memory, SMTP, key-backup, and off-site remain queued.

@@ -12,9 +12,9 @@ existingSecret: minio-credentials
 
 buckets: []
 
-# Issue #74 Phase-2 row 16: 256Mi/1Gi -> 256Mi/512Mi memory-only; cpu and
+# Issue #74: 256Mi/1Gi -> 256Mi/512Mi memory-only; cpu and
 # requests untouched. Observed 250Mi (2026-09-06 top); 512Mi limit = 2.05x.
-# NOTE: minio restarts on merge — lead-sequenced (DR-baseline timing).
+# NOTE: minio restarts on merge; account for DR-baseline timing.
 resources:
   requests:
     cpu: 100m

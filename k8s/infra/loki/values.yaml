@@ -34,8 +34,8 @@ singleBinary:
     storageClassName: btd-nfs
 
 chunksCache:
-  # Q4 fix: camelCase MB number (was snake_case `allocated_memory: 256Mi`,
-  # ignored — chart default 8192 applied, rendering `-m 8192`). 256 matches
+  # The chart expects a camelCase MB value; snake_case `allocated_memory: 256Mi`
+  # was ignored, so chart default 8192 rendered as `-m 8192`. 256 matches
   # the sized-down memcached container below. Render-proof: `-m 256`.
   allocatedMemory: 256
   resources:
@@ -47,11 +47,11 @@ chunksCache:
       memory: 512Mi
 
 resultsCache:
-  # Q4 fix: same snake_case dead key (chart default 1024 applied, rendering
-  # `-m 1024` and auto-sizing memcached to 1229Mi/1229Mi). Now 256 to match.
+  # The same snake_case key was ignored, so chart default 1024 rendered as
+  # `-m 1024` and auto-sized memcached to 1229Mi/1229Mi. Now 256 to match.
   # Render-proof: `-m 256`.
   allocatedMemory: 256
-  # Issue #74 Phase-2 row 14: explicit memcached resources replace the
+  # Issue #74: explicit memcached resources replace the
   # allocatedMemory-derived 1229Mi/1229Mi auto-sizing. Memory-only (cpu stays
   # LimitRange-filled, untouched). Pod total: 512+64=576Mi req,
   # 1024+128=1152Mi lim. Observed 4Mi (2026-09-06 top).
@@ -62,7 +62,7 @@ resultsCache:
       memory: 1024Mi
 
 # Shared exporter sidecar resources for both cache StatefulSets.
-# Issue #74 Phase-2 rows 13+14: 128Mi/1Gi (LimitRange) -> 64Mi/128Mi
+# Issue #74: 128Mi/1Gi (LimitRange) -> 64Mi/128Mi
 # memory-only; cpu stays LimitRange-filled. Observed 3-4Mi (2026-09-06 top).
 memcachedExporter:
   resources:
@@ -88,7 +88,7 @@ monitoring:
       dashboards:
         enabled: false
 
-# Loki canary (DaemonSet, both workers). Issue #74 Phase-2 row 12 + Q4 fix:
+# Loki canary (DaemonSet, both workers). Issue #74:
 # the block lived under `monitoring.lokiCanary` (dead — no chart template
 # reads it; chart default enabled:true applied, hence 2 live canary pods
 # despite "disabled"). Moved to the top-level schema key, keeping the live

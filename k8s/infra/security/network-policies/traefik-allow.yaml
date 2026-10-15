@@ -1,6 +1,6 @@
 # Allow Prometheus scrapes of Traefik :9100/metrics (issue #117).
 #
-# Namespace `traefik` default-denies ingress; the wave-2 ServiceMonitor
+# Namespace `traefik` default-denies ingress; the ServiceMonitor
 # selects the dedicated `traefik-metrics` Service correctly, but packets die
 # at the namespace boundary without this allow (proven live via
 # /api/v1/targets: targets discovered, scrapes time out).

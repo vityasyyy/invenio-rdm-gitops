@@ -2,7 +2,7 @@
 
 Date: 2026-09-02
 Context: `btd-rke2` (Rancher-managed RKE2, reachable only via university VPN)
-Scope: snapshot of cluster state for the email-confirmation wave (issue #67). Companion to `docs/cluster-assessment-2026-08-14.md` (recovery baseline).
+Scope: cluster-state snapshot covering the email-confirmation changes in issue #67. Companion to `docs/cluster-assessment-2026-08-14.md` (recovery baseline).
 
 ## Summary
 
@@ -10,8 +10,8 @@ The cluster is back to a healthy baseline after the 2026-08-14 recovery: all 3
 nodes Ready, 16 of 17 ArgoCD apps Synced+Healthy. One app (`invenio-bootstrap`)
 is Progressing because the scheduler Deployment is crash-looping (finding (a),
 fixed by #68). The main functional gap is **email confirmation is broken — no
-SMTP configured anywhere** — which this wave fixes with placeholder plumbing
-(issue #67). Several long-running infra concerns remain and are listed under
+SMTP configured anywhere** — which issue #67 addresses with placeholder
+plumbing. Several long-running infra concerns remain and are listed under
 "Concerns requiring follow-up".
 
 ## Cluster State
@@ -62,14 +62,14 @@ The invenio-ugm image is referenced both as `:latest` (drift-prone) and pinned
 by digest in `k8s/apps/invenio/kustomization.yaml`. Digest pinning is correct;
 `:latest` references elsewhere should be eliminated to prevent silent drift.
 
-### (e) Email confirmation broken — no SMTP — FIXED by this wave (#67)
+### (e) Email confirmation broken — no SMTP — placeholder plumbing added for issue #67
 
 Registration requires email confirmation (`SECURITY_CONFIRMABLE=True`,
 `SECURITY_LOGIN_WITHOUT_CONFIRMATION=False`) but no mail server was configured:
 no `MAIL_*` in `docker/ugm/invenio.cfg`, no mail vars in the ConfigMap, no
 `MAIL_USERNAME`/`MAIL_PASSWORD` in the SealedSecret, no SMTP service in the
 cluster. Flask-Mail fell back to `localhost:25` → confirmation emails never
-sent → users could never log in. **Fixed by this wave**: env-driven `MAIL_*`
+sent → users could never log in. **Issue #67 adds** env-driven `MAIL_*`
 settings in `invenio.cfg`, placeholder relay in the ConfigMap, sealed placeholder
 credentials in `invenio-app-secrets`. Operator must supply real university relay
 credentials (see plan doc "Operator steps").

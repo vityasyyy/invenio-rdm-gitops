@@ -61,7 +61,7 @@ grafana:
     enabled: false
   sidecar:
     # Shared resources for all grafana sidecar containers (dashboards,
-    # datasources, alerts). Issue #74 Phase-2 row 7: 128Mi/1Gi (LimitRange)
+    # datasources, alerts). Issue #74: 128Mi/1Gi (LimitRange)
     # -> 64Mi/128Mi memory-only; cpu stays LimitRange-filled. Observed ~15Mi
     # per sidecar (2026-09-06 top); 128Mi limit = 8x observed.
     resources:
@@ -85,10 +85,11 @@ alertmanager:
   enabled: true
   alertmanagerSpec:
     alertmanagerConfigSelector: {}
-    # Branch-A requirement: the discord-receivers AlertmanagerConfig carries the
-    # tier sub-routes for ALL namespaces. Default OnNamespace would inject a
-    # namespace="monitoring" matcher on the CR route and drop every
-    # cross-namespace alert, so matching must be cluster-wide (chart 69.6.0
+    # Cross-namespace routing requirement: the discord-receivers
+    # AlertmanagerConfig carries the tier sub-routes for ALL namespaces.
+    # Default OnNamespace would inject a `namespace="monitoring"` matcher on
+    # the CR route and drop cross-namespace alerts, so matching must be
+    # cluster-wide (chart 69.6.0
     # CRD crd-alertmanagers.yaml: enum OnNamespace|None, default OnNamespace).
     alertmanagerConfigMatcherStrategy:
       type: None
@@ -160,7 +161,7 @@ kubeStateMetrics:
   enabled: true
 
 # Resources for the kube-state-metrics subchart Deployment.
-# Issue #74 Phase-2 row 10: 128Mi/1Gi (LimitRange) -> 64Mi/64Mi memory-only;
+# Issue #74: 128Mi/1Gi (LimitRange) -> 64Mi/64Mi memory-only;
 # cpu stays LimitRange-filled. Observed 22-25Mi (2026-09-06 top); 64Mi = 2.6x.
 kube-state-metrics:
   resources:
@@ -177,7 +178,7 @@ nodeExporter:
     - operator: Exists
 
 # Resources for the prometheus-node-exporter subchart DaemonSet (both nodes).
-# Issue #74 Phase-2 row 11: 128Mi/1Gi (LimitRange) -> 64Mi/64Mi memory-only;
+# Issue #74: 128Mi/1Gi (LimitRange) -> 64Mi/64Mi memory-only;
 # cpu stays LimitRange-filled. Observed 5Mi per node (2026-09-06 top); 64Mi = 12x.
 prometheus-node-exporter:
   resources:
@@ -193,7 +194,7 @@ prometheusOperator:
     patch:
       enabled: false
   # Resources for the prometheus-operator Deployment.
-  # Issue #74 Phase-2 row 9: 128Mi/1Gi (LimitRange) -> 64Mi/128Mi memory-only;
+  # Issue #74: 128Mi/1Gi (LimitRange) -> 64Mi/128Mi memory-only;
   # cpu stays LimitRange-filled. Observed 23Mi (2026-09-06 top); 128Mi = 5.6x.
   resources:
     requests:
@@ -201,7 +202,7 @@ prometheusOperator:
     limits:
       memory: 128Mi
   # Config-reloader flags for prometheus + alertmanager pods (2 sidecars +
-  # 2 init containers on worker-02). Issue #74 Phase-2 row 5: 128Mi/1Gi
+  # 2 init containers on worker-02). Issue #74: 128Mi/1Gi
   # (LimitRange) -> 64Mi/256Mi memory-only; cpu flags stay 0 (LimitRange fills
   # cpu). Rendered as --config-reloader-memory-request/limit operator flags.
   prometheusConfigReloader:
