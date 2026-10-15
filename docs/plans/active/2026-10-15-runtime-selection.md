@@ -16,7 +16,16 @@ PRs #141 and #142 passed CI and Deploy Verify, but deeper live checks found two 
 
 ## Deployment gate and acceptance
 
-This follow-up needs explicit deployment approval. After merge: watch Deploy Verify, wait for the exact ConfigMap and rule-label changes, inspect runtime Prometheus rules and their evaluation health, and observe Backup resources across several Velero sync cycles. Reject success if ArgoCD emits new prune records or UIDs keep changing. Stored backup recoverability remains unproven; no new backup or restore is authorized.
+The operator explicitly approved deployment. PR #143 merged as `fda91ec`; Deploy Verify run `38762337270` passed. The exact ConfigMap aliases and rule label are live. Stored backup recoverability remains unproven; no new backup or restore is authorized.
+
+## Live evidence (2026-10-15, approximately 15:44 UTC)
+
+- A 190-second resource watch observed both recreated Backup objects without deletion/recreation. Subsequent reads confirmed unchanged UIDs `860d4438-7a05-415e-9c96-7193bf7eca7c` and `08a56222-d50f-4b0c-b741-2301a1ab61e0`. No ArgoCD Backup prune records appeared after 15:41 UTC in the bounded log inspection.
+- All 24 expected custom alert names are present in Prometheus runtime rules with evaluation health `ok`. An initial verifier accidentally included a similarly named chart rule group; checking against the repository's exact alert-name set corrected that diagnostic, without changing production rules.
+- `VeleroBackupStale` is pending, and its expression reports approximately 39.06 days since last success. The surviving August Backup objects are `PartiallyFailed`. Ownership repair is not successful-backup or restore proof.
+- All three exporter instances report `up=1`; master memory metrics are present. Grafana `/api/health` reports database `ok`; dashboard provisioning logs show completion without observed errors. All 17 ArgoCD Applications are Synced/Healthy.
+- A bounded last-45-minute etcd sample contains one 138ms slow-apply warning, not the earlier multi-second fsync stalls. Storage improvement remains under observation; do not claim zero latency events.
+- This repository exposes Deploy Verify, not workflows named Deploy Production or Infra Apply (auto). Both initial deployment runs (`38759860164`, `38760197207`) and follow-up deployment passed; deeper live checks, not pipeline green alone, found the initial faults.
 
 ## Rollback
 

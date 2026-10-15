@@ -1,6 +1,6 @@
 # Velero resource ownership safeguard (#139)
 
-**Status:** implementation only; not deployed. **Scope:** ArgoCD and Velero
+**Status:** deployed; ownership protection verified after #143. Backup recoverability remains open. **Scope:** ArgoCD and Velero
 manifests, the Velero CI validator/tests, and this plan.
 
 ## Cause and design
@@ -14,6 +14,7 @@ not retroactive.
 
 Add one exact `resource.exclusions` rule for `velero.io` `Backup` and `Restore`
 on the Velero app's `https://kubernetes.default.svc` cluster. ArgoCD v2.12
+also uses the internal REST alias `https://10.43.0.1:443`; #143 adds that explicit alias after live verification found the initial rule insufficient. ArgoCD v2.12
 documents exclusions as removing matching kinds from discovery and sync,
 preventing ArgoCD from adopting/pruning them without changing tracking or
 global prune settings. The validator allows unrelated rules only with explicit,
@@ -46,7 +47,7 @@ Restore resources stay outside ArgoCD discovery and sync.
 
 ## Live verification
 
-Not performed; deployment was not approved. After a separately authorized
+Deployment was explicitly approved and verified after the endpoint correction in #143; see `2026-10-15-runtime-selection.md` for the timestamped evidence. The repeatable check is to
 sync, confirm `argocd-cm` contains the exact exclusion, `argocd app resources
 velero` still lists `Schedule/weekly-infra-backup` but no Backup/Restore, the
 Velero Backup objects remain available, and controller logs show no new

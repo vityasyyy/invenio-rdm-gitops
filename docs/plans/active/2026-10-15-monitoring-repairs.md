@@ -45,3 +45,7 @@
 ## Lead Review
 
 Independent verification passed: production-rule regression tests (24 alerts), pre-fix rule failure reproduction, cached Helm chart render with both required tolerations, monitoring Kustomize render, YAML lint and shell syntax checks. The existing CI monitoring job invokes the updated validator, so no workflow/tool-install change is needed. Production approval is still required; node-exporter will add a pod on the master and may pull its existing image there. Expect the corrected stale-backup alert to expose the already-known backup gap, not prove that backups recovered. The lead interrupted a prolonged final-review loop and bounded the worker to final validation and reporting; no scope expansion occurred.
+
+## Deployed Verification
+
+The operator subsequently approved #142 and follow-up #143. All three exporter targets are up and all 24 custom rules now evaluate with health `ok`. Follow-up #143 added the missing `release=monitoring` selector label; valid expressions alone had not made the rules active. Grafana is healthy, and the stale-backup rule now exposes the actual approximately 39-day success gap. See `2026-10-15-runtime-selection.md`; no backup/restore run was performed.
