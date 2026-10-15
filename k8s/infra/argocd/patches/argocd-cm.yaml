@@ -8,5 +8,13 @@ data:
   "statusbadge.enabled": "true"
   "account.anonymous.enabled": "false"
   "accounts.github-actions": "apiKey"
+  "resource.exclusions": |
+    - apiGroups:
+      - velero.io
+      kinds:
+      - Backup
+      - Restore
+      clusters:
+      - https://kubernetes.default.svc
   # Poll every 30s (supplements GitHub webhook for push-based sync)
   "timeout.reconciliation": "30s"
