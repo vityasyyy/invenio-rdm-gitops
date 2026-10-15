@@ -294,7 +294,7 @@ data:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "(time() - velero_backup_timestamp) / 3600",
+              "expr": "(time() - velero_backup_last_successful_timestamp) / 3600",
               "legendFormat": "hours",
               "refId": "A"
             }

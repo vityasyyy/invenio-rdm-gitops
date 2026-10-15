@@ -83,14 +83,36 @@ spec:
             description: "At least one Velero backup failed in the last hour. Check velero backup logs; cluster disaster recovery is at risk."
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
             dashboard: "https://grafana.vityasy.me/d/data-backups"
+        - alert: VeleroBackupMetricsMissing
+          expr: absent(velero_backup_last_successful_timestamp)
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Velero backup success metric is missing"
+            description: "Prometheus has not collected velero_backup_last_successful_timestamp for 10m. Backup freshness cannot be verified, even if the Velero scrape target is up."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+            dashboard: "https://grafana.vityasy.me/d/data-backups"
+        - alert: VeleroBackupNeverSucceeded
+          expr: velero_backup_last_successful_timestamp == 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Velero has no successful backup timestamp"
+            description: "Velero reports no successful backup for this series. Verify the backup schedule, storage, and Velero logs."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+            dashboard: "https://grafana.vityasy.me/d/data-backups"
         - alert: VeleroBackupStale
-          expr: time() - velero_backup_timestamp > 8 * 24 * 3600
+          expr: |
+            velero_backup_last_successful_timestamp > 0
+            and (time() - velero_backup_last_successful_timestamp > 8 * 24 * 3600)
           for: 1h
           labels:
             severity: warning
           annotations:
             summary: "No Velero backup in over 8 days"
-            description: "The last successful Velero backup was more than 8 days ago. Verify the Velero schedule and storage."
+            description: "The last successful Velero backup for this series was more than 8 days ago. Verify the Velero schedule and storage."
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
             dashboard: "https://grafana.vityasy.me/d/data-backups"
         - alert: PostgreSQLHighConnections
