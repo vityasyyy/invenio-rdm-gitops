@@ -31,13 +31,13 @@ Workers must not edit overlapping files or the plans index. Their scratch report
 
 - [x] Fetch origin, preserve user edits and create isolated worktrees from `d6b4458`.
 - [x] Baseline monitoring validation and YAML lint pass (existing warnings only).
-- [x] Dispatch bounded workers; their verified designs and regression evidence remain pending.
+- [x] Dispatch bounded workers and review both designs and regression evidence.
 - [x] Verify etcd/API health after IT storage migration; distinguish old events from current faults.
 - [x] Correlate worker-02 probe failures, I/O pressure, PostgreSQL restarts and workload logs; underlying worker storage cause remains unresolved.
-- [ ] Review worker changes and compatibility against deployed versions; do not infer live success from config tests.
-- [ ] Integrate non-overlapping commits; wire regression checks into existing CI without new downloads.
-- [ ] Run local tests, YAML lint, monitoring validation, cached renders, selector checks and full diff review.
-- [ ] Open scoped PRs and wait for CI; report missing render coverage explicitly.
+- [x] Review worker changes and compatibility against deployed versions; live success remains unverified.
+- [x] Integrate non-overlapping source changes into separate PRs; wire regression checks into existing CI without new downloads.
+- [x] Run applicable local tests, YAML lint, monitoring validation, cached renders and full diff review. Full remote-base rendering and selector checks run in CI.
+- [x] Open scoped PRs #141 (Velero) and #142 (monitoring); check outcomes live in GitHub. Full ArgoCD remote-base rendering was not attempted locally.
 - [ ] Ask for production approval before merge. Subsequent verification must include surviving Backup resources, alert evaluation, three-node exporter coverage and post-merge pipelines.
 
 ## Known Evidence and Disposition
@@ -66,3 +66,5 @@ Revert the smallest scoped PR if its deployment regresses health. Ownership prot
 ## Reviewed Velero Change
 
 The ownership worker committed one local-cluster exclusion for `velero.io` `Backup` and `Restore`; `Schedule` remains managed. Six regression checks and Velero Kustomize render independently passed during lead review. CI now runs the validator and its tests in the existing YAML job, reusing its PyYAML installation. No new tools or downloads are required locally. Full ArgoCD overlay rendering remains a CI check because the remote base is not locally cached. This PR does not deploy the monitoring worker's independent changes.
+
+The monitoring PR independently passes production-rule synthetic cases, reproduction against the old rules, rule syntax, YAML/shell checks, monitoring Kustomize render and cached chart rendering of both exporter tolerations. The PRs overlap only in the plans index; preserve both rows when integrating. No deployment approval has been granted.
