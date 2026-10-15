@@ -26,7 +26,7 @@ jobs:
       - name: Validate Velero resource ownership
         run: |
           python3 scripts/ci-validate-velero.py
-          python3 scripts/tests/test_ci_validate_velero.py
+          python3 -m unittest discover -s scripts/tests
 
   validate-manifests:
     name: Render & Validate Manifests

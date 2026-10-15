@@ -16,5 +16,6 @@ data:
       - Restore
       clusters:
       - https://kubernetes.default.svc
+      - https://10.43.0.1:443
   # Poll every 30s (supplements GitHub webhook for push-based sync)
   "timeout.reconciliation": "30s"

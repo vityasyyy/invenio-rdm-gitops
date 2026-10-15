@@ -9,6 +9,7 @@ discovered during a wave go into `docs/plans/active/` as part of the wave's PR.
 
 | Plan | Branch | PR | Status |
 |---|---|---|---|
+| [2026-10-15-runtime-selection.md](active/2026-10-15-runtime-selection.md) | fix/139-runtime-selection | Issue #139 | **Follow-up required** — exporter coverage verified, but live verification found an internal API endpoint mismatch in the exclusion and an absent PrometheusRule selector label. No full completion claim. |
 | [2026-10-15-monitoring-repairs.md](active/2026-10-15-monitoring-repairs.md) | fix/139-monitoring-review | #142 | **Deployment approved; pending merge/verification** — backup freshness/absence alert regression cases, corrected dashboard query and render-tested control-plane node-exporter toleration. |
 | [2026-10-15-cluster-repairs.md](active/2026-10-15-cluster-repairs.md) | feat/139-cluster-repairs | #141, #142 | **Deployment in progress** — Velero safeguard merged; monitoring repair follows after live verification. Master-storage improvement remains under observation; missing Loki backend tracked in #140. |
 | [2026-10-15-velero-ownership.md](active/2026-10-15-velero-ownership.md) | feat/139-cluster-repairs | #141 | **Merged; live verification in progress** — local-cluster Backup/Restore exclusions preserve Git-managed Schedule; six regression tests pass. |

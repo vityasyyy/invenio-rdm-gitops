@@ -12,7 +12,7 @@ VALIDATOR = ROOT / "scripts/ci-validate-velero.py"
 EXCLUSION = {
     "apiGroups": ["velero.io"],
     "kinds": ["Backup", "Restore"],
-    "clusters": ["https://kubernetes.default.svc"],
+    "clusters": ["https://kubernetes.default.svc", "https://10.43.0.1:443"],
 }
 UNRELATED_EXCLUSION = {
     "apiGroups": ["batch"],
