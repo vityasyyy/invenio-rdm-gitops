@@ -93,7 +93,7 @@ second copy, but not proven independence from cluster/NFS failure.
 
 - **Evidence:** CNPG has `instances: 1`, 10Gi `btd-nfs` storage, and MinIO
   backup destination (`k8s/apps/invenio-deps/postgresql/cluster.yaml:11-22,31-45`);
-  schedule/retention are daily/30d (`k8s/apps/invenio-deps/postgresql/cluster.yaml:56-68`). MinIO is standalone on
+  retention is 30d and the comment describes daily backups (`k8s/apps/invenio-deps/postgresql/cluster.yaml:56-68`); the lead verified the live schedule actually runs hourly at minute 02. MinIO is standalone on
   `btd-nfs` (`k8s/infra/minio/values.yaml:9,26-30`). Velero's weekly, 28-day
   filesystem backup also targets that MinIO (`k8s/infra/velero/values.yaml:22-42`;
   `k8s/infra/velero/backup-schedule.yaml:10-26`). A 2026-09-05 assessment
@@ -174,15 +174,15 @@ second copy, but not proven independence from cluster/NFS failure.
   domains or fund a separate HA design; prove an independent backup restore;
   upgrade/explicitly time-limit Python 3.9; fix Redis eviction and Beat rollout
   semantics; verify SMTP if registration is in scope.
-- **Unknowns:** live strategy/resource drift, scheduler restart count and missed
+- **Unknowns at static review:** live strategy/resource drift, scheduler restart count and missed
   work, Redis memory/eviction/queue depth, current off-site backups and restore
   status, SMTP reachability, and HPA quota headroom. Lead owns comprehensive
-  live audit, including etcd/lease and node-exporter placement findings.
+  live audit, including etcd/lease and node-exporter placement findings. Updated live observations are consolidated in `2026-10-15-baseline-stability-audit.md`.
 
 ## Verification
 
 Static repository review only; package versions parsed from the lockfile. No
 cluster commands, mutations, downloads, load tests, source fixes, or secret
 decryption. Live Healthy/Synced status and metrics above are lead-supplied, not
-independently certified. Diff/commit verification is in the uncommitted
-`WORKER-REPORT.md`.
+independently certified. The lead independently reviewed the committed diff;
+the consolidated audit records integration verification and remaining gaps.
