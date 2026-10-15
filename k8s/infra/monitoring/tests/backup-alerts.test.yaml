@@ -1,0 +1,88 @@
+rule_files: []
+evaluation_interval: 5m
+
+tests:
+  - name: missing backup metric despite a healthy scrape target
+    interval: 5m
+    input_series:
+      - series: 'up{job="velero"}'
+        values: '1+0x3'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: VeleroBackupMetricsMissing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Velero backup success metric is missing"
+              description: "Prometheus has not collected velero_backup_last_successful_timestamp for 10m. Backup freshness cannot be verified, even if the Velero scrape target is up."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+              dashboard: "https://grafana.vityasy.me/d/data-backups"
+
+  - name: missing backup metric after a running scraper stops
+    interval: 5m
+    input_series:
+      - series: 'up{job="velero"}'
+        values: '1 1 0 0 0'
+      - series: 'velero_backup_last_successful_timestamp{schedule="daily"}'
+        values: '1 1 stale'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: VeleroBackupMetricsMissing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Velero backup success metric is missing"
+              description: "Prometheus has not collected velero_backup_last_successful_timestamp for 10m. Backup freshness cannot be verified, even if the Velero scrape target is up."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+              dashboard: "https://grafana.vityasy.me/d/data-backups"
+
+  - name: zero last-success timestamp means no successful backup
+    interval: 5m
+    input_series:
+      - series: 'velero_backup_last_successful_timestamp{schedule="daily"}'
+        values: '0+0x3'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: VeleroBackupNeverSucceeded
+        exp_alerts:
+          - exp_labels:
+              schedule: daily
+              severity: critical
+            exp_annotations:
+              summary: "Velero has no successful backup timestamp"
+              description: "Velero reports no successful backup for this series. Verify the backup schedule, storage, and Velero logs."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+              dashboard: "https://grafana.vityasy.me/d/data-backups"
+
+  - name: stale backup fires after eight days
+    interval: 5m
+    input_series:
+      - series: 'velero_backup_last_successful_timestamp{schedule="daily"}'
+        values: '1+0x2400'
+    alert_rule_test:
+      - eval_time: 200h
+        alertname: VeleroBackupStale
+        exp_alerts:
+          - exp_labels:
+              schedule: daily
+              severity: warning
+            exp_annotations:
+              summary: "No Velero backup in over 8 days"
+              description: "The last successful Velero backup for this series was more than 8 days ago. Verify the Velero schedule and storage."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+              dashboard: "https://grafana.vityasy.me/d/data-backups"
+
+  - name: fresh backup stays quiet
+    interval: 5m
+    input_series:
+      - series: 'velero_backup_last_successful_timestamp{schedule="daily"}'
+        values: '0+300x2388'
+    alert_rule_test:
+      - eval_time: 199h
+        alertname: VeleroBackupStale
+        exp_alerts: []
+      - eval_time: 199h
+        alertname: VeleroBackupNeverSucceeded
+        exp_alerts: []

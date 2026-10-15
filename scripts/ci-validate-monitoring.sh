@@ -13,7 +13,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MON="${REPO_ROOT}/k8s/infra/monitoring"
 
 python3 - "$MON" <<'PY'
-import json, os, sys, yaml
+import json, os, subprocess, sys, tempfile, yaml
 
 mon = sys.argv[1]
 REPO_ROOT = mon.rstrip("/").removesuffix("/k8s/infra/monitoring")
@@ -25,6 +25,18 @@ def err(msg):
 dash_path = os.path.join(mon, "grafana-dashboards.yaml")
 docs = [d for d in yaml.safe_load_all(open(dash_path)) if d]
 panels_seen = 0
+dashboard_exprs = []
+def _exprs(value):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == "expr" and isinstance(item, str):
+                yield item
+            else:
+                yield from _exprs(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _exprs(item)
+
 for cm in docs:
     meta = cm.get("metadata", {})
     folder = ((meta.get("annotations") or {}).get("grafana_folder"))
@@ -37,6 +49,7 @@ for cm in docs:
             err(f"{meta.get('name')}/{key}: invalid JSON: {e}")
             continue
         panels_seen += 1
+        dashboard_exprs.extend(_exprs(d))
         for field in ("uid", "title", "tags"):
             if field not in d:
                 err(f"{meta.get('name')}/{key}: missing {field!r}")
@@ -44,8 +57,37 @@ for cm in docs:
             err(f"{meta.get('name')}/{key}: title {d.get('title')!r} must start with 00/01/02/03")
 if panels_seen != 4:
     err(f"want exactly 4 dashboards, found {panels_seen}")
+if any("velero_backup_timestamp" in expr for expr in dashboard_exprs):
+    err("Grafana dashboard query uses nonexistent velero_backup_timestamp")
+if not any("velero_backup_last_successful_timestamp" in expr for expr in dashboard_exprs):
+    err("Grafana dashboards must query velero_backup_last_successful_timestamp")
 
 rules = yaml.safe_load(open(os.path.join(mon, "alerts.yaml")))["spec"]["groups"]
+rule_test_path = os.path.join(mon, "tests", "backup-alerts.test.yaml")
+if not os.path.exists(rule_test_path):
+    err("tests/backup-alerts.test.yaml missing")
+else:
+    try:
+        with tempfile.TemporaryDirectory(prefix="monitoring-rules-") as tmp:
+            rules_path = os.path.join(tmp, "alerts.yaml")
+            test_path = os.path.join(tmp, "backup-alerts.test.yaml")
+            with open(rules_path, "w") as fh:
+                yaml.safe_dump({"groups": rules}, fh, sort_keys=False)
+            rule_tests = yaml.safe_load(open(rule_test_path))
+            rule_tests["rule_files"] = [rules_path]
+            with open(test_path, "w") as fh:
+                yaml.safe_dump(rule_tests, fh, sort_keys=False)
+            result = subprocess.run(
+                ["promtool", "test", "rules", test_path],
+                text=True, capture_output=True,
+            )
+        if result.returncode:
+            err(f"promtool backup alert tests failed:\n{result.stdout}{result.stderr}")
+        else:
+            print(result.stdout.strip())
+    except FileNotFoundError:
+        err("promtool is required to run backup alert regression tests")
+
 n_alerts = 0
 for group in rules:
     for rule in group.get("rules", []):
@@ -66,6 +108,13 @@ if n_alerts == 0:
     err("no alert rules found")
 
 values = yaml.safe_load(open(os.path.join(mon, "values.yaml")))
+node_exporter_tolerations = (values.get("prometheus-node-exporter") or {}).get("tolerations") or []
+if not any(t.get("operator") == "Exists" and t.get("effect") == "NoSchedule" for t in node_exporter_tolerations):
+    err("prometheus-node-exporter.tolerations must preserve the NoSchedule toleration")
+if not any(t.get("key") == "CriticalAddonsOnly" and t.get("operator") == "Exists" and t.get("effect") == "NoExecute" for t in node_exporter_tolerations):
+    err("prometheus-node-exporter.tolerations must tolerate CriticalAddonsOnly:NoExecute")
+if (values.get("nodeExporter") or {}).get("tolerations"):
+    err("nodeExporter.tolerations is not the prometheus-node-exporter subchart key")
 try:
     cr = yaml.safe_load(open(os.path.join(mon, "discord-receivers.yaml")))
 except FileNotFoundError:
