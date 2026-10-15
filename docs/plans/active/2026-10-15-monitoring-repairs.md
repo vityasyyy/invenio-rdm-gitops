@@ -41,3 +41,7 @@
 - Cached chart render shows the node-exporter DaemonSet has the required control-plane `NoExecute` toleration.
 - Existing alert routing and unrelated monitoring configuration remain unchanged.
 - No deployment or cluster mutation occurs.
+
+## Lead Review
+
+Independent verification passed: production-rule regression tests (24 alerts), pre-fix rule failure reproduction, cached Helm chart render with both required tolerations, monitoring Kustomize render, YAML lint and shell syntax checks. The existing CI monitoring job invokes the updated validator, so no workflow/tool-install change is needed. Production approval is still required; node-exporter will add a pod on the master and may pull its existing image there. Expect the corrected stale-backup alert to expose the already-known backup gap, not prove that backups recovered. The lead interrupted a prolonged final-review loop and bounded the worker to final validation and reporting; no scope expansion occurred.

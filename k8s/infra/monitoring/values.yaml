@@ -174,7 +174,7 @@ kube-state-metrics:
 nodeExporter:
   enabled: true
 
-# Resources for the prometheus-node-exporter subchart DaemonSet (both nodes).
+# Resources for the prometheus-node-exporter subchart DaemonSet (all nodes).
 # Issue #74: 128Mi/1Gi (LimitRange) -> 64Mi/64Mi memory-only;
 # cpu stays LimitRange-filled. Observed 5Mi per node (2026-09-06 top); 64Mi = 12x.
 prometheus-node-exporter:
