@@ -23,6 +23,11 @@ jobs:
       - name: Lint YAML files
         run: yamllint argocd/ k8s/ external-lb/k8s/
 
+      - name: Validate Velero resource ownership
+        run: |
+          python3 scripts/ci-validate-velero.py
+          python3 scripts/tests/test_ci_validate_velero.py
+
   validate-manifests:
     name: Render & Validate Manifests
     runs-on: ubuntu-latest
