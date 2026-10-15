@@ -38,7 +38,7 @@ Workers must not edit overlapping files or the plans index. Their scratch report
 - [x] Integrate non-overlapping source changes into separate PRs; wire regression checks into existing CI without new downloads.
 - [x] Run applicable local tests, YAML lint, monitoring validation, cached renders and full diff review. Full remote-base rendering and selector checks run in CI.
 - [x] Open scoped PRs #141 (Velero) and #142 (monitoring); check outcomes live in GitHub. Full ArgoCD remote-base rendering was not attempted locally.
-- [ ] Ask for production approval before merge. Subsequent verification must include surviving Backup resources, alert evaluation, three-node exporter coverage and post-merge pipelines.
+- [x] Obtain explicit production approval for #141/#142 and follow-up #143; verify surviving Backup resources, alert evaluation, three-node exporter coverage and post-merge pipelines. Initial live failures and their correction are recorded in `2026-10-15-runtime-selection.md`.
 
 ## Known Evidence and Disposition
 
@@ -68,3 +68,7 @@ Revert the smallest scoped PR if its deployment regresses health. Ownership prot
 The ownership worker committed one local-cluster exclusion for `velero.io` `Backup` and `Restore`; `Schedule` remains managed. Six regression checks and Velero Kustomize render independently passed during lead review. CI now runs the validator and its tests in the existing YAML job, reusing its PyYAML installation. No new tools or downloads are required locally. Full ArgoCD overlay rendering remains a CI check because the remote base is not locally cached. This PR does not deploy the monitoring worker's independent changes.
 
 The monitoring PR independently passes production-rule synthetic cases, reproduction against the old rules, rule syntax, YAML/shell checks, monitoring Kustomize render and cached chart rendering of both exporter tolerations. The PRs overlap only in the plans index; preserve both rows when integrating. No deployment approval has been granted.
+
+## Current Disposition
+
+The operator subsequently approved both deployments and corrective #143. Ownership and monitoring wiring are live-verified; see the runtime-selection record. This does not close #139: successful Velero backup creation, isolated restore validation, plugin compatibility and continued host observation remain open. Loki's missing backend is tracked in #140. No new backup/restore jobs, manual deletions, SSH access or host-identity changes were performed. Worker workspaces were closed; their worktrees/reports are retained rather than forcibly discarding scratch or unmerged branch history.
