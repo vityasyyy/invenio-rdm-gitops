@@ -1,0 +1,72 @@
+rule_files: []
+evaluation_interval: 1m
+
+tests:
+  - name: succeeded pods stay quiet for readiness alerts
+    interval: 1m
+    input_series:
+      - series: 'kube_pod_status_ready{namespace="test",pod="completed",condition="true"}'
+        values: '0+0x15'
+      - series: 'kube_pod_status_phase{namespace="test",pod="completed",phase="Succeeded"}'
+        values: '1+0x15'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PodNotReady
+        exp_alerts: []
+
+  - name: sustained unready running pods alert
+    interval: 1m
+    input_series:
+      - series: 'kube_pod_status_ready{namespace="test",pod="unready",condition="true"}'
+        values: '0+0x15'
+      - series: 'kube_pod_status_phase{namespace="test",pod="unready",phase="Running"}'
+        values: '1+0x15'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PodNotReady
+        exp_alerts:
+          - exp_labels:
+              namespace: test
+              pod: unready
+              severity: warning
+            exp_annotations:
+              summary: "Pod test/unready is not ready"
+              description: >-
+                The pod has remained Pending or not Ready for 10m. Check scheduling, events, and container readiness.
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+              dashboard: "https://grafana.vityasy.me/d/platform-health"
+
+  - name: CrashLoopBackOff alerts while pod phase remains running
+    interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_waiting_reason{namespace="test",pod="crashing",container="app",reason="CrashLoopBackOff"}'
+        values: '1+0x15'
+      - series: 'kube_pod_status_phase{namespace="test",pod="crashing",phase="Running"}'
+        values: '1+0x15'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PodCrashLoopingWithDown
+        exp_alerts:
+          - exp_labels:
+              namespace: test
+              pod: crashing
+              severity: critical
+            exp_annotations:
+              summary: "Pod test/crashing is crash looping"
+              description: >-
+                A container has remained in CrashLoopBackOff. Check its logs, events, and resource limits to identify
+                the crash cause.
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+              dashboard: "https://grafana.vityasy.me/d/platform-health"
+
+  - name: restart counts without CrashLoopBackOff stay quiet
+    interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_restarts_total{namespace="test",pod="restarting",container="app"}'
+        values: '0+1x15'
+      - series: 'kube_pod_status_phase{namespace="test",pod="restarting",phase="Running"}'
+        values: '1+0x15'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PodCrashLoopingWithDown
+        exp_alerts: []

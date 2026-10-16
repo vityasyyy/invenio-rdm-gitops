@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Validates monitoring dashboards (JSON + single folder + uid/title/tags),
-# alert rules (severity/summary/runbook/dashboard/for annotations), the
-# native-Discord receiver CR (Watchdog must NOT route to Discord, issue #110;
-# messages must guard empty annotations), and the absence of the deleted
-# bridge stack. Issue #105 adds: invenio-SM absence, matchers-only routing,
+# alert rules (exact group/rule contract and severity/summary/runbook/dashboard/
+# for annotations), the native-Discord receiver CR (Watchdog must NOT route to
+# Discord, issue #110; messages must render empty-annotation fallbacks), and the
+# absence of the deleted bridge stack. Issue #105 adds: invenio-SM absence, matchers-only routing,
 # and source-key pins for every new scrape (velero, cloudflared, minio,
 # opensearch, traefik, postgres PodMonitor).
 # Exit non-zero on violation.
@@ -63,14 +63,18 @@ if not any("velero_backup_last_successful_timestamp" in expr for expr in dashboa
     err("Grafana dashboards must query velero_backup_last_successful_timestamp")
 
 rules = yaml.safe_load(open(os.path.join(mon, "alerts.yaml")))["spec"]["groups"]
-rule_test_path = os.path.join(mon, "tests", "backup-alerts.test.yaml")
-if not os.path.exists(rule_test_path):
-    err("tests/backup-alerts.test.yaml missing")
-else:
+rule_test_paths = sorted(
+    os.path.join(mon, "tests", name)
+    for name in os.listdir(os.path.join(mon, "tests"))
+    if name.endswith(".test.yaml")
+)
+if not rule_test_paths:
+    err("no Prometheus rule regression tests found under tests/")
+for rule_test_path in rule_test_paths:
     try:
         with tempfile.TemporaryDirectory(prefix="monitoring-rules-") as tmp:
             rules_path = os.path.join(tmp, "alerts.yaml")
-            test_path = os.path.join(tmp, "backup-alerts.test.yaml")
+            test_path = os.path.join(tmp, os.path.basename(rule_test_path))
             with open(rules_path, "w") as fh:
                 yaml.safe_dump({"groups": rules}, fh, sort_keys=False)
             rule_tests = yaml.safe_load(open(rule_test_path))
@@ -82,11 +86,11 @@ else:
                 text=True, capture_output=True,
             )
         if result.returncode:
-            err(f"promtool backup alert tests failed:\n{result.stdout}{result.stderr}")
+            err(f"promtool tests failed for {os.path.basename(rule_test_path)}:\n{result.stdout}{result.stderr}")
         else:
             print(result.stdout.strip())
     except FileNotFoundError:
-        err("promtool is required to run backup alert regression tests")
+        err("promtool is required to run Prometheus rule regression tests")
 
 n_alerts = 0
 for group in rules:
@@ -186,10 +190,9 @@ if cr is not None:
             url = (dc.get("apiURL") or {})
             if url.get("name") != "alertmanager-discord-webhook" or not url.get("key"):
                 err(f"CR receiver {r.get('name')}: apiURL must keyRef the sealed alertmanager-discord-webhook Secret")
-            # Guarded annotations: chart-default alerts carry no runbook_url /
-            # dashboard, so unguarded lines render empty (issue #110).
-            if "{{ with .Annotations" not in str(dc.get("message", "")):
-                err(f"CR receiver {r.get('name')}: message must guard annotations with {{{{ with }}}}")
+            message = str(dc.get("message", ""))
+            if "No description available." not in message or ".Labels.alertname" not in message:
+                err(f"CR receiver {r.get('name')}: message must provide useful annotation fallbacks")
 
 for dead in ("alertmanager-discord-deployment.yaml",
              "alertmanager-discord-service.yaml",
@@ -346,3 +349,5 @@ if errors:
     sys.exit(1)
 print(f"OK: {panels_seen} dashboards, {n_alerts} alerts, native-Discord routing valid")
 PY
+
+python3 "${REPO_ROOT}/scripts/tests/test_monitoring_alerts.py"
