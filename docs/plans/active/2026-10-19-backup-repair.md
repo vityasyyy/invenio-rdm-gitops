@@ -28,7 +28,8 @@ reason survives in kube-state-metrics and in the node-agent log:
 
 - `kube_pod_container_status_terminated_reason{namespace="velero",pod=~"weekly-infra-backup-20261018030030-(jwpvw|tdsz6)"}`
   returns `reason="OOMKilled"` with value `1` at 2026-10-18T03:09:30Z/03:10:00Z
-  (`jwpvw`) and 03:12:00Z/03:12:30Z (`tdsz6`).
+  (`jwpvw`) and 03:12:00Z/03:12:30Z (`tdsz6`). This per-container termination
+  reason is the sufficient proof; it does not establish which OOM killer acted.
 - `container_memory_working_set_bytes` peaks: `jwpvw` **241.2 MiB**,
   `tdsz6` **253.2 MiB**.
 - `kube_pod_container_resource_limits{resource="memory"}` for both = **256 MiB**,
@@ -39,8 +40,6 @@ reason survives in kube-state-metrics and in the node-agent log:
   empty `error=` because the process was killed, not because kopia returned an
   error. The MinIO data-mover log block is empty, consistent with a kill during
   the first write.
-- No node-level OOM (`node_vmstat_oom_kill` empty); this was a container memory
-  limit kill on worker-01.
 
 Both failed volumes are the two largest live datastores in the backup. Worker-01
 is not the cause: the same node completed a 19.6MB `tmp-dir` volume and others.
@@ -49,10 +48,22 @@ is not the cause: the same node completed a 19.6MB `tmp-dir` volume and others.
 
 `velero-quota`: hard `limits.cpu=2`, `limits.memory=4Gi`, `pods=10`,
 `requests.cpu=1`, `requests.memory=2Gi`. Used at inspection: `limits.cpu=750m`,
-`limits.memory=768Mi`, `pods=3`. Two data movers at the 250m LimitRange default
-consume 500m of the remaining 1.25 CPU; a third is rejected, which is exactly the
-two Invenio worker `tmp` failures. Raising memory alone does not fix this; raising
-CPU quota alone does not fix the OOM kills.
+`limits.memory=768Mi`, `pods=3`.
+
+The admission message for both Invenio worker `tmp` failures is exact:
+`exceeded quota: velero-quota, requested: limits.cpu=250m, used: limits.cpu=2,
+limited: limits.cpu=2`. At admission the quota already reported `limits.cpu` fully
+consumed, so a 250m data mover could not be admitted.
+
+The current 750m figure is idle-state usage, not the usage at 03:00–03:15Z on
+2026-10-18. It does not establish the historical budget or how many data movers
+ran concurrently; the concurrent count is unknown. 750m plus two 250m data movers
+equals 1250m, which is still under the 2 CPU hard limit, so the observed idle
+figure alone does not explain the rejection. The rejection is established by the
+admission message, not by reconstructing the count.
+
+Raising memory alone does not fix the quota rejections; raising CPU quota alone
+does not fix the OOM kills.
 
 ## Supported plugin pair
 
@@ -64,7 +75,7 @@ CPU quota alone does not fix the OOM kills.
   pull, which is gated by the standing download rule.
 
 This plugin mismatch is a real risk repair but **not the root cause** of the four
-errors; the OOM kills and the quota accounting are.
+errors; the OOM kills and the quota admission rejections are.
 
 ## Proposed options (policy decision required — not implemented)
 
