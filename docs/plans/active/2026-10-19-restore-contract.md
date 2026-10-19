@@ -1,5 +1,10 @@
 # Restore contract and isolated drill design (#139)
 
+**Historical design snapshot.** Subsequent deployment, approved canary execution and
+the corrected FSB filter are recorded in [drill readiness](2026-10-19-drill-readiness.md).
+The canary now proves tiny-file restoration only; native/application recovery remains
+unproven. Read the later evidence before executing any procedure below.
+
 **Status:** design and coverage review only; no backup, restore, mutation or data
 creation. **Snapshot:** `32c86c5`, 2026-10-19, live `btd` (read-only). This
 worker owns this file; the lead owns the index and Velero manifests/tests.

@@ -81,3 +81,18 @@ or running backup/restore jobs.
 - Deploy Verify passed about 6 s before the rollout began, so it did not cover
   the new revision; later batches must gate on revision-specific live
   verification.
+
+## Approved canary follow-up
+
+The owner subsequently approved an isolated canary, then a corrected second Restore
+and deletion only of its stalled destination Pod. The 35,840-byte file restored with
+the same SHA-256; PVB/PVR completed, distinct PV bindings and production health verified.
+See [drill evidence](2026-10-19-drill-readiness.md) for the failed first filter, warnings,
+retained resources and expiration. Native DB/application recovery remains gated.
+
+The new source namespace creates the tenth BackupRepository, reaching the current
+budget assumption. Further source namespaces require budget review. Canary success
+also refreshes the global backup-success gauge while the production Backup remains
+PartiallyFailed: production-schedule freshness must be distinguished from drill/manual
+success before declaring a baseline. This extends the monitoring/deployment-safety
+follow-up; no alert suppression or rule changes were performed in this drill.
