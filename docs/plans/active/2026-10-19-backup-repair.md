@@ -1,9 +1,9 @@
 # Velero backup failure diagnosis and plugin compatibility repair (#139)
 
-**Status:** Prepared, not deployed. Root cause confirmed live; opt-in coverage,
-data-mover sizing and a bounded worst-case resource budget are tested. Deployment
-remains gated on the image pull, the live node-headroom re-measurement and the
-rollout gates below.
+**Status:** Deployed via PR #147 (merge `3f16f770`); post-merge live checks are
+green. Recovery remains unproven, and the deployment exposed an unexpected
+retention interaction: three expired Backup CRs disappeared, with storage deletion
+explicitly logged for the August 14 backup. See the evidence below.
 **Scope:** Velero values and data-mover config, backup schedule, pod-template
 opt-in annotations, the Velero CI validator and its tests, this plan.
 Restore procedure is owned separately.
@@ -68,20 +68,52 @@ admission message, not by reconstructing the count.
 Raising memory alone does not fix the quota rejections; raising CPU quota alone
 does not fix the OOM kills.
 
+## Deployment verification (merge `3f16f770`)
+
+- 17/17 Argo CD Apps Synced/Healthy; live `velero-quota` matches the merged
+  values (limits 6 CPU/9Gi, requests 1.5 CPU/8Gi, pods 20).
+- Plugin `v1.13.2` init container exited 0 (digest `sha256:25c3a0a0…`); both
+  node-agents carry uniform resources; maintenance `global` JSON and mover
+  `podResources`/`loadConcurrency` are correct; web/Redis/Grafana opt-in
+  annotations are present; BSL `Available`; public ping 200; database healthy.
+- Node actual memory: worker-01 56%, worker-02 65%. No recovery jobs were
+  created.
+
+### Unexpected retention interaction — preserve-all expectation NOT met
+
+Three expired Backup CRs disappeared during the deployment window; this was not
+Argo prune or manual deletion:
+
+- Server log 09:22:54 UTC: GC expiry `Aug14→Sep11`, `Aug30→Sep27`, `Sep20→Oct18`,
+  with deletion requests at 09:22:54.
+- 09:23:05: the Aug14 backup removed PodVolumeBackup snapshots and the backup
+  data in object storage.
+- Only `weekly-infra-backup-20261018030030` (PartiallyFailed, expires Nov15)
+  remains.
+
+The previous preserve-all expectation is not satisfied: existing TTL
+garbage-collection resumed. Retention behavior must be reviewed before any
+future Velero restart or plugin fix. Do not modify retention or run jobs as
+part of this evidence work.
+
+CI Deploy Verify passed about 6 s before the rollout began, so it did not cover
+the deployed revision; later batches must gate on revision-specific live
+verification.
+
 ## Supported plugin pair
 
 - Chart `11.4.0` `Chart.yaml` declares `appVersion: 1.17.1`.
-- Official matrix pairs AWS plugin `v1.13.x` with Velero `1.17.x`; the deployed
+- Official matrix pairs AWS plugin `v1.13.x` with Velero `1.17.x`; the previously deployed
   `v1.11.1` is listed only for Velero `1.15.x`.
-- `velero/velero-plugin-for-aws:v1.13.2` is locally downloaded for the Mac
-  (linux/amd64 digest `sha256:25c3a0a0…`), but node caches still hold only
-  `v1.11.1`; deployment needs a node registry pull. The registry path from
-  worker01 is reachable (`/v2` returns HTTP 401 as expected unauthenticated).
+- `velero/velero-plugin-for-aws:v1.13.2` was locally downloaded for the Mac
+  and deployed in `3f16f770`: the plugin init container exited 0 with digest
+  `sha256:25c3a0a0…`. The registry path from worker-01 is reachable (`/v2`
+  returns HTTP 401 as expected unauthenticated).
 
 This plugin mismatch is a real risk repair but **not the root cause** of the four
 errors; the OOM kills and the quota admission rejections are.
 
-## Approved opt-in coverage policy (prepared, not deployed)
+## Approved opt-in coverage policy (deployed in `3f16f770`)
 
 Scope removal was replaced by an explicit allowlist. The schedule now runs with
 `defaultVolumesToFsBackup: false`, so only pods carrying
@@ -171,10 +203,10 @@ raising the quota further.
 - Grafana's `podAnnotations` key is a chart passthrough into the pod template;
   verified against the cached `kube-prometheus-stack` 69.6.0 artifact
   (`grafana` subchart 8.10.1) and by rendering the deployment.
-- The plugin pin (`v1.13.2`) remains a separate supported-pair repair; the
-  image is locally downloaded, but nodes still need the registry pull.
+- The plugin pin (`v1.13.2`) remains a separate supported-pair repair; it is
+  deployed and its init container exits 0.
 
-### Deployment gates (explicit)
+### Deployment record and future gates
 
 1. **Pod-template rollout.** Adding annotations to `invenio-web` and
    `redis-master` changes their pod templates, so both Deployments roll. Redis
@@ -182,15 +214,17 @@ raising the quota further.
    unavailable. This must be scheduled, not treated as a no-op sync.
 2. **Velero restart.** The node-agent reads the ConfigMap at startup; the
    daemonset rolls and Velero restarts.
-3. **Image availability.** Local download is complete for the Mac
-   (`sha256:25c3a0a0…`); nodes still cache only `v1.11.1`, so deployment
-   performs the node registry pull.
+3. **Image availability.** Executed: plugin init container exited 0 on the
+   pulled digest `sha256:25c3a0a0…`.
 4. **Live headroom re-measure.** Node resource figures must be current at the
    deployment gate; a repository count above the scheduled namespace count also
    trips the halt gate above.
 5. **Quota is computed, not inflated.** `velero-quota` is sized from the frozen
    worst case; any further raise requires re-running the budget, not extra
    headroom on its own.
+6. **Retention review.** Confirm TTL/GC behavior before any future Velero
+   restart or plugin fix; do not modify retention or run jobs as part of the
+   evidence work.
 
 ## Rejected alternatives
 
