@@ -1,3 +1,4 @@
+import re
 import subprocess
 import sys
 import tempfile
@@ -7,8 +8,17 @@ from pathlib import Path
 import yaml
 
 
+import importlib.util
+import json
+
 ROOT = Path(__file__).resolve().parents[2]
 VALIDATOR = ROOT / "scripts/ci-validate-velero.py"
+
+_spec = importlib.util.spec_from_file_location("ci_validate_velero", VALIDATOR)
+ci_validate_velero = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(ci_validate_velero)
+
+_pod_annotation = ci_validate_velero._pod_annotation
 EXCLUSION = {
     "apiGroups": ["velero.io"],
     "kinds": ["Backup", "Restore"],
@@ -57,19 +67,59 @@ def write_fixture(
     (velero / "kustomization.yaml").write_text(yaml.safe_dump({
         "apiVersion": "kustomize.config.k8s.io/v1beta1",
         "kind": "Kustomization",
-        "resources": list(resources),
+        "resources": list(resources) + ["node-agent-config.yaml"],
     }))
     (velero / "backup-schedule.yaml").write_text(yaml.safe_dump({
         "apiVersion": "velero.io/v1",
         "kind": "Schedule",
         "metadata": {"name": "weekly-infra-backup", "namespace": "velero"},
+        "spec": {"template": {
+            "defaultVolumesToFsBackup": False,
+            "snapshotVolumes": False,
+        }},
     }))
     (velero / "values.yaml").write_text(yaml.safe_dump({
         "initContainers": [{
             "name": "velero-plugin-for-aws",
             "image": plugin_image,
         }],
+        "nodeAgent": {"extraArgs": ["--node-agent-configmap=node-agent-config"]},
     }))
+    (velero / "node-agent-config.yaml").write_text(yaml.safe_dump({
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {"name": "node-agent-config", "namespace": "velero"},
+        "data": {"node-agent-config.json": json.dumps({
+            "podResources": {
+                "cpuRequest": "100m",
+                "cpuLimit": "250m",
+                "memoryRequest": "256Mi",
+                "memoryLimit": "1Gi",
+            },
+            "loadConcurrency": {"globalConfig": 1, "prepareQueueLength": 1},
+        })},
+    }))
+
+    monitoring = root / "k8s/infra/monitoring/values.yaml"
+    monitoring.parent.mkdir(parents=True)
+    monitoring.write_text(yaml.safe_dump({
+        "grafana": {"podAnnotations": {"backup.velero.io/backup-volumes": "storage"}},
+    }))
+
+    for relative_path, kind, volumes in (
+        ("k8s/apps/invenio/invenio-deployment.yaml", "Deployment", "data,archive"),
+        ("k8s/apps/invenio-deps/redis/manifests/redis.yaml", "Deployment", "data"),
+    ):
+        manifest = root / relative_path
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text(yaml.safe_dump({
+            "apiVersion": "apps/v1",
+            "kind": kind,
+            "metadata": {"name": "fixture"},
+            "spec": {"template": {"metadata": {"annotations": {
+                "backup.velero.io/backup-volumes": volumes,
+            }}}},
+        }))
 
 
 def run_validator(root):
@@ -148,6 +198,112 @@ class VeleroValidatorTests(unittest.TestCase):
             result = run_validator(Path(directory))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("must be pinned", result.stdout + result.stderr)
+
+
+class VeleroBackupScopeTests(unittest.TestCase):
+    """The opt-in allowlist is explicit; scratch and self-backup volumes stay out."""
+
+    def test_invenio_backs_up_application_volumes_only(self):
+        value = _pod_annotation(
+            ROOT / "k8s/apps/invenio/invenio-deployment.yaml",
+            "Deployment",
+            "backup.velero.io/backup-volumes",
+        )
+        self.assertEqual({item.strip() for item in value.split(",")}, {"data", "archive"})
+
+    def test_redis_backs_up_its_durable_volume(self):
+        value = _pod_annotation(
+            ROOT / "k8s/apps/invenio-deps/redis/manifests/redis.yaml",
+            "Deployment",
+            "backup.velero.io/backup-volumes",
+        )
+        self.assertEqual({item.strip() for item in value.split(",")}, {"data"})
+
+    def test_grafana_opts_in_via_chart_pod_annotations(self):
+        values = yaml.safe_load((ROOT / "k8s/infra/monitoring/values.yaml").read_text())
+        annotations = values["grafana"]["podAnnotations"]
+        self.assertEqual(annotations["backup.velero.io/backup-volumes"], "storage")
+
+    def test_schedule_is_opt_in(self):
+        schedule = yaml.safe_load(
+            (ROOT / "k8s/infra/velero/backup-schedule.yaml").read_text()
+        )
+        self.assertIs(schedule["spec"]["template"]["defaultVolumesToFsBackup"], False)
+
+    def test_no_scratch_or_self_backup_opt_in(self):
+        pattern = re.compile(r"^\s*backup\.velero\.io/backup-volumes\s*:")
+        annotated = []
+        for path in (ROOT / "k8s").rglob("*.yaml"):
+            for line in path.read_text().splitlines():
+                if not line.lstrip().startswith("#") and pattern.match(line):
+                    annotated.append(path.relative_to(ROOT).as_posix())
+                    break
+        self.assertEqual(
+            sorted(annotated),
+            [
+                "k8s/apps/invenio-deps/redis/manifests/redis.yaml",
+                "k8s/apps/invenio/invenio-deployment.yaml",
+                "k8s/infra/monitoring/values.yaml",
+            ],
+        )
+
+    def test_node_agent_config_is_wired_and_bounded(self):
+        values = yaml.safe_load((ROOT / "k8s/infra/velero/values.yaml").read_text())
+        self.assertIn(
+            "--node-agent-configmap=node-agent-config",
+            values["nodeAgent"]["extraArgs"],
+        )
+        kustomization = yaml.safe_load(
+            (ROOT / "k8s/infra/velero/kustomization.yaml").read_text()
+        )
+        self.assertIn("node-agent-config.yaml", kustomization["resources"])
+        config = yaml.safe_load(
+            (ROOT / "k8s/infra/velero/node-agent-config.yaml").read_text()
+        )
+        settings = json.loads(config["data"]["node-agent-config.json"])
+        self.assertEqual(settings["podResources"]["memoryLimit"], "1Gi")
+        self.assertEqual(settings["podResources"]["cpuLimit"], "250m")
+        self.assertEqual(settings["loadConcurrency"]["globalConfig"], 1)
+        self.assertEqual(settings["loadConcurrency"]["prepareQueueLength"], 1)
+
+    def test_schedule_opt_in_and_no_snapshots(self):
+        schedule = yaml.safe_load(
+            (ROOT / "k8s/infra/velero/backup-schedule.yaml").read_text()
+        )
+        template = schedule["spec"]["template"]
+        self.assertIs(template["defaultVolumesToFsBackup"], False)
+        self.assertIs(template["snapshotVolumes"], False)
+
+    def test_worst_case_data_mover_budget_does_not_fit_quota(self):
+        """Documents the unresolved budget: per-node concurrency is not a cluster cap.
+
+        Two live node-agents each allow one active mover plus one prepared mover.
+        That worst case exceeds velero-quota, so deployment is gated on a decision.
+        """
+        quota = yaml.safe_load(
+            (ROOT / "k8s/infra/security/resource-quotas/velero-quota.yaml").read_text()
+        )["spec"]["hard"]
+        config = yaml.safe_load(
+            (ROOT / "k8s/infra/velero/node-agent-config.yaml").read_text()
+        )
+        settings = json.loads(config["data"]["node-agent-config.json"])
+        resources = settings["podResources"]
+
+        def cpu(value):
+            return int(value[:-1]) if str(value).endswith("m") else int(value) * 1000
+
+        def memory(value):
+            text = str(value)
+            return int(text[:-2]) * 1024 if text.endswith("Gi") else int(text[:-2])
+
+        base_cpu, base_mem = 500 + 2 * 250, 512 + 2 * 256  # server + 2 node-agents
+        mover_cpu, mover_mem = cpu(resources["cpuLimit"]), memory(resources["memoryLimit"])
+        worst_cpu = base_cpu + 2 * (mover_cpu + mover_cpu)  # 2 nodes x (active + prepared)
+        worst_mem = base_mem + 2 * (mover_mem + mover_mem)
+        # Worst case consumes the entire CPU hard limit (leaving nothing for the
+        # recurring maintenance jobs) and exceeds the memory hard limit.
+        self.assertEqual(worst_cpu, cpu(quota["limits.cpu"]))
+        self.assertGreater(worst_mem, memory(quota["limits.memory"]))
 
 
 if __name__ == "__main__":

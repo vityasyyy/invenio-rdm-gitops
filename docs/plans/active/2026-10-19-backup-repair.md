@@ -1,8 +1,10 @@
 # Velero backup failure diagnosis and plugin compatibility repair (#139)
 
-**Status:** Root cause confirmed live. Prepared repair is the supported plugin pair;
-data-mover sizing and coverage are policy decisions, not implemented.
-**Scope:** Velero values, Velero CI validator and its tests, this plan.
+**Status:** DRAFT — not deployable. Root cause confirmed live; opt-in coverage and
+data-mover configuration are prepared and tested. The worst-case quota budget is
+unresolved and requires an explicit owner decision.
+**Scope:** Velero values and data-mover config, backup schedule, pod-template
+opt-in annotations, the Velero CI validator and its tests, this plan.
 Restore procedure is owned separately.
 
 ## Confirmed live evidence (2026-10-19, context `btd`)
@@ -77,30 +79,107 @@ does not fix the OOM kills.
 This plugin mismatch is a real risk repair but **not the root cause** of the four
 errors; the OOM kills and the quota admission rejections are.
 
-## Proposed options (policy decision required — not implemented)
+## Approved opt-in coverage policy (prepared, not deployed)
 
-No scope removal, no quota inflation, and no silent coverage reduction was made.
-All backup objects are preserved.
+Scope removal was replaced by an explicit allowlist. The schedule now runs with
+`defaultVolumesToFsBackup: false`, so only pods carrying
+`backup.velero.io/backup-volumes` get file-system backup. Namespaces and
+manifests stay in scope; nothing is excluded wholesale.
 
-1. **Data-mover memory sizing (recommended first).** Velero 1.17 supports
-   `podResources` in a node-agent ConfigMap referenced by `--node-agent-configmap`.
-   Raise `memoryLimit` above the observed 253MiB peak with headroom; keep CPU at
-   the current default. This directly addresses the two OOM kills without
-   changing what is backed up.
-2. **Concurrency bound.** Bound concurrent data movers so the CPU quota is not
-   exhausted by parallelism, instead of enlarging `velero-quota`. This addresses
-   the two Invenio `tmp` failures.
-3. **Coverage decision (owner).** MinIO `export` holds all Velero backup objects
-   and the Prometheus TSDB is a live self-mutating store. Options are: keep both
-   with sufficient memory, exclude them with an explicit documented gap, or move
-   them to a native/opt-in path. Each changes data coverage and needs an explicit
-   owner choice. MinIO in particular is the backup-of-backups case and cannot be
-   silently dropped.
-4. **Quota increase (not recommended yet).** Enlarging `velero-quota` raises
-   concurrent data-mover pressure on 8 CPU nodes and does not fix OOM kills.
+| Workload | Selected volume | Why |
+|---|---|---|
+| `invenio-web` | `data`, `archive` | Durable application files |
+| `redis-master` | `data` | Durable AOF/RDB; broker/results/sessions are not disposable |
+| `monitoring-grafana` | `storage` | Dashboards, Grafana DB, plugins |
 
-Any change to which volumes are backed up must extend the ownership documented in
-`2026-10-15-velero-ownership.md` for the affected namespaces.
+Deliberately **not** selected:
+
+- Invenio and worker `tmp` `emptyDir` volumes — scratch, and the source of the
+  two quota rejections.
+- MinIO `export` — it holds the Velero backup objects themselves; backing the
+  backup store into itself is not recovery.
+- Prometheus TSDB — a live self-mutating store with a 10Gi NFS volume.
+- PostgreSQL `pgdata` — recovered natively through CloudNativePG, not by
+  file-system copy of a live database.
+- OpenSearch — rebuildable from Postgres; rebuild policy instead of a data copy.
+
+`invenio-worker` mounts the shared `invenio-data` RWX claim without an
+annotation; only the web pods that declare both durable volumes opt in, so the
+shared claim is copied once per backup rather than per replica.
+
+### Data-mover budget — unresolved
+
+`node-agent-config.yaml` sets `memoryLimit: 1Gi` (above the 253MiB observed peak
+and the 256Mi LimitRange default) and `cpuLimit: 250m`, with
+`loadConcurrency.globalConfig: 1` and `prepareQueueLength: 1`.
+
+**`globalConfig` is per node, not a cluster-wide cap.** The live daemonset has
+**2** node-agents (the control-plane node is tainted `CriticalAddonsOnly`), so up
+to two active data movers can run. `prepareQueueLength: 1` is a global queue
+limit for CRs waiting in Accepted/Prepared, and each of those holds a hosting pod
+sized with the same `podResources`.
+
+Worst case: 2 nodes × (1 active + 1 prepared) = 4 data-mover pods.
+
+| Component | CPU | Memory |
+|---|---|---|
+| Velero server | 500m | 512Mi |
+| node-agent ×2 | 500m | 512Mi |
+| 4 data-mover pods | 1000m | 4Gi |
+| **Total** | **2000m** | **≈ 5Gi** |
+| Quota hard limit | 2000m | 4Gi |
+| **Remaining** | **0m** | **−1Gi** |
+
+The worst case consumes the entire CPU hard limit and **exceeds the memory hard
+limit**. It also leaves nothing for the recurring kopia repository maintenance
+jobs (250m/256Mi each, currently succeeding). A single active mover per node with
+no prepared pod fits (1500m / 2.5Gi), but that state is not guaranteed by the
+configuration.
+
+**This budget is not proven to fit `velero-quota`.** Deployment is therefore
+gated on an explicit decision; no quota change was made. Options: accept a
+single-node backup window with the other node-agent excluded, lower the
+data-mover `memoryLimit`, raise `velero-quota` deliberately, or accept that
+admission failures can still occur under worst-case concurrency.
+
+### Compatibility and wiring
+
+- The node-agent receives the ConfigMap through
+  `nodeAgent.extraArgs: --node-agent-configmap=node-agent-config`. The actual
+  v1.17.1 binary's `node-agent server --help` lists
+  `--node-agent-configmap string`; the v1.17 docs show `--node-agent-config`,
+  which is stale for this build.
+- Grafana's `podAnnotations` key is a chart passthrough into the pod template;
+  verified against the cached `kube-prometheus-stack` 69.6.0 artifact
+  (`grafana` subchart 8.10.1) and by rendering the deployment.
+- The plugin pin (`v1.13.2`) remains a separate supported-pair repair; its image
+  pull is still gated by the standing download rule.
+
+### Deployment gates (explicit)
+
+1. **Pod-template rollout.** Adding annotations to `invenio-web` and
+   `redis-master` changes their pod templates, so both Deployments roll. Redis
+   has `maxSurge: 0` and `maxUnavailable: 1`, so its single replica is briefly
+   unavailable. This must be scheduled, not treated as a no-op sync.
+2. **Velero restart.** The node-agent reads the ConfigMap at startup; the
+   daemonset rolls and Velero restarts.
+3. **Image pull.** `velero-plugin-for-aws:v1.13.2` still needs a node pull.
+4. **Worst-case quota budget is unresolved** (see above). Do not deploy on the
+   assumption that one data mover runs cluster-wide.
+5. **No quota change.** `velero-quota` is untouched; if a future volume needs
+   more, escalate rather than inflate.
+
+## Rejected alternatives
+
+- **Enlarging `velero-quota`.** Raises concurrent data-mover pressure on 8 CPU
+  nodes and does not fix OOM kills.
+- **Excluding the MinIO and Prometheus namespaces or manifests.** Removes
+  unrelated objects from scope and hides the coverage gap instead of stating it.
+- **Backing up the MinIO volume.** Self-referential; the backup store cannot
+  contain a consistent copy of itself.
+
+Any future change to which volumes are backed up must extend the ownership
+documented in `2026-10-15-velero-ownership.md` for the affected namespaces.
 
 ## Tests and verification
 

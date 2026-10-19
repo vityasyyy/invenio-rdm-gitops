@@ -25,6 +25,11 @@ snapshotsEnabled: false
 # Deploy node agent for backup/restore
 deployNodeAgent: true
 
+nodeAgent:
+  # Data-mover pod sizing and concurrency; see node-agent-config.yaml.
+  extraArgs:
+    - --node-agent-configmap=node-agent-config
+
 # Credentials for S3-compatible storage
 credentials:
   useSecret: true

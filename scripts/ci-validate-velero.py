@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import re
 import sys
 from pathlib import Path
@@ -68,6 +69,114 @@ def validate_plugin_pair(root, errors):
         errors.append(
             f"Velero {velero_series}.x requires AWS plugin {expected}.x, found {tag}"
         )
+
+
+def _pod_annotation(path, kind_name, key):
+    """Return the pod-template annotation from a workload manifest, or None."""
+    try:
+        documents = list(yaml.safe_load_all(Path(path).read_text()))
+    except (OSError, yaml.YAMLError):
+        return None
+    for document in documents:
+        if not isinstance(document, dict) or document.get("kind") != kind_name:
+            continue
+        template = ((document.get("spec") or {}).get("template") or {})
+        annotations = ((template.get("metadata") or {}).get("annotations") or {})
+        if key in annotations:
+            return annotations[key]
+    return None
+
+
+def validate_backup_scope(root, errors):
+    """Opt-in allowlist: durable volumes only, no temp or self-backup volumes."""
+    root = Path(root)
+    expected = {
+        ("k8s/apps/invenio/invenio-deployment.yaml", "Deployment"): {"data", "archive"},
+        ("k8s/apps/invenio-deps/redis/manifests/redis.yaml", "Deployment"): {"data"},
+    }
+    for (relative_path, kind_name), volumes in expected.items():
+        path = root / relative_path
+        if not path.exists():
+            errors.append(f"{relative_path} is required for backup scope validation")
+            continue
+        value = _pod_annotation(path, kind_name, "backup.velero.io/backup-volumes")
+        if value is None:
+            errors.append(f"{relative_path} must opt in to file-system backup")
+            continue
+        selected = {item.strip() for item in value.split(",") if item.strip()}
+        if selected != volumes:
+            errors.append(
+                f"{relative_path} must back up exactly {sorted(volumes)}, found {sorted(selected)}"
+            )
+        if "tmp" in selected:
+            errors.append(f"{relative_path} must not back up scratch volumes")
+
+    grafana_values = root / "k8s/infra/monitoring/values.yaml"
+    if not grafana_values.exists():
+        errors.append("k8s/infra/monitoring/values.yaml is required for backup scope validation")
+    else:
+        values = yaml.safe_load(grafana_values.read_text()) or {}
+        annotations = ((values.get("grafana") or {}).get("podAnnotations") or {})
+        selected = str(annotations.get("backup.velero.io/backup-volumes", ""))
+        if {item.strip() for item in selected.split(",") if item.strip()} != {"storage"}:
+            errors.append("Grafana must opt in to backing up only its storage volume")
+
+    schedule_path = root / "k8s/infra/velero/backup-schedule.yaml"
+    if not schedule_path.exists():
+        errors.append("backup-schedule.yaml is required for backup scope validation")
+    else:
+        template = (yaml.safe_load(schedule_path.read_text()) or {}).get("spec", {}).get(
+            "template", {}
+        )
+        if template.get("defaultVolumesToFsBackup") is not False:
+            errors.append("backup-schedule.yaml must use opt-in file-system backup")
+        if template.get("snapshotVolumes") is not False:
+            errors.append("backup-schedule.yaml must not request volume snapshots")
+
+    config_path = root / "k8s/infra/velero/node-agent-config.yaml"
+    if not config_path.exists():
+        errors.append("node-agent-config.yaml is required for data-mover sizing")
+        return
+    document = yaml.safe_load(config_path.read_text()) or {}
+    payload = (document.get("data") or {}).get("node-agent-config.json")
+    if not payload:
+        errors.append("node-agent-config.yaml must carry node-agent-config.json")
+        return
+    try:
+        settings = json.loads(payload)
+    except ValueError as error:
+        errors.append(f"node-agent-config.json is not valid JSON: {error}")
+        return
+    resources = settings.get("podResources") or {}
+    if resources.get("memoryLimit") != "1Gi":
+        errors.append("data-mover memoryLimit must be the reviewed 1Gi value")
+    if resources.get("cpuLimit") != "250m":
+        errors.append("data-mover cpuLimit must stay at the 250m LimitRange default")
+    concurrency = settings.get("loadConcurrency") or {}
+    if concurrency.get("globalConfig") != 1:
+        errors.append("data-mover concurrency must be bounded to 1 per node")
+    if concurrency.get("prepareQueueLength") != 1:
+        errors.append("prepared data-mover queue length must be bounded to 1")
+
+    kustomization_path = root / "k8s/infra/velero/kustomization.yaml"
+    if not kustomization_path.exists():
+        errors.append("Velero kustomization is required for data-mover sizing")
+    else:
+        resources_list = (yaml.safe_load(kustomization_path.read_text()) or {}).get(
+            "resources"
+        ) or []
+        if "node-agent-config.yaml" not in resources_list:
+            errors.append("Velero kustomization must include node-agent-config.yaml")
+
+    values_path = root / "k8s/infra/velero/values.yaml"
+    if not values_path.exists():
+        errors.append("Velero values are required for data-mover sizing")
+    else:
+        extra_args = ((yaml.safe_load(values_path.read_text()) or {}).get("nodeAgent") or {}).get(
+            "extraArgs"
+        ) or []
+        if "--node-agent-configmap=node-agent-config" not in extra_args:
+            errors.append("node-agent must be wired to node-agent-config")
 
 
 def validate(root):
@@ -140,6 +249,11 @@ def validate(root):
         validate_plugin_pair(root, errors)
     except (OSError, yaml.YAMLError) as error:
         errors.append(f"Velero plugin compatibility: {error}")
+
+    try:
+        validate_backup_scope(root, errors)
+    except (OSError, yaml.YAMLError) as error:
+        errors.append(f"Velero backup scope: {error}")
 
     return errors
 

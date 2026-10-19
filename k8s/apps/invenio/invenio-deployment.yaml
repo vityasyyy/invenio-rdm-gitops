@@ -22,6 +22,10 @@ spec:
       labels:
         app.kubernetes.io/name: invenio-web
         app.kubernetes.io/part-of: invenio-rdm
+      annotations:
+        # Opt-in file-system backup: durable application volumes only.
+        # /tmp is scratch and is deliberately not listed.
+        backup.velero.io/backup-volumes: data,archive
     spec:
       serviceAccountName: default
       securityContext:

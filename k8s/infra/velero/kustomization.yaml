@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - velero-credentials-secret.yaml
   - backup-schedule.yaml
+  - node-agent-config.yaml
   - limit-range.yaml
   - velero-servicemonitor.yaml
   - velero-scrape-netpol.yaml
