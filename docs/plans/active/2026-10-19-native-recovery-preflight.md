@@ -1,8 +1,9 @@
 # Native recovery preflight and fresh production backup (#139)
 
-Status: fresh production backup verified; native DB recovery blocked on dedicated
-credentials and scoped network allowances. No application sample or native restore
-has been performed. The owner requested approved-scope execution without repeated
+Status: fresh production backup verified; dedicated credential SealedSecret reports
+Synced=True without reading its contents. The owner approved deploying two scoped
+network allowances and the native restore after verification. No application sample
+or native restore has yet been performed. The owner requested execution without repeated
 routine confirmations; credentials and material security changes retain their gates.
 
 ## Fresh production-scope backup
@@ -60,9 +61,11 @@ connections are allowed. The destination policy alone is insufficient:
 - Existing operator egress admits only production instances in its own namespace;
   allow only this operator selector to that exact recovery namespace/cluster on8000.
 
-These existing-namespace policy additions require a reviewed GitOps PR and live
-verification before creating the native Cluster. No such production policy was
-changed during this preflight.
+The owner approved these two additions through GitOps before native restore.
+`security/network-policies/recovery-db-allow.yaml` contains only these exact peers
+and ports; the regression check rejects broader specifications. Live convergence
+must be verified before creating the native Cluster. Policies remain after the drill
+until separately approved cleanup; no automatic namespace/PV deletion is introduced.
 
 ## Credential boundary
 
