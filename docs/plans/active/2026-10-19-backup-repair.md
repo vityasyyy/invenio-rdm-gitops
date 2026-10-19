@@ -1,90 +1,111 @@
 # Velero backup failure diagnosis and plugin compatibility repair (#139)
 
-**Status:** Diagnosis incomplete — live cluster access timed out. Prepared repair is
-committed but not deployed. **Scope:** Velero values, Velero CI validator and its
-tests, this plan. Restore procedure is owned separately.
+**Status:** Root cause confirmed live. Prepared repair is the supported plugin pair;
+data-mover sizing and coverage are policy decisions, not implemented.
+**Scope:** Velero values, Velero CI validator and its tests, this plan.
+Restore procedure is owned separately.
 
-## Confirmed from repository evidence
+## Confirmed live evidence (2026-10-19, context `btd`)
 
-- `argocd/apps/velero.yaml` pins Helm chart `11.4.0`; that chart's `Chart.yaml`
-  declares `appVersion: 1.17.1`, so the running Velero server line is 1.17.x.
-- `k8s/infra/velero/values.yaml` pinned the AWS plugin at `v1.11.1`. The official
-  plugin compatibility matrix pairs `v1.11.x` with Velero `v1.15.x` and
-  `v1.13.x` with Velero `v1.17.x`
-  ([matrix](https://github.com/velero-io/velero-plugin-for-aws/blob/v1.13.2/README.md#compatibility)).
-  The pin is therefore an unsupported pair. This is a confirmed compatibility
-  gap, not a proven cause of the four errors in the latest backup.
-- The image `velero/velero-plugin-for-aws:v1.13.2` exists in the registry
-  (multi-arch manifest resolves) and is not present in the local Docker image
-  cache. Node-level cache state could not be checked without cluster access.
+Latest backup `weekly-infra-backup-20261018030030` — `PartiallyFailed`,
+started 2026-10-18T03:00:35Z, completed 03:15:41Z, **4 errors / 58 warnings**,
+3458 items. Use the fully qualified `backups.velero.io`; unqualified `backup`
+resolves to the CloudNativePG CRD.
 
-## Live evidence still missing
+All four errors are `PodVolumeBackup` failures, and they split into two causes.
 
-Kubernetes API requests to context `btd` failed with a 10-second
-connection/header timeout. The following were therefore **not** observed for
-this review:
+| PVB | Volume | Pod | Cause |
+|---|---|---|---|
+| `...-jwpvw` | `export` | `minio-5797665d79-dpc6d` | **OOMKilled** after 771,707,282 bytes |
+| `...-tdsz6` | `prometheus-...-db` | `prometheus-...-0` | **OOMKilled** after 106,157,967 bytes |
+| `...-rbtz2` | `tmp` | `invenio-worker-55bbfbcc44-lh8w8` | `velero-quota` limits.cpu exhausted |
+| `...-s7w78` | `tmp` | `invenio-worker-55bbfbcc44-v597l` | `velero-quota` limits.cpu exhausted |
 
-- the four error and 58 warning messages of the latest (2026-10-18)
-  `PartiallyFailed` backup;
-- `PodVolumeBackup` phase counts and the per-volume failure causes;
-- the running plugin image and whether the server logged plugin restarts;
-- whether every namespace in `backup-schedule.yaml` exists in the cluster.
+### OOM evidence (durable, since the data-mover pods are gone)
 
-No repair of the backup content, schedule scope, or object-store data was made.
-The four errors must be attributed from the backup's error/warning files or
-`kubectl -n velero get podvolumebackups` before any change that alters data
-coverage.
+The pods no longer exist, so `kubectl get pods` cannot show them. The termination
+reason survives in kube-state-metrics and in the node-agent log:
 
-## Prepared repair
+- `kube_pod_container_status_terminated_reason{namespace="velero",pod=~"weekly-infra-backup-20261018030030-(jwpvw|tdsz6)"}`
+  returns `reason="OOMKilled"` with value `1` at 2026-10-18T03:09:30Z/03:10:00Z
+  (`jwpvw`) and 03:12:00Z/03:12:30Z (`tdsz6`).
+- `container_memory_working_set_bytes` peaks: `jwpvw` **241.2 MiB**,
+  `tdsz6` **253.2 MiB**.
+- `kube_pod_container_resource_limits{resource="memory"}` for both = **256 MiB**,
+  inherited from the namespace `LimitRange` default, not set by Velero.
+- Node-agent log: `Finish waiting data path pod, phase Failed, message ` followed
+  by `VGDP started but termination event is not received` at 03:10:06Z
+  (`jwpvw`) and 03:12:34Z (`tdsz6`). `Async fs backup data path failed` records an
+  empty `error=` because the process was killed, not because kopia returned an
+  error. The MinIO data-mover log block is empty, consistent with a kill during
+  the first write.
+- No node-level OOM (`node_vmstat_oom_kill` empty); this was a container memory
+  limit kill on worker-01.
 
-Pin the AWS plugin to the supported 1.17.x pair (`v1.13.2`) and gate that pairing
-in CI so a chart or plugin bump cannot silently recreate the mismatch.
+Both failed volumes are the two largest live datastores in the backup. Worker-01
+is not the cause: the same node completed a 19.6MB `tmp-dir` volume and others.
 
-```mermaid
-flowchart TD
-  C[Chart 11.4.0] -->|appVersion| V[Velero 1.17.x]
-  V -->|matrix requires| P[AWS plugin 1.13.x]
-  P -->|validator enforces| G[CI gate]
-  G -->|blocks unsupported pin| X[No deploy]
-```
+### Resource accounting
 
-The validator maps chart version to Velero series and requires the plugin tag to
-match the supported series; unknown chart versions fail closed until the mapping
-is updated deliberately.
+`velero-quota`: hard `limits.cpu=2`, `limits.memory=4Gi`, `pods=10`,
+`requests.cpu=1`, `requests.memory=2Gi`. Used at inspection: `limits.cpu=750m`,
+`limits.memory=768Mi`, `pods=3`. Two data movers at the 250m LimitRange default
+consume 500m of the remaining 1.25 CPU; a third is rejected, which is exactly the
+two Invenio worker `tmp` failures. Raising memory alone does not fix this; raising
+CPU quota alone does not fix the OOM kills.
 
-## Tests
+## Supported plugin pair
 
-Regression tests were written first and failed on the current pin
-(`Velero 1.17.x requires AWS plugin 1.13.x, found v1.11.1`). Current results:
+- Chart `11.4.0` `Chart.yaml` declares `appVersion: 1.17.1`.
+- Official matrix pairs AWS plugin `v1.13.x` with Velero `1.17.x`; the deployed
+  `v1.11.1` is listed only for Velero `1.15.x`.
+- `velero/velero-plugin-for-aws:v1.13.2` exists in the registry (multi-arch
+  manifest resolves), **not** in the local image cache. Deployment needs a node
+  pull, which is gated by the standing download rule.
+
+This plugin mismatch is a real risk repair but **not the root cause** of the four
+errors; the OOM kills and the quota accounting are.
+
+## Proposed options (policy decision required — not implemented)
+
+No scope removal, no quota inflation, and no silent coverage reduction was made.
+All backup objects are preserved.
+
+1. **Data-mover memory sizing (recommended first).** Velero 1.17 supports
+   `podResources` in a node-agent ConfigMap referenced by `--node-agent-configmap`.
+   Raise `memoryLimit` above the observed 253MiB peak with headroom; keep CPU at
+   the current default. This directly addresses the two OOM kills without
+   changing what is backed up.
+2. **Concurrency bound.** Bound concurrent data movers so the CPU quota is not
+   exhausted by parallelism, instead of enlarging `velero-quota`. This addresses
+   the two Invenio `tmp` failures.
+3. **Coverage decision (owner).** MinIO `export` holds all Velero backup objects
+   and the Prometheus TSDB is a live self-mutating store. Options are: keep both
+   with sufficient memory, exclude them with an explicit documented gap, or move
+   them to a native/opt-in path. Each changes data coverage and needs an explicit
+   owner choice. MinIO in particular is the backup-of-backups case and cannot be
+   silently dropped.
+4. **Quota increase (not recommended yet).** Enlarging `velero-quota` raises
+   concurrent data-mover pressure on 8 CPU nodes and does not fix OOM kills.
+
+Any change to which volumes are backed up must extend the ownership documented in
+`2026-10-15-velero-ownership.md` for the affected namespaces.
+
+## Tests and verification
 
 - `python3 scripts/tests/test_ci_validate_velero.py` — 9 tests passed.
 - `python3 scripts/ci-validate-velero.py` — passed.
 - `python3 -m unittest discover -s scripts/tests` — 14 tests passed.
-- `yamllint k8s/infra/velero/values.yaml` and
+- `python3 -m yamllint k8s/infra/velero/values.yaml` and
   `kustomize build k8s/infra/velero` — passed.
+- Regression evidence: the plugin-series test failed before the pin change with
+  `Velero 1.17.x requires AWS plugin 1.13.x, found v1.11.1`.
 
-## Deployment gate and remaining decisions
-
-1. **Image pull:** deployment requires pulling
-   `velero/velero-plugin-for-aws:v1.13.2` on the cluster. If the nodes cannot
-   reach the registry, a pre-pull must be approved first; no download was
-   performed here.
-2. **Root cause:** the plugin mismatch alone does not explain the four errors.
-   The lead's live evidence (backup error/warning files, `PodVolumeBackup`
-   phases, plugin restart logs) must be attached before declaring the cause or
-   changing backup scope.
-3. **Data coverage:** no schedule or namespace-scope change is proposed. Any
-   change to what is backed up requires an explicit owner decision and preserved
-   existing backup objects.
-4. **MinIO SDK behaviour:** plugin 1.13.x uses `aws-sdk-go-v2`; MinIO is not in
-   the upstream known-issue list, but post-deploy verification must confirm the
-   BackupStorageLocation stays `Available` and a fresh backup writes objects.
-   No speculative `checksumAlgorithm` override was added.
-5. **Restore proof:** a completed backup is not recovery proof. An isolated
-   restore drill remains separately owned and gated.
+No backup or restore job was launched. No object-store object was deleted.
 
 ## Rollback
 
-Revert the plugin tag to the previous pin only if the supported pair fails live;
-CI will then fail the compatibility check by design, so record the exception in
-this plan rather than bypassing the gate.
+Revert the plugin tag only if the supported pair fails live; CI will then fail the
+compatibility gate by design, so record the exception here rather than bypassing
+it. Data-mover sizing, if later approved, is reverted by removing the ConfigMap
+reference; the namespace LimitRange defaults then apply again.
