@@ -70,5 +70,12 @@ The current authorization ends before deployment and before creating test data.
   remove production credentials/egress and validate resource modifiers before approval.
 - Native CNPG recovery needs separately provisioned drill credentials and isolation
   before creating its Cluster; operators can create Services automatically.
-- Deployment PR, CI, post-merge Deploy Verify and exact live coverage verification are
-  required before requesting seed/backup/restore execution. Recovery remains unproven.
+- Deployment PR #147 merged (`3f16f770`); post-merge live verification passed
+  (17/17 Apps Synced/Healthy). Recovery remains unproven; seed/backup/restore
+  still require approval. The merge exposed a retention interaction: TTL GC
+  expired and deleted three old Backups plus stored data
+  (`2026-10-19-backup-repair.md`). Review retention before any future Velero
+  restart or plugin fix.
+- Deploy Verify passed about 6 s before the rollout began, so it did not cover
+  the new revision; later batches must gate on revision-specific live
+  verification.
