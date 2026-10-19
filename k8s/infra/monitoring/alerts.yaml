@@ -5,6 +5,8 @@ metadata:
   namespace: monitoring
   labels:
     release: monitoring
+  annotations:
+    argocd.argoproj.io/sync-options: Replace=true
 spec:
   groups:
     - name: app-slo
@@ -195,6 +197,24 @@ spec:
             description: "kubelet reports DiskPressure on this node. Pods will be evicted; free disk or expand the volume."
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
             dashboard: "https://grafana.vityasy.me/d/platform-health"
+        - alert: PodNotReady
+          expr: |
+            max by (namespace, pod) (
+              kube_pod_status_ready{condition="true"} == 0
+            )
+            and on (namespace, pod)
+            max by (namespace, pod) (
+              kube_pod_status_phase{phase=~"Pending|Running"} == 1
+            )
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is not ready"
+            description: >-
+              The pod has remained Pending or not Ready for 10m. Check scheduling, events, and container readiness.
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+            dashboard: "https://grafana.vityasy.me/d/platform-health"
         - alert: InvenioPVCUsageHigh
           expr: |
             100 * (
@@ -228,18 +248,21 @@ spec:
             dashboard: "https://grafana.vityasy.me/d/platform-health"
         - alert: PodCrashLoopingWithDown
           expr: |
-            sum by (namespace, pod) (
-              rate(kube_pod_container_status_restarts_total[15m])
-            ) > 0
-            and on (namespace, pod) sum by (namespace, pod) (
-              kube_pod_status_phase{phase="Running"}
-            ) == 0
+            max by (namespace, pod) (
+              max_over_time(
+                kube_pod_container_status_waiting_reason{
+                  reason="CrashLoopBackOff"
+                }[5m]
+              )
+            ) == 1
           for: 15m
           labels:
             severity: critical
           annotations:
-            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash looping and down"
-            description: "A pod is restarting and has no Running phase left. A single transient restart never fires this; investigate the crash."
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash looping"
+            description: >-
+              A container has remained in CrashLoopBackOff. Check its logs, events, and
+              resource limits to identify the crash cause.
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
             dashboard: "https://grafana.vityasy.me/d/platform-health"
     - name: edge

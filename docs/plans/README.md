@@ -9,6 +9,9 @@ discovered during a wave go into `docs/plans/active/` as part of the wave's PR.
 
 | Plan | Branch | PR | Status |
 |---|---|---|---|
+| [Worker-02 incident](active/2026-10-16-worker02-incident.md) | feat/145-worker02-incident | Pending | Host-maintenance trigger confirmed; monitoring deployment authorized 2026-10-19, verification pending. IT restart policy remains external. |
+| [Alert correctness](active/2026-10-16-alert-truth.md) | feat/145-worker02-incident | Pending | Tested scoped reconciliation, readiness/crash-loop rules and Discord formatting; live verification pending. |
+| [Recovery and logging](active/2026-10-16-recovery-logging-review.md) | feat/145-worker02-incident | Pending | Assessment only; backup/restore and Loki implementation remain separately gated under #139/#140. |
 | [2026-10-15-runtime-selection.md](active/2026-10-15-runtime-selection.md) | fix/139-runtime-selection | #143 | **Wiring verified live** — both local API aliases protected; all 24 custom rules loaded without evaluation errors. Backup recoverability remains open. |
 | [2026-10-15-monitoring-repairs.md](active/2026-10-15-monitoring-repairs.md) | fix/139-monitoring-review | #142, #143 | **Deployed and verified** — three exporter targets up; stale-backup alert now exposes the real success gap. |
 | [2026-10-15-cluster-repairs.md](active/2026-10-15-cluster-repairs.md) | feat/139-cluster-repairs | #141–#143 | **Repair batch verified; follow-ups open** — backup/restore proof and host observation remain open in #139; missing Loki backend in #140. |

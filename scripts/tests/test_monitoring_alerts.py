@@ -1,0 +1,180 @@
+import json
+import shutil
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[2]
+MONITORING = ROOT / "k8s/infra/monitoring"
+EXPECTED_RULES = {
+    "app-slo": sorted({
+        "InvenioWebReplicasUnavailable",
+        "Invenio5xxRatioHigh",
+        "TraefikServiceDown",
+        "InvenioPodRestartHigh",
+    }),
+    "data-backups": sorted({
+        "VeleroBackupFailed",
+        "VeleroBackupMetricsMissing",
+        "VeleroBackupNeverSucceeded",
+        "VeleroBackupStale",
+        "PostgreSQLHighConnections",
+        "CNPGReplicationLagHigh",
+        "CNPGBackupStale",
+        "CNPGArchivingDown",
+        "VeleroPluginCrashlooping",
+    }),
+    "capacity": sorted({
+        "HighMemoryUsage",
+        "NodeDiskPressure",
+        "InvenioPVCUsageHigh",
+        "OOMKillsIncreasing",
+        "PodNotReady",
+        "PodCrashLoopingWithDown",
+    }),
+    "edge": sorted({"CloudflareTunnelDown", "TraefikHigh404Rate"}),
+    "platform-self": sorted({
+        "PrometheusTargetDown",
+        "KubeStateMetricsDown",
+        "AlertmanagerNotificationsFailing",
+        "AlertmanagerConfigFailed",
+    }),
+}
+
+
+def render(message, annotations):
+    if isinstance(annotations, dict):
+        annotations = [annotations]
+    data = {
+        "receiver": "discord-critical",
+        "status": "firing",
+        "alerts": [
+            {
+                "status": "firing",
+                "labels": {"alertname": f"SyntheticAlert{index}"},
+                "annotations": alert_annotations,
+                "startsAt": "2026-10-16T00:00:00Z",
+                "endsAt": "0001-01-01T00:00:00Z",
+                "generatorURL": "https://prometheus.example/graph",
+                "fingerprint": f"synthetic-{index}",
+            }
+            for index, alert_annotations in enumerate(annotations)
+        ],
+        "groupLabels": {"alertname": "SyntheticNoAnnotations"},
+        "commonLabels": {"alertname": "SyntheticNoAnnotations"},
+        "commonAnnotations": {},
+        "externalURL": "https://prometheus.example",
+        "version": "4",
+        "groupKey": "synthetic",
+        "truncatedAlerts": 0,
+    }
+    with tempfile.TemporaryDirectory() as directory:
+        data_path = Path(directory) / "data.json"
+        template_path = Path(directory) / "templates.tmpl"
+        data_path.write_text(json.dumps(data))
+        template_path.write_text('{{ define "noop" }}{{ end }}')
+        result = subprocess.run(
+            [
+                "amtool", "template", "render",
+                "--template.glob", str(template_path),
+                "--template.text", message,
+                "--template.data", str(data_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    if result.returncode:
+        raise AssertionError(result.stdout + result.stderr)
+    return result.stdout.strip()
+
+
+class MonitoringAlertTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.alerts = yaml.safe_load((MONITORING / "alerts.yaml").read_text())
+        cls.receivers = yaml.safe_load((MONITORING / "discord-receivers.yaml").read_text())
+
+    def test_exact_rule_group_contract_and_resource_identity(self):
+        source_groups = self.alerts["spec"]["groups"]
+        self.assertEqual(len(source_groups), len(EXPECTED_RULES))
+        self.assertEqual(
+            len({group["name"] for group in source_groups}), len(source_groups)
+        )
+        groups = {
+            group["name"]: sorted(
+                rule.get("alert") or rule.get("record")
+                for rule in group.get("rules", [])
+            )
+            for group in source_groups
+        }
+        self.assertEqual(groups, EXPECTED_RULES)
+
+        metadata = self.alerts["metadata"]
+        self.assertEqual(metadata["name"], "cluster-health-alerts")
+        self.assertEqual(metadata["namespace"], "monitoring")
+        self.assertEqual(metadata["labels"].get("release"), "monitoring")
+        self.assertEqual(
+            metadata["annotations"],
+            {"argocd.argoproj.io/sync-options": "Replace=true"},
+        )
+
+    @unittest.skipUnless(shutil.which("amtool"), "amtool is not installed")
+    def test_discord_templates_render_lines_and_empty_annotation_fallbacks(self):
+        expected_with_annotations = (
+            "Synthetic summary\nSynthetic description\n"
+            "Runbook: https://docs.example/runbook\n"
+            "Dashboard: https://grafana.example/dashboard"
+        )
+        expected_without_annotations = (
+            "SyntheticAlert0\nNo description available."
+        )
+        annotations = self.receivers["spec"]["receivers"]
+        discord_messages = [
+            config["message"]
+            for receiver in annotations
+            if receiver["name"] in {"discord-critical", "discord-warning"}
+            for config in receiver["discordConfigs"]
+        ]
+        self.assertEqual(len(discord_messages), 2)
+
+        full = {
+            "summary": "Synthetic summary",
+            "description": "Synthetic description",
+            "runbook_url": "https://docs.example/runbook",
+            "dashboard": "https://grafana.example/dashboard",
+        }
+        for message in discord_messages:
+            with self.subTest(message=message):
+                self.assertEqual(render(message, full), expected_with_annotations)
+                rendered = render(message, {})
+                self.assertEqual(rendered, expected_without_annotations)
+                self.assertNotIn(r"\n", rendered)
+
+    @unittest.skipUnless(shutil.which("amtool"), "amtool is not installed")
+    def test_grouped_alerts_have_a_blank_line_separator(self):
+        annotations = [
+            {"summary": "First summary", "description": "First description"},
+            {"summary": "Second summary", "description": "Second description"},
+        ]
+        expected = (
+            "First summary\nFirst description\n\n"
+            "Second summary\nSecond description"
+        )
+        messages = [
+            config["message"]
+            for receiver in self.receivers["spec"]["receivers"]
+            if receiver["name"] in {"discord-critical", "discord-warning"}
+            for config in receiver["discordConfigs"]
+        ]
+        for message in messages:
+            with self.subTest(message=message):
+                self.assertEqual(render(message, annotations), expected)
+
+
+if __name__ == "__main__":
+    unittest.main()
