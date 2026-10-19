@@ -26,6 +26,10 @@ spec:
         app.kubernetes.io/name: redis
         app.kubernetes.io/component: master
         app.kubernetes.io/part-of: invenio-rdm
+      annotations:
+        # Opt-in file-system backup of the durable AOF/RDB volume. Broker,
+        # result and session data live in this instance and are not disposable.
+        backup.velero.io/backup-volumes: data
     spec:
       # Keep the identity used to initialize the existing NFS-backed PVC.
       securityContext:

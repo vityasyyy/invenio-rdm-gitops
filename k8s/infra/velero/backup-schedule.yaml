@@ -22,6 +22,9 @@ spec:
       - search
       - velero
       - cert-manager
-    defaultVolumesToFsBackup: true
+    # Opt-in: only pods annotated with backup.velero.io/backup-volumes are
+    # backed up at file-system level. Excluding the MinIO volume avoids
+    # backing up the backup store into itself.
+    defaultVolumesToFsBackup: false
     snapshotVolumes: false
     storageLocation: default

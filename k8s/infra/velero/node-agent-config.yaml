@@ -1,0 +1,35 @@
+# Node-agent settings for opt-in file-system backups.
+#
+# podResources sizes each data-mover pod; without it they inherit the
+# namespace LimitRange defaults (250m / 256Mi) that OOMKilled the MinIO and
+# Prometheus movers on 2026-10-18.
+#
+# loadConcurrency.globalConfig is PER NODE, not a cluster-wide cap. Two live
+# node-agents therefore allow two active data movers. prepareQueueLength is
+# nested under loadConcurrency; this budget conservatively counts it per node
+# as well, allowing up to two prepared mover pods on top of the active ones.
+#
+# memoryRequest equals memoryLimit so each mover reserves its full possible
+# footprint before it is scheduled; node memory pressure is still monitored
+# because existing workloads already overcommit requests.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: node-agent-config
+  namespace: velero
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+data:
+  node-agent-config.json: |
+    {
+      "podResources": {
+        "cpuRequest": "100m",
+        "cpuLimit": "250m",
+        "memoryRequest": "1Gi",
+        "memoryLimit": "1Gi"
+      },
+      "loadConcurrency": {
+        "globalConfig": 1,
+        "prepareQueueLength": 1
+      }
+    }

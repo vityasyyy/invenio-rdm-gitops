@@ -28,6 +28,9 @@ prometheus:
 
 # Grafana configuration
 grafana:
+  # Opt-in file-system backup of the Grafana volume (dashboards, DB, plugins).
+  podAnnotations:
+    backup.velero.io/backup-volumes: storage
   # Do not deploy the chart-bundled dashboards (12x monitoring-kube-prometheus-*
   # noise next to our one InvenioRDM folder). Sidecar-discovered dashboards
   # (grafana-dashboards.yaml) are unaffected. Issue #102.
