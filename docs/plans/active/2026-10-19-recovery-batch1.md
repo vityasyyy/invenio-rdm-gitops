@@ -59,10 +59,12 @@ The current authorization ends before deployment and before creating test data.
 
 ## Remaining gates
 
-- Supported plugin image not locally cached: no image pull/download performed; user
-  must handle/confirm required download before deployment under standing policy.
+- Supported plugin image locally downloaded for the Mac
+  (`sha256:25c3a0a0…`); node caches still hold only `v1.11.1`, so deployment
+  needs a node registry pull.
 - Re-measure NFS capacity and node/quota headroom before any drill; NFS capacity is
-  shared, nominal PVC sizes are not independent free-space guarantees.
+  shared, nominal PVC sizes are not independent free-space guarantees. The
+  Velero worst-case budget is resolved in `2026-10-19-backup-repair.md`.
 - Velero1.17 FSB restore is Pod/PVR driven: restoring PVC metadata alone is insufficient.
   Restore design must sanitize the associated Pod to a verifier, disable app execution,
   remove production credentials/egress and validate resource modifiers before approval.

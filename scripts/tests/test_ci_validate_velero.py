@@ -31,6 +31,21 @@ UNRELATED_EXCLUSION = {
 }
 
 
+DEFAULT_QUOTA = {
+    "requests.cpu": "1",
+    "requests.memory": "6Gi",
+    "limits.cpu": "4",
+    "limits.memory": "7Gi",
+    "pods": "12",
+}
+DEFAULT_NODE_AGENT = {
+    "cpuRequest": "100m",
+    "cpuLimit": "250m",
+    "memoryRequest": "1Gi",
+    "memoryLimit": "1Gi",
+}
+
+
 def write_fixture(
     root,
     exclusions,
@@ -38,6 +53,9 @@ def write_fixture(
     config_name="argocd-cm",
     chart_version="11.4.0",
     plugin_image="velero/velero-plugin-for-aws:v1.13.2",
+    quota=None,
+    node_agent=None,
+    namespaces=("monitoring",),
 ):
     root = Path(root)
     argocd = root / "k8s/infra/argocd/patches/argocd-cm.yaml"
@@ -76,28 +94,66 @@ def write_fixture(
         "spec": {"template": {
             "defaultVolumesToFsBackup": False,
             "snapshotVolumes": False,
+            "includedNamespaces": list(namespaces),
         }},
     }))
     (velero / "values.yaml").write_text(yaml.safe_dump({
+        "resources": {
+            "requests": {"cpu": "50m", "memory": "128Mi"},
+            "limits": {"cpu": "500m", "memory": "512Mi"},
+        },
         "initContainers": [{
             "name": "velero-plugin-for-aws",
             "image": plugin_image,
         }],
-        "nodeAgent": {"extraArgs": ["--node-agent-configmap=node-agent-config"]},
+        "nodeAgent": {
+            "resources": {
+                "requests": {"cpu": "50m", "memory": "64Mi"},
+                "limits": {"cpu": "250m", "memory": "256Mi"},
+            },
+            "extraArgs": ["--node-agent-configmap=node-agent-config"],
+        },
+        "configuration": {"repositoryMaintenanceJob": {"repositoryConfigData": {
+            "name": "velero-repo-maintenance",
+            "global": {
+                "keepLatestMaintenanceJobs": 3,
+                "podResources": {
+                    "cpuRequest": "50m",
+                    "cpuLimit": "250m",
+                    "memoryRequest": "256Mi",
+                    "memoryLimit": "256Mi",
+                },
+            },
+        }}},
     }))
     (velero / "node-agent-config.yaml").write_text(yaml.safe_dump({
         "apiVersion": "v1",
         "kind": "ConfigMap",
         "metadata": {"name": "node-agent-config", "namespace": "velero"},
         "data": {"node-agent-config.json": json.dumps({
-            "podResources": {
-                "cpuRequest": "100m",
-                "cpuLimit": "250m",
-                "memoryRequest": "256Mi",
-                "memoryLimit": "1Gi",
-            },
+            "podResources": dict(node_agent or DEFAULT_NODE_AGENT),
             "loadConcurrency": {"globalConfig": 1, "prepareQueueLength": 1},
         })},
+    }))
+    (velero / "limit-range.yaml").write_text(yaml.safe_dump({
+        "apiVersion": "v1",
+        "kind": "LimitRange",
+        "metadata": {"name": "velero-default-limits", "namespace": "velero"},
+        "spec": {"limits": [{
+            "default": {"cpu": "250m", "memory": "256Mi"},
+            "defaultRequest": {"cpu": "50m", "memory": "64Mi"},
+            "max": {"cpu": "1", "memory": "1Gi"},
+            "min": {"cpu": "25m", "memory": "32Mi"},
+            "type": "Container",
+        }]},
+    }))
+    quota_path = root / "k8s/infra/security/resource-quotas/velero-quota.yaml"
+    quota_path.parent.mkdir(parents=True)
+    quota_path.write_text(yaml.safe_dump({
+        "apiVersion": "v1",
+        "kind": "ResourceQuota",
+        "metadata": {"name": "velero-quota", "namespace": "velero"},
+        "spec": {"hard": dict(quota or DEFAULT_QUOTA)},
     }))
 
     monitoring = root / "k8s/infra/monitoring/values.yaml"
@@ -253,6 +309,13 @@ class VeleroBackupScopeTests(unittest.TestCase):
             "--node-agent-configmap=node-agent-config",
             values["nodeAgent"]["extraArgs"],
         )
+        self.assertEqual(
+            values["nodeAgent"]["resources"],
+            {
+                "requests": {"cpu": "50m", "memory": "64Mi"},
+                "limits": {"cpu": "250m", "memory": "256Mi"},
+            },
+        )
         kustomization = yaml.safe_load(
             (ROOT / "k8s/infra/velero/kustomization.yaml").read_text()
         )
@@ -262,9 +325,21 @@ class VeleroBackupScopeTests(unittest.TestCase):
         )
         settings = json.loads(config["data"]["node-agent-config.json"])
         self.assertEqual(settings["podResources"]["memoryLimit"], "1Gi")
+        self.assertEqual(settings["podResources"]["memoryRequest"], "1Gi")
         self.assertEqual(settings["podResources"]["cpuLimit"], "250m")
         self.assertEqual(settings["loadConcurrency"]["globalConfig"], 1)
         self.assertEqual(settings["loadConcurrency"]["prepareQueueLength"], 1)
+
+    def test_repository_maintenance_budget_is_pinned_in_values(self):
+        values = yaml.safe_load((ROOT / "k8s/infra/velero/values.yaml").read_text())
+        maintenance = values["configuration"]["repositoryMaintenanceJob"]
+        config_data = maintenance["repositoryConfigData"]
+        self.assertEqual(config_data["name"], "velero-repo-maintenance")
+        global_config = config_data["global"]
+        self.assertEqual(global_config["keepLatestMaintenanceJobs"], 3)
+        pod_resources = global_config["podResources"]
+        self.assertEqual(pod_resources["memoryRequest"], pod_resources["memoryLimit"])
+        self.assertEqual(pod_resources["cpuLimit"], "250m")
 
     def test_schedule_opt_in_and_no_snapshots(self):
         schedule = yaml.safe_load(
@@ -274,36 +349,66 @@ class VeleroBackupScopeTests(unittest.TestCase):
         self.assertIs(template["defaultVolumesToFsBackup"], False)
         self.assertIs(template["snapshotVolumes"], False)
 
-    def test_worst_case_data_mover_budget_does_not_fit_quota(self):
-        """Documents the unresolved budget: per-node concurrency is not a cluster cap.
+    def test_worst_case_budget_fits_quota(self):
+        """Full simultaneous budget: rollout surge, 2 agents, 4 movers, 10 streams."""
+        budget, hard = ci_validate_velero.resource_budget(ROOT)
+        for key, value in budget.items():
+            self.assertLessEqual(value, hard[key], key)
+        self.assertEqual(budget["pods"], 18)
+        self.assertEqual(budget["limits.cpu"], 5000)
+        self.assertEqual(budget["limits.memory"], 8192)
+        self.assertEqual(budget["requests.cpu"], 1100)
+        self.assertEqual(budget["requests.memory"], 7040)
 
-        Two live node-agents each allow one active mover plus one prepared mover.
-        That worst case exceeds velero-quota, so deployment is gated on a decision.
-        """
-        quota = yaml.safe_load(
-            (ROOT / "k8s/infra/security/resource-quotas/velero-quota.yaml").read_text()
-        )["spec"]["hard"]
-        config = yaml.safe_load(
-            (ROOT / "k8s/infra/velero/node-agent-config.yaml").read_text()
-        )
-        settings = json.loads(config["data"]["node-agent-config.json"])
-        resources = settings["podResources"]
+    def test_validator_rejects_quota_below_worst_case(self):
+        with tempfile.TemporaryDirectory() as directory:
+            write_fixture(
+                directory,
+                [EXCLUSION],
+                quota={**DEFAULT_QUOTA, "limits.cpu": "2"},
+            )
+            result = run_validator(Path(directory))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("velero-quota limits.cpu", result.stdout + result.stderr)
 
-        def cpu(value):
-            return int(value[:-1]) if str(value).endswith("m") else int(value) * 1000
+    def test_validator_rejects_repository_growth_beyond_quota(self):
+        two_stream_quota = {
+            "requests.cpu": "700m",
+            "requests.memory": "5248Mi",
+            "limits.cpu": "3000m",
+            "limits.memory": "6400Mi",
+            "pods": "10",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            write_fixture(
+                directory,
+                [EXCLUSION],
+                quota=two_stream_quota,
+                namespaces=("monitoring", "invenio"),
+            )
+            result = run_validator(Path(directory))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        with tempfile.TemporaryDirectory() as directory:
+            write_fixture(
+                directory,
+                [EXCLUSION],
+                quota=two_stream_quota,
+                namespaces=("monitoring", "invenio", "minio", "redis"),
+            )
+            result = run_validator(Path(directory))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("velero-quota", result.stdout + result.stderr)
 
-        def memory(value):
-            text = str(value)
-            return int(text[:-2]) * 1024 if text.endswith("Gi") else int(text[:-2])
-
-        base_cpu, base_mem = 500 + 2 * 250, 512 + 2 * 256  # server + 2 node-agents
-        mover_cpu, mover_mem = cpu(resources["cpuLimit"]), memory(resources["memoryLimit"])
-        worst_cpu = base_cpu + 2 * (mover_cpu + mover_cpu)  # 2 nodes x (active + prepared)
-        worst_mem = base_mem + 2 * (mover_mem + mover_mem)
-        # Worst case consumes the entire CPU hard limit (leaving nothing for the
-        # recurring maintenance jobs) and exceeds the memory hard limit.
-        self.assertEqual(worst_cpu, cpu(quota["limits.cpu"]))
-        self.assertGreater(worst_mem, memory(quota["limits.memory"]))
+    def test_validator_requires_memory_request_equal_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            write_fixture(
+                directory,
+                [EXCLUSION],
+                node_agent={**DEFAULT_NODE_AGENT, "memoryRequest": "256Mi"},
+            )
+            result = run_validator(Path(directory))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("memoryRequest", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,15 @@ snapshotsEnabled: false
 deployNodeAgent: true
 
 nodeAgent:
+  # Explicit sizing so every daemonset pod is uniform; an unsized pod would
+  # fall back to the namespace LimitRange defaults.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
   # Data-mover pod sizing and concurrency; see node-agent-config.yaml.
   extraArgs:
     - --node-agent-configmap=node-agent-config
@@ -45,6 +54,20 @@ configuration:
         region: minio
         s3ForcePathStyle: true
         s3Url: http://minio.minio.svc.cluster.local:9000
+  # Repository-maintenance job budget. The chart renders this ConfigMap and
+  # adds --repo-maintenance-job-configmap; pinning it in Git keeps the live
+  # configuration reproducible. Memory request equals the limit so each job
+  # reserves its full possible footprint before it is scheduled.
+  repositoryMaintenanceJob:
+    repositoryConfigData:
+      name: velero-repo-maintenance
+      global:
+        keepLatestMaintenanceJobs: 3
+        podResources:
+          cpuRequest: "50m"
+          cpuLimit: "250m"
+          memoryRequest: "256Mi"
+          memoryLimit: "256Mi"
 
 # Init container for AWS plugin (needed for S3-compatible storage).
 # Velero 1.17.x pairs with plugin 1.13.x per the upstream compatibility matrix.

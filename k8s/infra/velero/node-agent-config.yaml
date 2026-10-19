@@ -5,12 +5,13 @@
 # Prometheus movers on 2026-10-18.
 #
 # loadConcurrency.globalConfig is PER NODE, not a cluster-wide cap. Two live
-# node-agents therefore allow two active data movers. prepareQueueLength is a
-# global queue limit for CRs waiting in Accepted/Prepared, each of which also
-# holds a hosting pod.
+# node-agents therefore allow two active data movers. prepareQueueLength is
+# nested under loadConcurrency; this budget conservatively counts it per node
+# as well, allowing up to two prepared mover pods on top of the active ones.
 #
-# The worst-case resource budget is NOT proven to fit velero-quota; see
-# docs/plans/active/2026-10-19-backup-repair.md before deploying.
+# memoryRequest equals memoryLimit so each mover reserves its full possible
+# footprint before it is scheduled; node memory pressure is still monitored
+# because existing workloads already overcommit requests.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -24,7 +25,7 @@ data:
       "podResources": {
         "cpuRequest": "100m",
         "cpuLimit": "250m",
-        "memoryRequest": "256Mi",
+        "memoryRequest": "1Gi",
         "memoryLimit": "1Gi"
       },
       "loadConcurrency": {

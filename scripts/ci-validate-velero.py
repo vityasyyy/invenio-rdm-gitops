@@ -28,6 +28,185 @@ def _series(version):
     return f"{match.group(1)}.{match.group(2)}" if match else None
 
 
+# Two untainted workers; the control-plane node is tainted CriticalAddonsOnly.
+SCHEDULABLE_NODES = 2
+
+
+def _cpu_millis(value):
+    text = str(value)
+    if text.endswith("m"):
+        return int(text[:-1])
+    return int(float(text) * 1000)
+
+
+def _memory_mib(value):
+    text = str(value)
+    for suffix, factor in (("Gi", 1024), ("Mi", 1), ("Ki", 1 / 1024)):
+        if text.endswith(suffix):
+            return int(float(text[: -len(suffix)]) * factor)
+    return int(text) // (1024 * 1024)
+
+
+def _resources(entry):
+    """(request cpu/mem, limit cpu/mem) in millicores and MiB."""
+    resources = entry or {}
+    requests = resources.get("requests") or {}
+    limits = resources.get("limits") or {}
+    return (
+        _cpu_millis(requests.get("cpu", 0)),
+        _memory_mib(requests.get("memory", 0)),
+        _cpu_millis(limits.get("cpu", 0)),
+        _memory_mib(limits.get("memory", 0)),
+    )
+
+
+def _flat_resources(entry):
+    """Mover and maintenance configurations use flat *Request/*Limit keys."""
+    entry = entry or {}
+    return (
+        _cpu_millis(entry.get("cpuRequest", 0)),
+        _memory_mib(entry.get("memoryRequest", 0)),
+        _cpu_millis(entry.get("cpuLimit", 0)),
+        _memory_mib(entry.get("memoryLimit", 0)),
+    )
+
+
+def _effective_pod(containers, init_containers):
+    """Kubernetes pod-level resources: max(sum of containers, max of init)."""
+    totals = [sum(item[index] for item in containers) for index in range(4)]
+    for index in range(4):
+        for item in init_containers:
+            totals[index] = max(totals[index], item[index])
+    return tuple(totals)
+
+
+def resource_budget(root):
+    """Worst-case simultaneous Velero footprint vs velero-quota.
+
+    Components: server (+1 rollout surge, Deployment maxSurge rounds up),
+    2 node-agent pods, 1 active + 1 prepared mover per schedulable node
+    (globalConfig and prepareQueueLength are read as per node), and one
+    repository-maintenance job per scheduled namespace (9 repositories live;
+    the namespace count is the conservative upper bound). Init-container
+    effective requests come from the namespace LimitRange defaults.
+    """
+    root = Path(root)
+    values = yaml.safe_load((root / "k8s/infra/velero/values.yaml").read_text()) or {}
+    config = yaml.safe_load((root / "k8s/infra/velero/node-agent-config.yaml").read_text()) or {}
+    settings = json.loads((config.get("data") or {})["node-agent-config.json"])
+    schedule = yaml.safe_load((root / "k8s/infra/velero/backup-schedule.yaml").read_text()) or {}
+    quota = (
+        yaml.safe_load(
+            (root / "k8s/infra/security/resource-quotas/velero-quota.yaml").read_text()
+        )
+        or {}
+    ).get("spec", {}).get("hard", {})
+    limit_range = yaml.safe_load((root / "k8s/infra/velero/limit-range.yaml").read_text()) or {}
+    limit_range_entry = ((limit_range.get("spec") or {}).get("limits") or [{}])[0]
+    defaults, max_defaults = (
+        limit_range_entry.get("defaultRequest") or {},
+        limit_range_entry.get("default") or {},
+    )
+
+    server = _effective_pod(
+        [_resources(values.get("resources"))],
+        [
+            (
+                _cpu_millis(defaults.get("cpu", 0)),
+                _memory_mib(defaults.get("memory", 0)),
+                _cpu_millis(max_defaults.get("cpu", 0)),
+                _memory_mib(max_defaults.get("memory", 0)),
+            )
+        ],
+    )
+    agent = _resources((values.get("nodeAgent") or {}).get("resources"))
+    mover = _flat_resources(settings.get("podResources"))
+    global_maintenance = (
+        (
+            (
+                (values.get("configuration") or {}).get("repositoryMaintenanceJob") or {}
+            ).get("repositoryConfigData") or {}
+        ).get("global") or {}
+    )
+    maintenance = _flat_resources(global_maintenance.get("podResources"))
+    concurrency = settings.get("loadConcurrency") or {}
+    movers_per_node = int(concurrency.get("globalConfig") or 0) + int(
+        concurrency.get("prepareQueueLength") or 0
+    )
+    mover_count = SCHEDULABLE_NODES * movers_per_node
+    namespaces = ((schedule.get("spec") or {}).get("template") or {}).get(
+        "includedNamespaces"
+    ) or []
+    maintenance_count = len(namespaces)
+    server_count = 2  # one replica plus the maxSurge pod during rollout
+
+    budget = {
+        "pods": server_count + 2 + mover_count + maintenance_count,
+        "requests.cpu": server[0] * server_count
+        + agent[0] * 2
+        + mover[0] * mover_count
+        + maintenance[0] * maintenance_count,
+        "requests.memory": server[1] * server_count
+        + agent[1] * 2
+        + mover[1] * mover_count
+        + maintenance[1] * maintenance_count,
+        "limits.cpu": server[2] * server_count
+        + agent[2] * 2
+        + mover[2] * mover_count
+        + maintenance[2] * maintenance_count,
+        "limits.memory": server[3] * server_count
+        + agent[3] * 2
+        + mover[3] * mover_count
+        + maintenance[3] * maintenance_count,
+    }
+    hard = {
+        "pods": int(quota.get("pods", 0) or 0),
+        "requests.cpu": _cpu_millis(quota.get("requests.cpu", 0) or 0),
+        "requests.memory": _memory_mib(quota.get("requests.memory", 0) or 0),
+        "limits.cpu": _cpu_millis(quota.get("limits.cpu", 0) or 0),
+        "limits.memory": _memory_mib(quota.get("limits.memory", 0) or 0),
+    }
+    return budget, hard
+
+
+def validate_resource_budget(root, errors):
+    """Fail when the bounded worst case does not fit velero-quota."""
+    root = Path(root)
+    values = yaml.safe_load((root / "k8s/infra/velero/values.yaml").read_text()) or {}
+    if not (values.get("nodeAgent") or {}).get("resources"):
+        errors.append("nodeAgent.resources must be pinned so daemonset pods are uniform")
+    global_maintenance = (
+        (
+            (
+                (values.get("configuration") or {}).get("repositoryMaintenanceJob") or {}
+            ).get("repositoryConfigData") or {}
+        ).get("global") or {}
+    )
+    pod_resources = global_maintenance.get("podResources") or {}
+    if not pod_resources:
+        errors.append("values.yaml must pin repository maintenance podResources")
+    else:
+        if pod_resources.get("memoryRequest") != pod_resources.get("memoryLimit"):
+            errors.append(
+                "repository maintenance memoryRequest must equal memoryLimit"
+            )
+        if global_maintenance.get("keepLatestMaintenanceJobs") != 3:
+            errors.append("repository maintenance history must stay bounded at 3 jobs")
+
+    config = yaml.safe_load((root / "k8s/infra/velero/node-agent-config.yaml").read_text()) or {}
+    settings = json.loads((config.get("data") or {})["node-agent-config.json"])
+    mover_resources = settings.get("podResources") or {}
+    if mover_resources.get("memoryRequest") != mover_resources.get("memoryLimit"):
+        errors.append("data-mover memoryRequest must equal memoryLimit")
+
+    budget, hard = resource_budget(root)
+    for key, value in budget.items():
+        if value > hard.get(key, 0):
+            errors.append(
+                f"velero-quota {key} is too small: worst case {value} exceeds hard {hard[key]}"
+            )
+
+
 def validate_plugin_pair(root, errors):
     app = yaml.safe_load((root / "argocd/apps/velero.yaml").read_text()) or {}
     sources = ((app.get("spec") or {}).get("sources") or [])
@@ -255,6 +434,11 @@ def validate(root):
     except (OSError, yaml.YAMLError) as error:
         errors.append(f"Velero backup scope: {error}")
 
+    try:
+        validate_resource_budget(root, errors)
+    except (OSError, yaml.YAMLError, ValueError, KeyError) as error:
+        errors.append(f"Velero resource budget: {error}")
+
     return errors
 
 
@@ -266,7 +450,7 @@ def main():
     if errors:
         print(f"FAILED: {len(errors)} Velero ownership violation(s)")
         return 1
-    print("OK: Velero exclusions are scoped, Schedule is Git-managed, and the AWS plugin matches the Velero series")
+    print("OK: Velero exclusions are scoped, Schedule is Git-managed, the AWS plugin matches the Velero series, and the worst-case resource budget fits velero-quota")
     return 0
 
 

@@ -1,8 +1,9 @@
 # Velero backup failure diagnosis and plugin compatibility repair (#139)
 
-**Status:** DRAFT — not deployable. Root cause confirmed live; opt-in coverage and
-data-mover configuration are prepared and tested. The worst-case quota budget is
-unresolved and requires an explicit owner decision.
+**Status:** Prepared, not deployed. Root cause confirmed live; opt-in coverage,
+data-mover sizing and a bounded worst-case resource budget are tested. Deployment
+remains gated on the image pull, the live node-headroom re-measurement and the
+rollout gates below.
 **Scope:** Velero values and data-mover config, backup schedule, pod-template
 opt-in annotations, the Velero CI validator and its tests, this plan.
 Restore procedure is owned separately.
@@ -72,9 +73,10 @@ does not fix the OOM kills.
 - Chart `11.4.0` `Chart.yaml` declares `appVersion: 1.17.1`.
 - Official matrix pairs AWS plugin `v1.13.x` with Velero `1.17.x`; the deployed
   `v1.11.1` is listed only for Velero `1.15.x`.
-- `velero/velero-plugin-for-aws:v1.13.2` exists in the registry (multi-arch
-  manifest resolves), **not** in the local image cache. Deployment needs a node
-  pull, which is gated by the standing download rule.
+- `velero/velero-plugin-for-aws:v1.13.2` is locally downloaded for the Mac
+  (linux/amd64 digest `sha256:25c3a0a0…`), but node caches still hold only
+  `v1.11.1`; deployment needs a node registry pull. The registry path from
+  worker01 is reachable (`/v2` returns HTTP 401 as expected unauthenticated).
 
 This plugin mismatch is a real risk repair but **not the root cause** of the four
 errors; the OOM kills and the quota admission rejections are.
@@ -107,40 +109,57 @@ Deliberately **not** selected:
 annotation; only the web pods that declare both durable volumes opt in, so the
 shared claim is copied once per backup rather than per replica.
 
-### Data-mover budget — unresolved
+### Resource budget — bounded
 
-`node-agent-config.yaml` sets `memoryLimit: 1Gi` (above the 253MiB observed peak
-and the 256Mi LimitRange default) and `cpuLimit: 250m`, with
-`loadConcurrency.globalConfig: 1` and `prepareQueueLength: 1`.
+`node-agent-config.yaml` sets mover limits 250m/1Gi with memory request 1Gi,
+`loadConcurrency.globalConfig: 1` (per node) and nested `prepareQueueLength: 1`
+(conservatively counted per node too). `values.yaml` pins node-agent pods at
+250m/256Mi and repository maintenance jobs at 250m/256Mi with memory request
+equal to the limit, so each mover/job reserves its full possible footprint
+before scheduling. The live `--repo-maintenance-job-configmap=velero-repo-maintenance`
+is now chart-rendered from Git instead of surviving only as cluster drift.
 
-**`globalConfig` is per node, not a cluster-wide cap.** The live daemonset has
-**2** node-agents (the control-plane node is tainted `CriticalAddonsOnly`), so up
-to two active data movers can run. `prepareQueueLength: 1` is a global queue
-limit for CRs waiting in Accepted/Prepared, and each of those holds a hosting pod
-sized with the same `podResources`.
+Worst-case simultaneous footprint (server rollout surge = 1 extra server pod,
+since Deployment maxSurge rounds up; node-agent DaemonSet has maxSurge 0):
 
-Worst case: 2 nodes × (1 active + 1 prepared) = 4 data-mover pods.
+| Component | Count | CPU limit | Memory limit | CPU request | Memory request |
+|---|---|---|---|---|---|
+| Velero server (+surge) | 2 | 1000m | 1Gi | 100m | 256Mi |
+| node-agent | 2 | 500m | 512Mi | 100m | 128Mi |
+| data movers (active+prepared) | 4 | 1000m | 4Gi | 400m | 4Gi |
+| maintenance jobs | 10 | 2500m | 2.5Gi | 500m | 2.5Gi |
+| **Total** | **18 pods** | **5000m** | **8192Mi** | **1100m** | **7040Mi** |
+| `velero-quota` hard | | 6 | 9Gi | 1500m | 8Gi |
 
-| Component | CPU | Memory |
-|---|---|---|
-| Velero server | 500m | 512Mi |
-| node-agent ×2 | 500m | 512Mi |
-| 4 data-mover pods | 1000m | 4Gi |
-| **Total** | **2000m** | **≈ 5Gi** |
-| Quota hard limit | 2000m | 4Gi |
-| **Remaining** | **0m** | **−1Gi** |
+Headroom: 1000m/1Gi limits, 400m/1152Mi requests, 2 pods. Init-container
+effective requests: the plugin init container inherits LimitRange defaultRequest
+(50m/64Mi), below the server container sums, so the effective pod sizes above
+are unchanged; the LimitRange max (1 CPU/1Gi) still caps unsized containers.
 
-The worst case consumes the entire CPU hard limit and **exceeds the memory hard
-limit**. It also leaves nothing for the recurring kopia repository maintenance
-jobs (250m/256Mi each, currently succeeding). A single active mover per node with
-no prepared pod fits (1500m / 2.5Gi), but that state is not guaranteed by the
-configuration.
+Assumptions and limits:
 
-**This budget is not proven to fit `velero-quota`.** Deployment is therefore
-gated on an explicit decision; no quota change was made. Options: accept a
-single-node backup window with the other node-agent excluded, lower the
-data-mover `memoryLimit`, raise `velero-quota` deliberately, or accept that
-admission failures can still occur under worst-case concurrency.
+- Two schedulable nodes (control-plane tainted). The mover bound is 2 per node
+  because `globalConfig` is per node; prepared movers are counted per node, so
+  if the controller applies `prepareQueueLength` once cluster-wide this budget
+  is conservative.
+- Maintenance streams ≤ `includedNamespaces` (10; 9 repositories live). The
+  validator derives this bound from the schedule, so adding a namespace raises
+  the computed budget and fails CI until the quota is reviewed — the
+  future-growth guard.
+- `velero-quota` is an admission ceiling across both nodes, not reserved node
+  memory: worker request floors at review were 5302Mi/7918Mi and 4882Mi/7918Mi,
+  and existing limits are already overcommitted. Requests make new movers/jobs
+  reserve their full memory footprint; under peak they can still remain
+  Pending, and node memory pressure stays monitored. Re-measure live headroom
+  at the deployment gate.
+- No absolute node-OOM guarantee: existing workloads overcommit and actual
+  usage can exceed requests. This budget bounds the namespace's worst-case
+  admission; it does not reserve cluster memory.
+
+**Halt gate:** if live request headroom on either worker at deployment is below
+one mover request (1Gi memory) plus agent request (64Mi), or the repository
+count exceeds the scheduled namespace count, stop and escalate rather than
+raising the quota further.
 
 ### Compatibility and wiring
 
@@ -152,8 +171,8 @@ admission failures can still occur under worst-case concurrency.
 - Grafana's `podAnnotations` key is a chart passthrough into the pod template;
   verified against the cached `kube-prometheus-stack` 69.6.0 artifact
   (`grafana` subchart 8.10.1) and by rendering the deployment.
-- The plugin pin (`v1.13.2`) remains a separate supported-pair repair; its image
-  pull is still gated by the standing download rule.
+- The plugin pin (`v1.13.2`) remains a separate supported-pair repair; the
+  image is locally downloaded, but nodes still need the registry pull.
 
 ### Deployment gates (explicit)
 
@@ -163,16 +182,21 @@ admission failures can still occur under worst-case concurrency.
    unavailable. This must be scheduled, not treated as a no-op sync.
 2. **Velero restart.** The node-agent reads the ConfigMap at startup; the
    daemonset rolls and Velero restarts.
-3. **Image pull.** `velero-plugin-for-aws:v1.13.2` still needs a node pull.
-4. **Worst-case quota budget is unresolved** (see above). Do not deploy on the
-   assumption that one data mover runs cluster-wide.
-5. **No quota change.** `velero-quota` is untouched; if a future volume needs
-   more, escalate rather than inflate.
+3. **Image availability.** Local download is complete for the Mac
+   (`sha256:25c3a0a0…`); nodes still cache only `v1.11.1`, so deployment
+   performs the node registry pull.
+4. **Live headroom re-measure.** Node resource figures must be current at the
+   deployment gate; a repository count above the scheduled namespace count also
+   trips the halt gate above.
+5. **Quota is computed, not inflated.** `velero-quota` is sized from the frozen
+   worst case; any further raise requires re-running the budget, not extra
+   headroom on its own.
 
 ## Rejected alternatives
 
-- **Enlarging `velero-quota`.** Raises concurrent data-mover pressure on 8 CPU
-  nodes and does not fix OOM kills.
+- **Blindly enlarging `velero-quota`.** The quota is now derived from the
+  frozen worst case; extra ceiling without a budget change adds node pressure
+  and does not fix OOM kills.
 - **Excluding the MinIO and Prometheus namespaces or manifests.** Removes
   unrelated objects from scope and hides the coverage gap instead of stating it.
 - **Backing up the MinIO volume.** Self-referential; the backup store cannot
@@ -183,9 +207,12 @@ documented in `2026-10-15-velero-ownership.md` for the affected namespaces.
 
 ## Tests and verification
 
-- `python3 scripts/tests/test_ci_validate_velero.py` — 9 tests passed.
+- `python3 scripts/tests/test_ci_validate_velero.py` — 21 tests passed.
 - `python3 scripts/ci-validate-velero.py` — passed.
-- `python3 -m unittest discover -s scripts/tests` — 14 tests passed.
+- `python3 -m unittest discover -s scripts/tests` — 26 tests passed.
+- Budget tests freeze the worst case (5000m/8192Mi limits, 1100m/7040Mi
+  requests, 18 pods), fail when the quota is lowered or a mover memory request
+  drops below its limit, and fail when schedule growth outruns the quota.
 - `python3 -m yamllint k8s/infra/velero/values.yaml` and
   `kustomize build k8s/infra/velero` — passed.
 - Regression evidence: the plugin-series test failed before the pin change with
