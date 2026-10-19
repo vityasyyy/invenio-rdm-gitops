@@ -1,7 +1,7 @@
 ---
 description: Engineering worker — general engineering work using the engineering-core skill only
 mode: primary
-model: ollama-cloud/deepseek-v4-flash
+model: openai/gpt-6-luna
 permission:
   edit: allow
   read: allow

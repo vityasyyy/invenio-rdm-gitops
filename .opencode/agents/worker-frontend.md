@@ -1,7 +1,7 @@
 ---
 description: Frontend worker — UI implementation using the frontend-design skill only
 mode: primary
-model: ollama-cloud/deepseek-v4-flash
+model: openai/gpt-6-luna
 permission:
   edit: allow
   read: allow

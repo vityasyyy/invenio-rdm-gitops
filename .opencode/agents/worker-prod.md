@@ -1,7 +1,7 @@
 ---
 description: Production worker — production/infra/reliability work using the production-reliability skill only
 mode: primary
-model: ollama-cloud/deepseek-v4-flash
+model: openai/gpt-6-luna
 permission:
   edit: allow
   read: allow

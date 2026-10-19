@@ -1,7 +1,7 @@
 ---
 description: Review worker — reviews code/diffs/PRs using the code-review skill only
 mode: primary
-model: ollama-cloud/deepseek-v4-flash
+model: openai/gpt-6-luna
 permission:
   edit: deny
   read: allow
