@@ -2,8 +2,8 @@
 
 **Status:** Deployed via PR #147 (merge `3f16f770`); post-merge live checks are
 green. Recovery remains unproven, and the deployment exposed an unexpected
-retention interaction: expired Backup CRs and their stored data were
-garbage-collected. See the deployment evidence and retention sections below.
+retention interaction: three expired Backup CRs disappeared, with storage deletion
+explicitly logged for the August 14 backup. See the evidence below.
 **Scope:** Velero values and data-mover config, backup schedule, pod-template
 opt-in annotations, the Velero CI validator and its tests, this plan.
 Restore procedure is owned separately.
@@ -103,7 +103,7 @@ verification.
 ## Supported plugin pair
 
 - Chart `11.4.0` `Chart.yaml` declares `appVersion: 1.17.1`.
-- Official matrix pairs AWS plugin `v1.13.x` with Velero `1.17.x`; the deployed
+- Official matrix pairs AWS plugin `v1.13.x` with Velero `1.17.x`; the previously deployed
   `v1.11.1` is listed only for Velero `1.15.x`.
 - `velero/velero-plugin-for-aws:v1.13.2` was locally downloaded for the Mac
   and deployed in `3f16f770`: the plugin init container exited 0 with digest
@@ -206,7 +206,7 @@ raising the quota further.
 - The plugin pin (`v1.13.2`) remains a separate supported-pair repair; it is
   deployed and its init container exits 0.
 
-### Deployment gates (all executed in `3f16f770`)
+### Deployment record and future gates
 
 1. **Pod-template rollout.** Adding annotations to `invenio-web` and
    `redis-master` changes their pod templates, so both Deployments roll. Redis

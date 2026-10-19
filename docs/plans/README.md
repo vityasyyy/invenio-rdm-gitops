@@ -9,8 +9,8 @@ discovered during a wave go into `docs/plans/active/` as part of the wave's PR.
 
 | Plan | Branch | PR | Status |
 |---|---|---|---|
-| [Batch 1 recovery](active/2026-10-19-recovery-batch1.md) | feat/139-recovery-batch1 | Pending | Investigation verified; targeted backup policy approved for preparation only. Deployment, image availability, seeded backup and isolated restore remain gated. |
-| [Restore contract](active/2026-10-19-restore-contract.md) | feat/139-recovery-batch1 | Pending | Design only; file restore needs sanitized Pod/PVR path, native CNPG track and isolation/capacity validation. |
+| [Batch 1 recovery](active/2026-10-19-recovery-batch1.md) | feat/139-recovery-batch1 | #147 | Repair deployed and live-verified; expired backup GC surfaced during rollout. Seeded backup and isolated restore remain gated; recovery unproven. |
+| [Restore contract](active/2026-10-19-restore-contract.md) | feat/139-recovery-batch1 | #147 | Design only; file restore needs sanitized Pod/PVR path, native CNPG track and isolation/capacity validation. |
 | [Worker-02 incident](active/2026-10-16-worker02-incident.md) | feat/145-worker02-incident | Pending | Host-maintenance trigger confirmed; monitoring deployment authorized 2026-10-19, verification pending. IT restart policy remains external. |
 | [Alert correctness](active/2026-10-16-alert-truth.md) | feat/145-worker02-incident | Pending | Tested scoped reconciliation, readiness/crash-loop rules and Discord formatting; live verification pending. |
 | [Recovery and logging](active/2026-10-16-recovery-logging-review.md) | feat/145-worker02-incident | Pending | Assessment only; backup/restore and Loki implementation remain separately gated under #139/#140. |

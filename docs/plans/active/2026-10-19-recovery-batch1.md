@@ -2,10 +2,11 @@
 
 ## Status
 
-Two workers authorized for investigation and tested repair preparation. No deployment,
-backup/restore job, seed creation, secret access or object deletion authorized.
-User subsequently approved preparing targeted volume coverage; this is not deployment
-approval. Preserve all existing Backup objects and stored data.
+Investigation and targeted repair preparation were approved, followed by PR #147,
+a measured quota increase and plugin image download. The approved deployment is now
+live-verified. Backup/restore jobs, seed creation, secret access and manual object
+deletion remain unauthorized. Existing TTL automation removed expired backups during
+rollout; the earlier preserve-all expectation was not met.
 
 ## Verified findings
 
@@ -46,7 +47,8 @@ flowchart TD
 ```
 
 Each arrow has a verification gate; the first successful status is not the finish.
-The current authorization ends before deployment and before creating test data.
+The deployment gate has passed; authorization still stops before creating test data
+or running backup/restore jobs.
 
 ## Impact on remaining batches
 
@@ -73,7 +75,7 @@ The current authorization ends before deployment and before creating test data.
 - Deployment PR #147 merged (`3f16f770`); post-merge live verification passed
   (17/17 Apps Synced/Healthy). Recovery remains unproven; seed/backup/restore
   still require approval. The merge exposed a retention interaction: TTL GC
-  expired and deleted three old Backups plus stored data
+  removed three expired Backup CRs; storage deletion is explicitly logged for August 14
   (`2026-10-19-backup-repair.md`). Review retention before any future Velero
   restart or plugin fix.
 - Deploy Verify passed about 6 s before the rollout began, so it did not cover
