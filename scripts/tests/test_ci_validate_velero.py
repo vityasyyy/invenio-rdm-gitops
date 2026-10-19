@@ -22,7 +22,12 @@ UNRELATED_EXCLUSION = {
 
 
 def write_fixture(
-    root, exclusions, resources=("backup-schedule.yaml",), config_name="argocd-cm"
+    root,
+    exclusions,
+    resources=("backup-schedule.yaml",),
+    config_name="argocd-cm",
+    chart_version="11.4.0",
+    plugin_image="velero/velero-plugin-for-aws:v1.13.2",
 ):
     root = Path(root)
     argocd = root / "k8s/infra/argocd/patches/argocd-cm.yaml"
@@ -32,6 +37,19 @@ def write_fixture(
         "kind": "ConfigMap",
         "metadata": {"name": config_name},
         "data": {"resource.exclusions": yaml.safe_dump(exclusions)},
+    }))
+
+    app = root / "argocd/apps/velero.yaml"
+    app.parent.mkdir(parents=True)
+    app.write_text(yaml.safe_dump({
+        "apiVersion": "argoproj.io/v1alpha1",
+        "kind": "Application",
+        "metadata": {"name": "velero", "namespace": "argocd"},
+        "spec": {"sources": [{
+            "chart": "velero",
+            "repoURL": "https://vmware-tanzu.github.io/helm-charts",
+            "targetRevision": chart_version,
+        }]},
     }))
 
     velero = root / "k8s/infra/velero"
@@ -45,6 +63,12 @@ def write_fixture(
         "apiVersion": "velero.io/v1",
         "kind": "Schedule",
         "metadata": {"name": "weekly-infra-backup", "namespace": "velero"},
+    }))
+    (velero / "values.yaml").write_text(yaml.safe_dump({
+        "initContainers": [{
+            "name": "velero-plugin-for-aws",
+            "image": plugin_image,
+        }],
     }))
 
 
@@ -103,6 +127,27 @@ class VeleroValidatorTests(unittest.TestCase):
             result = run_validator(Path(directory))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("backup-schedule.yaml", result.stdout + result.stderr)
+
+    def test_validator_rejects_plugin_series_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            write_fixture(directory, [EXCLUSION], plugin_image="velero/velero-plugin-for-aws:v1.11.1")
+            result = run_validator(Path(directory))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("1.13.x", result.stdout + result.stderr)
+
+    def test_validator_rejects_unmapped_chart_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            write_fixture(directory, [EXCLUSION], chart_version="12.0.0")
+            result = run_validator(Path(directory))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("compatibility mapping", result.stdout + result.stderr)
+
+    def test_validator_rejects_unpinned_plugin_image(self):
+        with tempfile.TemporaryDirectory() as directory:
+            write_fixture(directory, [EXCLUSION], plugin_image="velero/velero-plugin-for-aws")
+            result = run_validator(Path(directory))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must be pinned", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
