@@ -1,5 +1,10 @@
 # Native recovery preflight and fresh production backup (#139)
 
+**Execution update:** the scoped policies deployed through#151 and native recovery
+now passes data checks after documented bounded corrections. See
+[native recovery proof](2026-10-19-native-recovery-proof.md); the remaining text is
+the historical preflight, not the current credential/job state.
+
 Status: fresh production backup verified; dedicated credential SealedSecret reports
 Synced=True without reading its contents. The owner approved deploying two scoped
 network allowances and the native restore after verification. No application sample

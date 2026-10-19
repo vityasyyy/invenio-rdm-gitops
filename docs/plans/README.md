@@ -9,7 +9,8 @@ discovered during a wave go into `docs/plans/active/` as part of the wave's PR.
 
 | Plan | Branch | PR | Status |
 |---|---|---|---|
-| [Native recovery preflight](active/2026-10-19-native-recovery-preflight.md) | feat/139-native-network | Pending | Fresh production backup Completed; credential SealedSecret synced. Exact two-peer/port network additions and subsequent native restore approved; live verification pending. |
+| [Native recovery proof](active/2026-10-19-native-recovery-proof.md) | docs/139-native-proof | Pending | PG16.4 native recovery verified: schema/counts/vocabulary digest match, isolated new PV. Application sample/file consistency and production-schedule monitoring remain unproven. |
+| [Native recovery preflight](active/2026-10-19-native-recovery-preflight.md) | feat/139-native-network | #151 | Scoped network rules deployed and native recovery executed; see later proof and failure/correction record. |
 | [Drill readiness](active/2026-10-19-drill-readiness.md) | docs/139-drill-readiness | Pending | Canary checksum restore verified after approved filter correction; resources retained. Native DB/application recovery and drill-only read credentials remain gated; ten-repository budget reached. |
 | [Batch 1 recovery](active/2026-10-19-recovery-batch1.md) | feat/139-recovery-batch1 | #147 | Repair deployed and live-verified; expired backup GC surfaced during rollout. Seeded backup and isolated restore remain gated; recovery unproven. |
 | [Restore contract](active/2026-10-19-restore-contract.md) | feat/139-recovery-batch1 | #147 | Design only; file restore needs sanitized Pod/PVR path, native CNPG track and isolation/capacity validation. |
