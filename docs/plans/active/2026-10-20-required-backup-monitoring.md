@@ -1,8 +1,9 @@
 # Required production-backup monitoring (#139)
 
-Status: source + regression tests complete; **not deployed**. This change replaces
-canary/manual-maskable freshness with two separate signals: production-scope
-coverage and actual weekly-schedule health.
+Status: partially deployed. #154 applied the source, but the KSM rollout
+OOMKilled at startup; the budget rescue is pending live verification. This
+change replaces canary/manual-maskable freshness with two separate signals:
+production-scope coverage and actual weekly-schedule health.
 
 ## Verified failure mode
 
@@ -34,6 +35,23 @@ flowchart TD
 Both scheduled and approved manual production backups carry
 `backup-scope=infra-and-invenio`; only the generated name proves an actual
 schedule execution.
+
+## Deployment failure and budget rescue (2026-10-20)
+
+The first sync OOMKilled the new KSM pod
+`monitoring-kube-state-metrics-5565b6c4d9-4c6rv` (exit 137) about 8s after
+startup at the 64Mi limit. Its logs showed the custom metric families registered
+after CRD discovery, then the kill; there were no parse errors. The old pod
+`monitoring-kube-state-metrics-67847459bc-fnnjp` stayed Ready, so existing KSM
+collection remained available; that alone does not prove the Velero scrape
+stayed continuous. ArgoCD reported `monitoring` Synced/Progressing until the
+5-minute deploy-verify timeout (job `118440566890`); the other 16 applications
+stayed healthy.
+
+KSM v2.15 starts a cluster-wide CRD informer for custom resource state. The
+optional `resourcePlural` field does not bypass that discovery: `FromConfig`
+resolves every GVK through the CRD cache and overwrites the configured plural.
+No collector rewrite or separate exporter is warranted.
 
 ## Source contract
 
@@ -89,12 +107,18 @@ is caught by `VeleroBackupNeverSucceeded`.
   confirmed kube-prometheus-stack 69.6.0 / KSM 5.30.0 (v2.15.0), the config
   mount/flag, `velero.io` RBAC, and CRD RBAC. No chart download or install was
   performed.
-- KSM limit remains 64Mi; live working set before the change was 29Mi and the
-  collector watches three Velero objects, so no limit change is justified yet.
+- KSM memory limit raised 64Mi -> 128Mi; the request stays 64Mi, so KSM remains
+  Burstable and the extra limit reserves no node memory. This is a bounded
+  startup candidate, not a measured peak: the OOM leaves no usable cAdvisor
+  max-memory sample and the new collector never reached steady state. The
+  monitoring quota has room (requests 2368Mi/6Gi, limits 4800Mi/24Gi). Live
+  steady-state memory must confirm the budget before treating it as settled.
 - Dashboard `00 InvenioRDM Overview` now shows production completion age;
   `02 Data & Backups` shows actual weekly generated runs by phase.
 - `scripts/ci-validate-monitoring.sh` pins the collector config, RBAC, alert
   source terms, and dashboard source.
+- `scripts/tests/test_monitoring_alerts.py` pins the KSM request/limit budget
+  so the 64Mi OOM cannot silently return.
 - `k8s/infra/monitoring/tests/backup-alerts.test.yaml` covers: fresh canary vs
   stale production, fresh manual + failed weekly run, completed weekly run,
   absent metrics, never-run, overdue, in-progress inside 4h then firing after
@@ -108,8 +132,8 @@ namespaces were removed. Velero Backup/Restore/Repository records were preserved
 
 ## Remaining gaps
 
-- Nothing here is applied to the cluster: ArgoCD sync and live metric presence
-  remain unverified.
+- The budget rescue is not applied to the cluster: ArgoCD sync, live KSM
+  readiness, steady-state memory, and custom metric presence remain unverified.
 - Weekly RPO is still 7 days plus the 1-day alert grace; this change makes gaps
   visible, it does not shorten RPO.
 - A legitimate backup still running after 4h pages by design; tune only with
