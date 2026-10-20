@@ -88,35 +88,120 @@ spec:
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
             dashboard: "https://grafana.vityasy.me/d/data-backups"
         - alert: VeleroBackupMetricsMissing
-          expr: absent(velero_backup_last_successful_timestamp)
+          expr: |
+            absent(count(kube_customresource_velero_schedule_status_last_backup_timestamp{
+              schedule="weekly-infra-backup"
+            }))
+            or absent(count(velero_backup_last_successful_timestamp))
           for: 10m
           labels:
             severity: critical
           annotations:
-            summary: "Velero backup success metric is missing"
-            description: "Prometheus has not collected velero_backup_last_successful_timestamp for 10m. Backup freshness cannot be verified, even if the Velero scrape target is up."
+            summary: "Required Velero backup metrics are missing"
+            description: "Prometheus has not collected the required weekly schedule's last-attempt timestamp or Velero's scrape metrics for 10m. Required backup freshness cannot be verified."
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
             dashboard: "https://grafana.vityasy.me/d/data-backups"
         - alert: VeleroBackupNeverSucceeded
-          expr: velero_backup_last_successful_timestamp == 0
+          expr: |
+            absent(count(kube_customresource_velero_backup_completion_timestamp{
+              scope="infra-and-invenio",phase="Completed"
+            }))
+            or
+            max(kube_customresource_velero_schedule_status_last_backup_timestamp{
+              schedule="weekly-infra-backup"
+            }) == 0
           for: 10m
           labels:
             severity: critical
           annotations:
-            summary: "Velero has no successful backup timestamp"
-            description: "Velero reports no successful backup for this series. Verify the backup schedule, storage, and Velero logs."
+            summary: "Required production backup coverage is missing"
+            description: "No Completed production-scope backup has a completion timestamp, or the required weekly schedule reports lastBackup=0. A fresh canary or unlabelled backup does not prove production coverage. Verify scope labels, the Schedule, Velero logs, and storage."
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
             dashboard: "https://grafana.vityasy.me/d/data-backups"
-        - alert: VeleroBackupStale
+        - alert: VeleroScheduledBackupOverdue
           expr: |
-            velero_backup_last_successful_timestamp > 0
-            and (time() - velero_backup_last_successful_timestamp > 8 * 24 * 3600)
+            max(kube_customresource_velero_schedule_status_last_backup_timestamp{
+              schedule="weekly-infra-backup"
+            }) > 0
+            and (
+              time() - max(kube_customresource_velero_schedule_status_last_backup_timestamp{
+                schedule="weekly-infra-backup"
+              }) > 8 * 24 * 3600
+            )
           for: 1h
           labels:
             severity: warning
           annotations:
-            summary: "No Velero backup in over 8 days"
-            description: "The last successful Velero backup for this series was more than 8 days ago. Verify the Velero schedule and storage."
+            summary: "Required weekly Velero schedule is overdue"
+            description: "The required weekly schedule has not started a run for more than 8 days. Fresh manual production coverage does not prove the schedule is executing. Verify the Schedule and Velero logs."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+            dashboard: "https://grafana.vityasy.me/d/data-backups"
+        - alert: VeleroBackupStale
+          expr: |
+            (time() - topk(1, kube_customresource_velero_backup_completion_timestamp{
+              scope="infra-and-invenio",phase="Completed"
+            })) > 8 * 24 * 3600
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Production backup coverage is over 8 days old"
+            description: "The newest Completed production-scope Velero Backup completed more than 8 days ago. CR resync or a fresh canary backup cannot satisfy production coverage; verify the backup schedule and storage."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+            dashboard: "https://grafana.vityasy.me/d/data-backups"
+        - alert: VeleroScheduledBackupFailed
+          expr: |
+            max by (schedule) (
+              (
+                abs(
+                  kube_customresource_velero_backup_start_timestamp{
+                    backup=~"weekly-infra-backup-[0-9]{14}",
+                    schedule="weekly-infra-backup",
+                    scope="infra-and-invenio",
+                    phase=~"PartiallyFailed|Failed|FailedValidation"
+                  }
+                  - on (schedule) group_left()
+                  kube_customresource_velero_schedule_status_last_backup_timestamp{
+                    schedule="weekly-infra-backup"
+                  }
+                ) <= 300
+              )
+              or
+              (
+                (
+                  kube_customresource_velero_schedule_status_last_backup_timestamp{
+                    schedule="weekly-infra-backup"
+                  } > 0
+                  unless on (schedule)
+                  (
+                    abs(
+                      kube_customresource_velero_backup_start_timestamp{
+                        backup=~"weekly-infra-backup-[0-9]{14}",
+                        schedule="weekly-infra-backup",
+                        scope="infra-and-invenio",
+                        phase="Completed"
+                      }
+                      - on (schedule) group_left()
+                      kube_customresource_velero_schedule_status_last_backup_timestamp{
+                        schedule="weekly-infra-backup"
+                      }
+                    ) <= 300
+                  )
+                )
+                and on (schedule)
+                (
+                  (time() - kube_customresource_velero_schedule_status_last_backup_timestamp{
+                    schedule="weekly-infra-backup"
+                  }) > 4 * 3600
+                )
+              )
+            )
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Required weekly Velero schedule did not complete"
+            description: "The latest actual weekly schedule run ended in a terminal failure, or has no Completed generated backup 4h after starting. Manual and canary backups do not satisfy this schedule. Inspect the Backup and Velero logs."
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
             dashboard: "https://grafana.vityasy.me/d/data-backups"
         - alert: PostgreSQLHighConnections

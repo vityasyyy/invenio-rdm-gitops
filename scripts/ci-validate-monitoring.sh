@@ -59,8 +59,10 @@ if panels_seen != 4:
     err(f"want exactly 4 dashboards, found {panels_seen}")
 if any("velero_backup_timestamp" in expr for expr in dashboard_exprs):
     err("Grafana dashboard query uses nonexistent velero_backup_timestamp")
-if not any("velero_backup_last_successful_timestamp" in expr for expr in dashboard_exprs):
-    err("Grafana dashboards must query velero_backup_last_successful_timestamp")
+if not any("kube_customresource_velero_backup_completion_timestamp" in expr for expr in dashboard_exprs):
+    err("Grafana dashboards must query required production completion timestamps")
+if any("time() - velero_backup_last_successful_timestamp" in expr for expr in dashboard_exprs):
+    err("Grafana dashboards must not derive freshness from the global success gauge")
 
 rules = yaml.safe_load(open(os.path.join(mon, "alerts.yaml")))["spec"]["groups"]
 rule_test_paths = sorted(
@@ -119,6 +121,40 @@ if not any(t.get("key") == "CriticalAddonsOnly" and t.get("operator") == "Exists
     err("prometheus-node-exporter.tolerations must tolerate CriticalAddonsOnly:NoExecute")
 if (values.get("nodeExporter") or {}).get("tolerations"):
     err("nodeExporter.tolerations is not the prometheus-node-exporter subchart key")
+
+# Issue #139: required backup freshness needs Velero Backup/Schedule status,
+# not CR creation timestamps (storage resync recreates old CRs).
+ksm = values.get("kube-state-metrics") or {}
+crs = ksm.get("customResourceState") or {}
+if crs.get("enabled") is not True:
+    err("kube-state-metrics.customResourceState.enabled must be true")
+else:
+    crs_config = crs.get("config") or {}
+    crs_resources = {
+        item.get("groupVersionKind", {}).get("kind"): item
+        for item in (crs_config.get("spec") or {}).get("resources", [])
+    }
+    backup_metrics = {
+        metric.get("name")
+        for metric in (crs_resources.get("Backup") or {}).get("metrics", [])
+    }
+    schedule_metrics = {
+        metric.get("name")
+        for metric in (crs_resources.get("Schedule") or {}).get("metrics", [])
+    }
+    if not {"velero_backup_creation_timestamp",
+            "velero_backup_start_timestamp",
+            "velero_backup_completion_timestamp"} <= backup_metrics:
+        err("KSM Backup custom metrics must expose creation, start and completion timestamps")
+    if "velero_schedule_status_last_backup_timestamp" not in schedule_metrics:
+        err("KSM Schedule custom metrics must expose status.lastBackup")
+    extra_rules = (ksm.get("rbac") or {}).get("extraRules") or []
+    if not any(
+        "velero.io" in rule.get("apiGroups", [])
+        and {"backups", "schedules"} <= set(rule.get("resources", []))
+        for rule in extra_rules
+    ):
+        err("KSM RBAC must allow list/watch on velero.io backups and schedules")
 try:
     cr = yaml.safe_load(open(os.path.join(mon, "discord-receivers.yaml")))
 except FileNotFoundError:
