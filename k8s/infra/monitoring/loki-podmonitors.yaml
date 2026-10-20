@@ -16,6 +16,10 @@ spec:
       path: /metrics
       interval: 30s
       scrapeTimeout: 10s
+      relabelings:
+        - action: replace
+          targetLabel: job
+          replacement: loki
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
@@ -34,3 +38,7 @@ spec:
       path: /metrics
       interval: 30s
       scrapeTimeout: 10s
+      relabelings:
+        - action: replace
+          targetLabel: job
+          replacement: loki-canary

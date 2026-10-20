@@ -431,6 +431,9 @@ spec:
             or absent(up{job="loki-canary"})
             or up{job="loki-canary"} == 0
             or absent(loki_canary_entries_total{job="loki-canary"})
+            or absent(loki_canary_missing_entries_total{job="loki-canary"})
+            or absent(loki_canary_websocket_missing_entries_total{job="loki-canary"})
+            or absent(loki_canary_unexpected_entries_total{job="loki-canary"})
           for: 10m
           labels:
             severity: critical
@@ -455,6 +458,9 @@ spec:
         - alert: LokiPushRequestsFailingRecent
           expr: |
             sum(increase(
+              loki_write_batch_retries_total{job="alloy"}[10m]
+            )) > 0
+            or sum(increase(
               loki_write_request_duration_seconds_count{
                 job="alloy",status_code=~"5.."
               }[10m]
@@ -463,17 +469,19 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "Alloy log pushes are receiving server errors"
-            description: "Alloy received 5xx responses from Loki in the last 10m. Entries may be delayed or lost while retries continue; check Loki health, disk, and limits."
+            summary: "Alloy log pushes are retrying or failing"
+            description: "Alloy retried log pushes, or received 5xx responses from Loki, in the last 10m. Network failures retry without a status code; entries may be delayed or lost while retries continue. Check Loki health, disk, and limits."
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
             dashboard: "https://grafana.vityasy.me/d/platform-health"
         - alert: LokiCanaryEndToEndBroken
           expr: |
             sum(increase(
               loki_canary_missing_entries_total{job="loki-canary"}[30m]
-            )) + sum(increase(
+            )) > 0
+            or sum(increase(
               loki_canary_websocket_missing_entries_total{job="loki-canary"}[30m]
-            )) + sum(increase(
+            )) > 0
+            or sum(increase(
               loki_canary_unexpected_entries_total{job="loki-canary"}[30m]
             )) > 0
             or (
@@ -483,11 +491,18 @@ spec:
               and on()
               max(up{job="loki-canary"}) == 1
             )
+            or (
+              sum(increase(
+                loki_canary_entries_total{job="loki-canary"}[15m]
+              )) == 0
+              and on()
+              max(up{job="loki-canary"}) == 1
+            )
           for: 5m
           labels:
             severity: critical
           annotations:
             summary: "Loki canary end-to-end delivery is broken"
-            description: "The canary wrote entries it could not read back, read unexpected entries, or Loki received no lines while the canary was pushing. The canary writes continuously, so an idle application does not explain this."
+            description: "The canary wrote entries it could not read back, read unexpected entries, stopped sending entries while running, or Loki received no lines while the canary was pushing. The canary writes continuously, so an idle or busy application does not explain this."
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
             dashboard: "https://grafana.vityasy.me/d/platform-health"

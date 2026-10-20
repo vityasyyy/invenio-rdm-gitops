@@ -322,6 +322,10 @@ class AlloyPodMonitorTest(unittest.TestCase):
         endpoint = monitor["spec"]["podMetricsEndpoints"][0]
         self.assertEqual(endpoint["port"], "http-metrics")
         self.assertEqual(endpoint["path"], "/metrics")
+        self.assertEqual(
+            endpoint["relabelings"],
+            [{"action": "replace", "targetLabel": "job", "replacement": "alloy"}],
+        )
 
 
 class AlloyKustomizationTest(unittest.TestCase):

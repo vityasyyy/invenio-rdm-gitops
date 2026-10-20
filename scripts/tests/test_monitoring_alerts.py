@@ -409,6 +409,10 @@ class MonitoringAlertTests(unittest.TestCase):
                 self.assertEqual(len(endpoints), 1)
                 self.assertEqual(endpoints[0]["port"], "http-metrics")
                 self.assertEqual(endpoints[0]["path"], "/metrics")
+                self.assertEqual(
+                    endpoints[0]["relabelings"],
+                    [{"action": "replace", "targetLabel": "job", "replacement": name}],
+                )
         kustomization = yaml.safe_load(
             (MONITORING / "kustomization.yaml").read_text()
         )
@@ -449,15 +453,25 @@ class MonitoringAlertTests(unittest.TestCase):
         push = rules["LokiPushRequestsFailingRecent"]["expr"]
         self.assertIn("increase(", push)
         self.assertIn("loki_write_request_duration_seconds_count", push)
+        self.assertIn("loki_write_batch_retries_total", push)
+        self.assertIn('status_code=~"5.."', push)
         canary = rules["LokiCanaryEndToEndBroken"]["expr"]
-        self.assertIn("increase(", canary)
         self.assertIn("loki_canary_missing_entries_total", canary)
+        self.assertIn("loki_canary_websocket_missing_entries_total", canary)
+        self.assertIn("loki_canary_unexpected_entries_total", canary)
         self.assertIn("loki_distributor_lines_received_total", canary)
+        self.assertIn("loki_canary_entries_total", canary)
         self.assertIn('up{job="loki-canary"}', canary)
         self.assertNotIn("invenio", canary)
         missing = rules["LogPipelineMetricsMissing"]["expr"]
         self.assertIn('absent(up{job="alloy"})', missing)
-        self.assertIn("absent(loki_canary_entries_total", missing)
+        for family in (
+            "loki_canary_entries_total",
+            "loki_canary_missing_entries_total",
+            "loki_canary_websocket_missing_entries_total",
+            "loki_canary_unexpected_entries_total",
+        ):
+            self.assertIn(f"absent({family}", missing)
 
     @unittest.skipUnless(shutil.which("amtool"), "amtool is not installed")
     def test_grouped_alerts_have_a_blank_line_separator(self):
