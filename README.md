@@ -309,6 +309,9 @@ Collector rollout/restarts may replay logs; this is not an audit-log guarantee.
 Log-pipeline alerts cover missing scrape signals, recent drops, push retries/server
 errors and a stalled or failing canary. They do not treat a quiet application as
 failure or a historical cumulative drop count as new loss.
+The canary remembers acknowledgements for two minutes to recognize replay after
+Loki's normal hourly tail reconnect. Websocket-missing fallback therefore starts
+after two minutes; the final missing-entry query window remains five minutes.
 
 Discord notifications identify `[FIRING]` or `[RESOLVED]` in their title and
 each alert item. A mixed group stays `[FIRING]` while any member is active;
