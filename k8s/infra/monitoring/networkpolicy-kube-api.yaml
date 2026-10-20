@@ -6,7 +6,12 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
-  podSelector: {}
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: NotIn
+        values:
+          - alloy
   policyTypes:
     - Egress
   egress:
