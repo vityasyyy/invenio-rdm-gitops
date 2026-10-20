@@ -10,6 +10,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 MONITORING = ROOT / "k8s/infra/monitoring"
+MONITORING_ALLOW = ROOT / "k8s/infra/security/network-policies/monitoring-allow.yaml"
 EXPECTED_RULES = {
     "app-slo": sorted({
         "InvenioWebReplicasUnavailable",
@@ -44,6 +45,12 @@ EXPECTED_RULES = {
         "KubeStateMetricsDown",
         "AlertmanagerNotificationsFailing",
         "AlertmanagerConfigFailed",
+    }),
+    "log-pipeline": sorted({
+        "LogPipelineMetricsMissing",
+        "LokiWriteDroppedEntriesRecent",
+        "LokiPushRequestsFailingRecent",
+        "LokiCanaryEndToEndBroken",
     }),
 }
 
@@ -375,6 +382,96 @@ class MonitoringAlertTests(unittest.TestCase):
                 rendered = render(message, {})
                 self.assertEqual(rendered, expected_without_annotations)
                 self.assertNotIn(r"\n", rendered)
+
+    def test_log_pipeline_pod_monitors_use_release_label_and_exact_ports(self):
+        monitors = {
+            doc["metadata"]["name"]: doc
+            for doc in yaml.safe_load_all(
+                (MONITORING / "loki-podmonitors.yaml").read_text()
+            )
+            if doc
+        }
+        self.assertEqual(set(monitors), {"loki", "loki-canary"})
+        for name, component in (("loki", "single-binary"), ("loki-canary", "canary")):
+            with self.subTest(monitor=name):
+                monitor = monitors[name]
+                self.assertEqual(monitor["kind"], "PodMonitor")
+                self.assertEqual(monitor["metadata"]["namespace"], "monitoring")
+                self.assertEqual(monitor["metadata"]["labels"], {"release": "monitoring"})
+                self.assertEqual(
+                    monitor["spec"]["selector"]["matchLabels"],
+                    {
+                        "app.kubernetes.io/name": "loki",
+                        "app.kubernetes.io/component": component,
+                    },
+                )
+                endpoints = monitor["spec"]["podMetricsEndpoints"]
+                self.assertEqual(len(endpoints), 1)
+                self.assertEqual(endpoints[0]["port"], "http-metrics")
+                self.assertEqual(endpoints[0]["path"], "/metrics")
+                self.assertEqual(
+                    endpoints[0]["relabelings"],
+                    [{"action": "replace", "targetLabel": "job", "replacement": name}],
+                )
+        kustomization = yaml.safe_load(
+            (MONITORING / "kustomization.yaml").read_text()
+        )
+        self.assertIn("loki-podmonitors.yaml", kustomization["resources"])
+
+    def test_log_pipeline_scrape_network_policy_is_prometheus_only(self):
+        policies = {
+            doc["metadata"]["name"]: doc
+            for doc in yaml.safe_load_all(MONITORING_ALLOW.read_text())
+            if doc
+        }
+        internal = policies["allow-monitoring-internal"]["spec"]["podSelector"]
+        self.assertEqual(
+            internal["matchExpressions"],
+            [
+                {
+                    "key": "app.kubernetes.io/name",
+                    "operator": "NotIn",
+                    "values": ["alloy"],
+                }
+            ],
+        )
+        egress = policies["allow-prometheus-egress"]["spec"]["egress"][0]
+        self.assertTrue(
+            {12345, 3100, 3500} <= {port["port"] for port in egress["ports"]}
+        )
+
+    def test_log_pipeline_alerts_use_recent_increases_not_quiet_app_traffic(self):
+        rules = {
+            rule["alert"]: rule
+            for group in self.alerts["spec"]["groups"]
+            if group["name"] == "log-pipeline"
+            for rule in group["rules"]
+        }
+        dropped = rules["LokiWriteDroppedEntriesRecent"]["expr"]
+        self.assertIn("increase(", dropped)
+        self.assertIn('loki_write_dropped_entries_total{job="alloy"}[30m]', dropped)
+        push = rules["LokiPushRequestsFailingRecent"]["expr"]
+        self.assertIn("increase(", push)
+        self.assertIn("loki_write_request_duration_seconds_count", push)
+        self.assertIn("loki_write_batch_retries_total", push)
+        self.assertIn('status_code=~"5.."', push)
+        canary = rules["LokiCanaryEndToEndBroken"]["expr"]
+        self.assertIn("loki_canary_missing_entries_total", canary)
+        self.assertIn("loki_canary_websocket_missing_entries_total", canary)
+        self.assertIn("loki_canary_unexpected_entries_total", canary)
+        self.assertIn("loki_distributor_lines_received_total", canary)
+        self.assertIn("loki_canary_entries_total", canary)
+        self.assertIn('up{job="loki-canary"}', canary)
+        self.assertNotIn("invenio", canary)
+        missing = rules["LogPipelineMetricsMissing"]["expr"]
+        self.assertIn('absent(up{job="alloy"})', missing)
+        for family in (
+            "loki_canary_entries_total",
+            "loki_canary_missing_entries_total",
+            "loki_canary_websocket_missing_entries_total",
+            "loki_canary_unexpected_entries_total",
+        ):
+            self.assertIn(f"absent({family}", missing)
 
     @unittest.skipUnless(shutil.which("amtool"), "amtool is not installed")
     def test_grouped_alerts_have_a_blank_line_separator(self):

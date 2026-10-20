@@ -10,6 +10,7 @@ resources:
   - discord-receivers.yaml
   - alertmanager-egress-netpol.yaml
   - loki-networkpolicy.yaml
+  - loki-podmonitors.yaml
   - monitoring-pipecheck.yaml
   - pipecheck-egress-netpol.yaml
   - traefik-servicemonitor.yaml

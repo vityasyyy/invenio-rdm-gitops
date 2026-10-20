@@ -20,14 +20,20 @@ spec:
         - port: 80
           protocol: TCP
 ---
-# Allow all monitoring components to communicate internally
+# Allow monitoring components to communicate internally. Alloy is excluded so
+# its UI (:12345) is reachable only from Prometheus, per its own policy.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-monitoring-internal
   namespace: monitoring
 spec:
-  podSelector: {}
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: NotIn
+        values:
+          - alloy
   policyTypes:
     - Ingress
   ingress:
@@ -90,6 +96,12 @@ spec:
         - port: 9153
           protocol: TCP
         - port: 10250
+          protocol: TCP
+        - port: 12345
+          protocol: TCP
+        - port: 3100
+          protocol: TCP
+        - port: 3500
           protocol: TCP
     # Issue #119: host-network scrape targets. Kubelet :10250 (all nodes),
     # node-exporter :9100 (hostNetwork DaemonSet, so the destination is the

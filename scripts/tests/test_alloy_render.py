@@ -14,6 +14,8 @@ KUSTOMIZATION_PATH = ROOT / "k8s/infra/alloy/kustomization.yaml"
 MONITORING_VALUES_PATH = ROOT / "k8s/infra/monitoring/values.yaml"
 MONITORING_API_NETPOL_PATH = ROOT / "k8s/infra/monitoring/networkpolicy-kube-api.yaml"
 MONITORING_EGRESS_PATH = ROOT / "k8s/infra/security/monitoring-egress.yaml"
+MONITORING_ALLOW_PATH = ROOT / "k8s/infra/security/network-policies/monitoring-allow.yaml"
+PODMONITOR_PATH = ROOT / "k8s/infra/alloy/podmonitor.yaml"
 
 
 def load_yaml(path):
@@ -94,10 +96,15 @@ class AlloyValuesTest(unittest.TestCase):
         self.assertFalse(self.values["serviceMonitor"]["enabled"])
         self.assertFalse(self.values["ingress"]["enabled"])
 
-    def test_network_policy_allows_only_dns_api_and_loki(self):
+    def test_network_policy_allows_only_prometheus_metrics_dns_api_and_loki(self):
         policy = self.values["networkPolicy"]
         self.assertTrue(policy["enabled"])
-        self.assertEqual(policy["ingress"], [])
+        self.assertEqual(len(policy["ingress"]), 1)
+        self.assertEqual(
+            policy["ingress"][0]["from"],
+            [{"podSelector": {"matchLabels": {"app.kubernetes.io/name": "prometheus"}}}],
+        )
+        self.assertEqual({port["port"] for port in policy["ingress"][0]["ports"]}, {12345})
         self.assertEqual(len(policy["egress"]), 3)
         self.assertEqual({port["port"] for port in policy["egress"][0]["ports"]}, {53})
         self.assertEqual({port["port"] for port in policy["egress"][1]["ports"]}, {443, 6443})
@@ -199,10 +206,16 @@ class AlloyRenderTest(unittest.TestCase):
         pod = self.by_kind_name[("Deployment", "alloy")]["spec"]["template"]["spec"]
         self.assertEqual([container["name"] for container in pod["containers"]], ["alloy"])
 
-    def test_network_policy_denies_ingress_and_scopes_egress(self):
+    def test_network_policy_scopes_ingress_and_egress(self):
         policy = self.by_kind_name[("NetworkPolicy", "alloy")]["spec"]
         self.assertEqual(policy["policyTypes"], ["Ingress", "Egress"])
-        self.assertNotIn("ingress", policy)
+        ingress = policy["ingress"]
+        self.assertEqual(len(ingress), 1)
+        self.assertEqual(
+            ingress[0]["from"],
+            [{"podSelector": {"matchLabels": {"app.kubernetes.io/name": "prometheus"}}}],
+        )
+        self.assertEqual({port["port"] for port in ingress[0]["ports"]}, {12345})
         self.assertEqual(len(policy["egress"]), 3)
         self.assertEqual({port["port"] for port in policy["egress"][0]["ports"]}, {53})
         self.assertEqual({port["port"] for port in policy["egress"][1]["ports"]}, {443, 6443})
@@ -239,10 +252,11 @@ class AlloyBroadPolicyUnionTest(unittest.TestCase):
         expression = selector["matchExpressions"][0]
         return app_name not in expression["values"]
 
-    def test_broad_api_policies_exclude_alloy_but_cover_other_pods(self):
+    def test_broad_policies_exclude_alloy_but_cover_other_pods(self):
         policies = [
             self.load_policy(MONITORING_API_NETPOL_PATH, "allow-monitoring-kube-api"),
             self.load_policy(MONITORING_EGRESS_PATH, "allow-monitoring-egress-to-internet"),
+            self.load_policy(MONITORING_ALLOW_PATH, "allow-monitoring-internal"),
         ]
         for policy in policies:
             with self.subTest(policy=policy["metadata"]["name"]):
@@ -295,10 +309,29 @@ class AlloyRBACTest(unittest.TestCase):
         self.assertNotIn("ClusterRoleBinding", kinds)
 
 
+class AlloyPodMonitorTest(unittest.TestCase):
+    def test_scrapes_the_pod_metrics_port_without_a_service(self):
+        monitor = load_yaml(PODMONITOR_PATH)
+        self.assertEqual(monitor["kind"], "PodMonitor")
+        self.assertEqual(monitor["metadata"]["namespace"], "monitoring")
+        self.assertEqual(monitor["metadata"]["labels"], {"release": "monitoring"})
+        self.assertEqual(
+            monitor["spec"]["selector"]["matchLabels"],
+            {"app.kubernetes.io/name": "alloy", "app.kubernetes.io/instance": "alloy"},
+        )
+        endpoint = monitor["spec"]["podMetricsEndpoints"][0]
+        self.assertEqual(endpoint["port"], "http-metrics")
+        self.assertEqual(endpoint["path"], "/metrics")
+        self.assertEqual(
+            endpoint["relabelings"],
+            [{"action": "replace", "targetLabel": "job", "replacement": "alloy"}],
+        )
+
+
 class AlloyKustomizationTest(unittest.TestCase):
-    def test_applies_only_rbac(self):
+    def test_applies_rbac_and_pod_monitor(self):
         kustomization = load_yaml(KUSTOMIZATION_PATH)
-        self.assertEqual(kustomization["resources"], ["rbac.yaml"])
+        self.assertEqual(kustomization["resources"], ["podmonitor.yaml", "rbac.yaml"])
 
 
 class GrafanaLokiDatasourceTest(unittest.TestCase):
