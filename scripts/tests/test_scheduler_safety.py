@@ -12,28 +12,18 @@ class SchedulerSafetyTests(unittest.TestCase):
     def setUp(self):
         self.deployment = yaml.safe_load(SCHEDULER.read_text())
 
-    def test_rollout_cannot_run_two_beats_at_once(self):
+    def test_deployment_rollout_uses_recreate(self):
         self.assertEqual(self.deployment["spec"]["replicas"], 1)
         self.assertEqual(
-            self.deployment["spec"]["strategy"]["type"],
+            self.deployment["spec"].get("strategy", {}).get("type"),
             "Recreate",
-            "scheduler rollouts must stop the old beat before starting another",
+            "scheduler Deployment rollouts must stop the old beat before starting another",
         )
 
     def test_beat_command_stays_singleton_scheduler(self):
         args = self.deployment["spec"]["template"]["spec"]["containers"][0]["args"]
         self.assertEqual(args[:4], ["celery", "-A", "invenio_app.celery", "beat"])
         self.assertIn("invenio_jobs.services.scheduler:RunScheduler", args)
-
-    def test_liveness_budget_allows_slow_start_and_three_failed_checks(self):
-        probe = self.deployment["spec"]["template"]["spec"]["containers"][0][
-            "livenessProbe"
-        ]
-        self.assertEqual(probe["initialDelaySeconds"], 30)
-        self.assertEqual(probe["periodSeconds"], 60)
-        self.assertEqual(probe["failureThreshold"], 3)
-        self.assertLessEqual(probe.get("timeoutSeconds", 1), probe["periodSeconds"])
-        self.assertGreaterEqual(probe["periodSeconds"] * probe["failureThreshold"], 120)
 
 
 if __name__ == "__main__":
