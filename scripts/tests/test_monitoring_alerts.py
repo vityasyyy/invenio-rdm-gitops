@@ -22,6 +22,8 @@ EXPECTED_RULES = {
         "VeleroBackupMetricsMissing",
         "VeleroBackupNeverSucceeded",
         "VeleroBackupStale",
+        "VeleroScheduledBackupFailed",
+        "VeleroScheduledBackupOverdue",
         "PostgreSQLHighConnections",
         "CNPGReplicationLagHigh",
         "CNPGBackupStale",
@@ -121,6 +123,80 @@ class MonitoringAlertTests(unittest.TestCase):
         self.assertEqual(
             metadata["annotations"],
             {"argocd.argoproj.io/sync-options": "Replace=true"},
+        )
+
+    def test_required_backup_signals_use_velero_status_not_cr_creation(self):
+        values = yaml.safe_load((MONITORING / "values.yaml").read_text())
+        ksm = values["kube-state-metrics"]
+        state = ksm["customResourceState"]
+        self.assertTrue(state["enabled"])
+        resources = {
+            resource["groupVersionKind"]["kind"]: resource
+            for resource in state["config"]["spec"]["resources"]
+        }
+        backup_metrics = {
+            metric["name"] for metric in resources["Backup"]["metrics"]
+        }
+        schedule_metrics = {
+            metric["name"] for metric in resources["Schedule"]["metrics"]
+        }
+        self.assertIn("velero_backup_completion_timestamp", backup_metrics)
+        self.assertIn("velero_backup_start_timestamp", backup_metrics)
+        self.assertIn("velero_schedule_status_last_backup_timestamp", schedule_metrics)
+
+        rules = {
+            rule["alert"]: rule["expr"]
+            for group in self.alerts["spec"]["groups"]
+            for rule in group.get("rules", [])
+            if "alert" in rule
+        }
+        self.assertIn("velero_backup_completion_timestamp", rules["VeleroBackupStale"])
+        self.assertNotIn(
+            "velero_backup_creation_timestamp", rules["VeleroBackupStale"]
+        )
+        self.assertIn(
+            "velero_backup_start_timestamp", rules["VeleroScheduledBackupFailed"]
+        )
+        self.assertIn(
+            'backup=~"weekly-infra-backup-[0-9]{14}"',
+            rules["VeleroScheduledBackupFailed"],
+        )
+        self.assertIn(
+            'schedule="weekly-infra-backup"',
+            rules["VeleroBackupMetricsMissing"],
+        )
+
+        extra_rules = ksm["rbac"]["extraRules"]
+        self.assertTrue(
+            any(
+                "velero.io" in rule.get("apiGroups", [])
+                and {"backups", "schedules"} <= set(rule.get("resources", []))
+                for rule in extra_rules
+            )
+        )
+
+    def test_backup_dashboard_uses_completion_not_global_success(self):
+        dashboards = [
+            doc for doc in yaml.safe_load_all(
+                (MONITORING / "grafana-dashboards.yaml").read_text()
+            ) if doc
+        ]
+        exprs = [
+            target["expr"]
+            for doc in dashboards
+            for data in (doc.get("data") or {}).values()
+            for panel in json.loads(data)["panels"]
+            for target in panel.get("targets", [])
+            if "expr" in target
+        ]
+        self.assertTrue(
+            any("velero_backup_completion_timestamp" in expr for expr in exprs)
+        )
+        self.assertFalse(
+            any(
+                "time() - velero_backup_last_successful_timestamp" in expr
+                for expr in exprs
+            )
         )
 
     @unittest.skipUnless(shutil.which("amtool"), "amtool is not installed")

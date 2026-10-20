@@ -172,6 +172,64 @@ kube-state-metrics:
       memory: 64Mi
     limits:
       memory: 64Mi
+  # Velero Backup/Schedule state comes from the installed KSM v2.15 custom
+  # resource collector. The chart adds CRD list/watch RBAC automatically.
+  rbac:
+    extraRules:
+      - apiGroups: ["velero.io"]
+        resources: ["backups", "schedules"]
+        verbs: ["list", "watch"]
+  customResourceState:
+    enabled: true
+    config:
+      kind: CustomResourceStateMetrics
+      spec:
+        resources:
+          - groupVersionKind:
+              group: velero.io
+              version: v1
+              kind: Backup
+            labelsFromPath:
+              backup: [metadata, name]
+              namespace: [metadata, namespace]
+              schedule: [metadata, labels, velero.io/schedule-name]
+              scope: [metadata, labels, backup-scope]
+              phase: [status, phase]
+            metrics:
+              - name: velero_backup_creation_timestamp
+                help: Velero Backup CR creation time. Resync can reset this; do not use for backup freshness.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [metadata, creationTimestamp]
+              - name: velero_backup_start_timestamp
+                help: Velero Backup actual start time from status.startTimestamp.
+                errorLogV: 10
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, startTimestamp]
+              - name: velero_backup_completion_timestamp
+                help: Velero Backup completion time from status.completionTimestamp for terminal phases.
+                errorLogV: 10
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, completionTimestamp]
+          - groupVersionKind:
+              group: velero.io
+              version: v1
+              kind: Schedule
+            labelsFromPath:
+              schedule: [metadata, name]
+              namespace: [metadata, namespace]
+            metrics:
+              - name: velero_schedule_status_last_backup_timestamp
+                help: Last actual execution time of the Velero Schedule.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, lastBackup]
 
 # Node Exporter
 nodeExporter:

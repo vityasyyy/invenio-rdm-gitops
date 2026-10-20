@@ -294,12 +294,12 @@ data:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "(time() - velero_backup_last_successful_timestamp) / 3600",
-              "legendFormat": "hours",
+              "expr": "(time() - topk(1, kube_customresource_velero_backup_completion_timestamp{scope=\"infra-and-invenio\",phase=\"Completed\"})) / 3600",
+              "legendFormat": "production scope",
               "refId": "A"
             }
           ],
-          "title": "Velero last success age (h)",
+          "title": "Production backup age (h)",
           "type": "stat"
         },
         {
@@ -1632,12 +1632,12 @@ data:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "sum by (schedule) (increase(velero_backup_success_total[24h]))",
-              "legendFormat": "{{schedule}}",
+              "expr": "count by (phase) (kube_customresource_velero_backup_start_timestamp{backup=~\"weekly-infra-backup-[0-9]{14}\",scope=\"infra-and-invenio\"} > time() - 24 * 3600)",
+              "legendFormat": "{{phase}}",
               "refId": "A"
             }
           ],
-          "title": "Successful Backups by Schedule (24h)",
+          "title": "Required weekly runs by phase (24h)",
           "type": "timeseries"
         },
         {
