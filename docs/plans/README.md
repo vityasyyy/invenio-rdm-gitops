@@ -9,6 +9,7 @@ discovered during a wave go into `docs/plans/active/` as part of the wave's PR.
 
 | Plan | Branch | PR | Status |
 |---|---|---|---|
+| [Required backup monitoring](active/2026-10-20-required-backup-monitoring.md) | fix/139-backup-monitoring-integration | Pending | Production coverage and actual weekly execution separated; deployment approval and live verification pending. |
 | [Recovery closeout wave](active/2026-10-20-recovery-closeout-wave.md) | feat/139-wave1-closeout | Pending | Three approved drill namespaces removed; backup evidence preserved. Temporary-rule removal and independent backup-freshness repair in progress. |
 | [Drill closeout](active/2026-10-20-drill-closeout.md) | feat/139-wave1-closeout | Pending | Exact drill inventory verified; three Retain PVs/backing directories preserved, MinIO backend key revocation remains owner action. |
 | [Native recovery proof](active/2026-10-19-native-recovery-proof.md) | docs/139-native-proof | Pending | PG16.4 native recovery verified: schema/counts/vocabulary digest match, isolated new PV. Application sample/file consistency and production-schedule monitoring remain unproven. |

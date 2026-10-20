@@ -58,3 +58,15 @@ UIDs remain unchanged. Seventeen Applications Synced/Healthy, production databas
 healthy and public ping200 after cleanup. Backend key revocation is not implied by
 namespace Secret removal. Prometheus alert-resolution verification remains pending
 because the lead's two read-only query transports failed; no alert was silenced.
+
+Subsequent worker query returned no drill quota alerts. Cleanup PR #153 merged at
+`9914811`; Deploy Verify run `39364095716` passed, security Application reached that
+revision and both temporary network policies were independently confirmed absent.
+This repository exposes no `Deploy Production` or `Infra Apply (auto)` workflows;
+the available post-merge workflow is `Deploy Verify`, supplemented by live checks.
+
+The monitoring worker delivered production completion and independent weekly
+execution signals with regression coverage. Lead review required completion rather
+than CR creation time, explicit absent-coverage handling, and the configured 4h
+operation grace. See [monitoring plan](2026-10-20-required-backup-monitoring.md).
+The monitoring deployment remains gated; later worker waves have not been launched.
