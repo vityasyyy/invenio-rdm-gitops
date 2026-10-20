@@ -294,6 +294,11 @@ kubectl -n velero create configmap restore-drill-canary \
 
 ### Incident Triage
 
+The Celery Beat scheduler uses one replica with `Recreate` for Deployment
+revision rollouts: the old Pod stops before its replacement starts, with a brief
+scheduling interruption. This is not a distributed lock or an exactly-once
+guarantee. Its liveness probe checks process presence, not scheduling progress.
+
 Discord notifications identify `[FIRING]` or `[RESOLVED]` in their title and
 each alert item. A mixed group stays `[FIRING]` while any member is active;
 resolved items show their description as a previous condition. Recovery sends a
