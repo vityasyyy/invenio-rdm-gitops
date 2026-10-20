@@ -26,7 +26,12 @@ metadata:
   name: allow-monitoring-egress-to-internet
   namespace: monitoring
 spec:
-  podSelector: {}
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: NotIn
+        values:
+          - alloy
   policyTypes:
     - Egress
   egress:

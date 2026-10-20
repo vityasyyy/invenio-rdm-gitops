@@ -294,6 +294,14 @@ kubectl -n velero create configmap restore-drill-canary \
 
 ### Incident Triage
 
+Centralized application logging uses a single non-root Alloy collector reading
+Pod logs through the Kubernetes API, restricted by a Role in `invenio`. It has
+no Secret permissions or host mounts. Logs go to the internal Loki service on
+port 3100; Grafana provisions the `loki` datasource. Loki retention is seven
+days, but its 10Gi NFS PVC request is not a hard disk-use limit. Watch actual
+shared free space and collector/API overhead before increasing experiment load.
+Collector rollout/restarts may replay logs; this is not an audit-log guarantee.
+
 Discord notifications identify `[FIRING]` or `[RESOLVED]` in their title and
 each alert item. A mixed group stays `[FIRING]` while any member is active;
 resolved items show their description as a previous condition. Recovery sends a

@@ -1,3 +1,7 @@
+# The chart defaults to SimpleScalable. With read/write/backend scaled to zero
+# that renders no Loki backend at all, so select SingleBinary explicitly.
+deploymentMode: SingleBinary
+
 loki:
   commonConfig:
     replication_factor: 1
@@ -5,10 +9,16 @@ loki:
     type: filesystem
   storageConfig:
     filesystem:
-      directory: /loki/storage
+      chunks_directory: /var/loki/chunks
+      rules_directory: /var/loki/rules
   auth_enabled: false
   analytic:
     reporting_enabled: false
+  limits_config:
+    retention_period: 168h
+  compactor:
+    retention_enabled: true
+    delete_request_store: filesystem
   schemaConfig:
     configs:
       - from: "2024-01-01"
@@ -31,7 +41,9 @@ singleBinary:
   persistence:
     enabled: true
     size: 10Gi
-    storageClassName: btd-nfs
+    storageClass: btd-nfs
+    # Keep Loki data when the StatefulSet is deleted or scaled down.
+    enableStatefulSetAutoDeletePVC: false
 
 chunksCache:
   # The chart expects a camelCase MB value; snake_case `allocated_memory: 256Mi`
@@ -105,27 +117,3 @@ lokiCanary:
 
 test:
   enabled: false
-
-promtail:
-  enabled: true
-  resources:
-    requests:
-      cpu: 50m
-      memory: 64Mi
-    limits:
-      cpu: 200m
-      memory: 128Mi
-  tolerations:
-    - key: node-role.kubernetes.io/control-plane
-      effect: NoSchedule
-      operator: Equal
-    - key: node-role.kubernetes.io/etcd
-      effect: NoSchedule
-      operator: Equal
-  extraArgs:
-    - -config.expand-env=true
-  config:
-    clients:
-      - url: http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
-        external_labels:
-          cluster: invenio-rdm
