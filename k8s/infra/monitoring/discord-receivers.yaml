@@ -51,14 +51,17 @@ spec:
         - apiURL:
             name: alertmanager-discord-webhook
             key: DISCORD_WEBHOOK_URL
-          title: '[CRITICAL] {{ .GroupLabels.alertname }}'
+          title: '[{{ .Status | toUpper }}] [{{ if .CommonLabels.severity }}{{ .CommonLabels.severity | toUpper }}{{ else }}CRITICAL{{ end }}] {{ .GroupLabels.alertname }}'
           message: |-
             {{- range $i, $alert := .Alerts }}
             {{- if $i }}{{ "\n\n" }}{{ end }}
-            {{- if $alert.Annotations.summary }}{{ $alert.Annotations.summary }}
-            {{- else }}{{ $alert.Labels.alertname }}
+            {{- if eq $alert.Status "resolved" }}[RESOLVED]{{ else }}[FIRING]{{ end }}{{ with $alert.Labels.severity }} [{{ . | toUpper }}]{{ end }} {{ $alert.Labels.alertname }}
+            {{- if $alert.Annotations.summary }}
+            {{ $alert.Annotations.summary }}
             {{- end }}
-            {{- if $alert.Annotations.description }}
+            {{- if eq $alert.Status "resolved" }}
+            Previous condition: {{ if $alert.Annotations.description }}{{ $alert.Annotations.description }}{{ else }}No description available.{{ end }}
+            {{- else if $alert.Annotations.description }}
             {{ $alert.Annotations.description }}
             {{- else }}
             No description available.
@@ -76,14 +79,17 @@ spec:
         - apiURL:
             name: alertmanager-discord-webhook
             key: DISCORD_WEBHOOK_URL
-          title: '[WARNING] {{ .GroupLabels.alertname }}'
+          title: '[{{ .Status | toUpper }}] [{{ if .CommonLabels.severity }}{{ .CommonLabels.severity | toUpper }}{{ else }}WARNING{{ end }}] {{ .GroupLabels.alertname }}'
           message: |-
             {{- range $i, $alert := .Alerts }}
             {{- if $i }}{{ "\n\n" }}{{ end }}
-            {{- if $alert.Annotations.summary }}{{ $alert.Annotations.summary }}
-            {{- else }}{{ $alert.Labels.alertname }}
+            {{- if eq $alert.Status "resolved" }}[RESOLVED]{{ else }}[FIRING]{{ end }}{{ with $alert.Labels.severity }} [{{ . | toUpper }}]{{ end }} {{ $alert.Labels.alertname }}
+            {{- if $alert.Annotations.summary }}
+            {{ $alert.Annotations.summary }}
             {{- end }}
-            {{- if $alert.Annotations.description }}
+            {{- if eq $alert.Status "resolved" }}
+            Previous condition: {{ if $alert.Annotations.description }}{{ $alert.Annotations.description }}{{ else }}No description available.{{ end }}
+            {{- else if $alert.Annotations.description }}
             {{ $alert.Annotations.description }}
             {{- else }}
             No description available.

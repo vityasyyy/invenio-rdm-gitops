@@ -48,26 +48,38 @@ EXPECTED_RULES = {
 }
 
 
-def render(message, annotations):
-    if isinstance(annotations, dict):
-        annotations = [annotations]
-    data = {
-        "receiver": "discord-critical",
-        "status": "firing",
-        "alerts": [
+def render(message, alerts, *, receiver="discord-critical"):
+    if isinstance(alerts, dict):
+        alerts = [alerts]
+    rendered_alerts = []
+    for index, alert in enumerate(alerts):
+        if "annotations" not in alert:
+            alert = {"annotations": alert}
+        rendered_alerts.append(
             {
-                "status": "firing",
-                "labels": {"alertname": f"SyntheticAlert{index}"},
-                "annotations": alert_annotations,
+                "status": alert.get("status", "firing"),
+                "labels": {
+                    "alertname": f"SyntheticAlert{index}",
+                    **alert.get("labels", {}),
+                },
+                "annotations": alert["annotations"],
                 "startsAt": "2026-10-16T00:00:00Z",
                 "endsAt": "0001-01-01T00:00:00Z",
                 "generatorURL": "https://prometheus.example/graph",
                 "fingerprint": f"synthetic-{index}",
             }
-            for index, alert_annotations in enumerate(annotations)
-        ],
-        "groupLabels": {"alertname": "SyntheticNoAnnotations"},
-        "commonLabels": {"alertname": "SyntheticNoAnnotations"},
+        )
+    group_labels = rendered_alerts[0]["labels"]
+    data = {
+        "receiver": receiver,
+        "status": (
+            "firing"
+            if any(alert["status"] == "firing" for alert in rendered_alerts)
+            else "resolved"
+        ),
+        "alerts": rendered_alerts,
+        "groupLabels": group_labels,
+        "commonLabels": group_labels,
         "commonAnnotations": {},
         "externalURL": "https://prometheus.example",
         "version": "4",
@@ -100,6 +112,122 @@ class MonitoringAlertTests(unittest.TestCase):
     def setUpClass(cls):
         cls.alerts = yaml.safe_load((MONITORING / "alerts.yaml").read_text())
         cls.receivers = yaml.safe_load((MONITORING / "discord-receivers.yaml").read_text())
+
+    def discord_configs(self):
+        return {
+            receiver["name"]: receiver["discordConfigs"][0]
+            for receiver in self.receivers["spec"]["receivers"]
+            if receiver["name"] in {"discord-critical", "discord-warning"}
+        }
+
+    @unittest.skipUnless(shutil.which("amtool"), "amtool is not installed")
+    def test_discord_titles_and_bodies_mark_firing_for_both_receivers(self):
+        annotations = {
+            "summary": "Synthetic summary",
+            "description": "Synthetic description",
+            "runbook_url": "https://docs.example/runbook",
+            "dashboard": "https://grafana.example/dashboard",
+        }
+        for name, config in self.discord_configs().items():
+            severity = name.removeprefix("discord-")
+            alert = {
+                "labels": {
+                    "alertname": "VeleroScheduledBackupFailed",
+                    "severity": severity,
+                },
+                "annotations": annotations,
+            }
+            header = f"[FIRING] [{severity.upper()}] VeleroScheduledBackupFailed"
+            with self.subTest(receiver=name):
+                self.assertEqual(
+                    render(config["title"], [alert], receiver=name), header
+                )
+                self.assertEqual(
+                    render(config["message"], [alert], receiver=name),
+                    f"{header}\n"
+                    "Synthetic summary\n"
+                    "Synthetic description\n"
+                    "Runbook: https://docs.example/runbook\n"
+                    "Dashboard: https://grafana.example/dashboard",
+                )
+
+    @unittest.skipUnless(shutil.which("amtool"), "amtool is not installed")
+    def test_discord_titles_and_bodies_mark_resolved_as_historical(self):
+        annotations = {
+            "summary": "Synthetic summary",
+            "description": "Synthetic description",
+            "runbook_url": "https://docs.example/runbook",
+            "dashboard": "https://grafana.example/dashboard",
+        }
+        for name, config in self.discord_configs().items():
+            severity = name.removeprefix("discord-")
+            alert = {
+                "status": "resolved",
+                "labels": {
+                    "alertname": "VeleroScheduledBackupFailed",
+                    "severity": severity,
+                },
+                "annotations": annotations,
+            }
+            header = f"[RESOLVED] [{severity.upper()}] VeleroScheduledBackupFailed"
+            with self.subTest(receiver=name):
+                self.assertEqual(
+                    render(config["title"], [alert], receiver=name), header
+                )
+                self.assertEqual(
+                    render(config["message"], [alert], receiver=name),
+                    f"{header}\n"
+                    "Synthetic summary\n"
+                    "Previous condition: Synthetic description\n"
+                    "Runbook: https://docs.example/runbook\n"
+                    "Dashboard: https://grafana.example/dashboard",
+                )
+
+    @unittest.skipUnless(shutil.which("amtool"), "amtool is not installed")
+    def test_discord_mixed_group_marks_each_alert_status(self):
+        for name, config in self.discord_configs().items():
+            severity = name.removeprefix("discord-")
+            labels = {
+                "alertname": "VeleroScheduledBackupFailed",
+                "severity": severity,
+            }
+            alerts = [
+                {
+                    "status": "firing",
+                    "labels": labels,
+                    "annotations": {
+                        "summary": "Firing summary",
+                        "description": "Current failure description",
+                    },
+                },
+                {
+                    "status": "resolved",
+                    "labels": labels,
+                    "annotations": {
+                        "summary": "Resolved summary",
+                        "description": "Previous failure description",
+                    },
+                },
+            ]
+            firing_header = (
+                f"[FIRING] [{severity.upper()}] VeleroScheduledBackupFailed"
+            )
+            resolved_header = (
+                f"[RESOLVED] [{severity.upper()}] VeleroScheduledBackupFailed"
+            )
+            with self.subTest(receiver=name):
+                self.assertEqual(
+                    render(config["title"], alerts, receiver=name), firing_header
+                )
+                self.assertEqual(
+                    render(config["message"], alerts, receiver=name),
+                    f"{firing_header}\n"
+                    "Firing summary\n"
+                    "Current failure description\n\n"
+                    f"{resolved_header}\n"
+                    "Resolved summary\n"
+                    "Previous condition: Previous failure description",
+                )
 
     def test_exact_rule_group_contract_and_resource_identity(self):
         source_groups = self.alerts["spec"]["groups"]
@@ -218,12 +346,13 @@ class MonitoringAlertTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("amtool"), "amtool is not installed")
     def test_discord_templates_render_lines_and_empty_annotation_fallbacks(self):
         expected_with_annotations = (
+            "[FIRING] SyntheticAlert0\n"
             "Synthetic summary\nSynthetic description\n"
             "Runbook: https://docs.example/runbook\n"
             "Dashboard: https://grafana.example/dashboard"
         )
         expected_without_annotations = (
-            "SyntheticAlert0\nNo description available."
+            "[FIRING] SyntheticAlert0\nNo description available."
         )
         annotations = self.receivers["spec"]["receivers"]
         discord_messages = [
@@ -254,7 +383,9 @@ class MonitoringAlertTests(unittest.TestCase):
             {"summary": "Second summary", "description": "Second description"},
         ]
         expected = (
+            "[FIRING] SyntheticAlert0\n"
             "First summary\nFirst description\n\n"
+            "[FIRING] SyntheticAlert1\n"
             "Second summary\nSecond description"
         )
         messages = [
