@@ -9,6 +9,8 @@ discovered during a wave go into `docs/plans/active/` as part of the wave's PR.
 
 | Plan | Branch | PR | Status |
 |---|---|---|---|
+| [Recovery closeout wave](active/2026-10-20-recovery-closeout-wave.md) | feat/139-wave1-closeout | Pending | Three approved drill namespaces removed; backup evidence preserved. Temporary-rule removal and independent backup-freshness repair in progress. |
+| [Drill closeout](active/2026-10-20-drill-closeout.md) | feat/139-wave1-closeout | Pending | Exact drill inventory verified; three Retain PVs/backing directories preserved, MinIO backend key revocation remains owner action. |
 | [Native recovery proof](active/2026-10-19-native-recovery-proof.md) | docs/139-native-proof | Pending | PG16.4 native recovery verified: schema/counts/vocabulary digest match, isolated new PV. Application sample/file consistency and production-schedule monitoring remain unproven. |
 | [Native recovery preflight](active/2026-10-19-native-recovery-preflight.md) | feat/139-native-network | #151 | Scoped network rules deployed and native recovery executed; see later proof and failure/correction record. |
 | [Drill readiness](active/2026-10-19-drill-readiness.md) | docs/139-drill-readiness | Pending | Canary checksum restore verified after approved filter correction; resources retained. Native DB/application recovery and drill-only read credentials remain gated; ten-repository budget reached. |

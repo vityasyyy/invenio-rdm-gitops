@@ -1,5 +1,10 @@
 # Native PostgreSQL recovery proof (#139)
 
+**Closeout update2026-10-20:** the approved drill Cluster and namespaces have since
+been removed. The three drill PVs/backing directories remain under Retain; backup
+and restore evidence remains. See [drill closeout](2026-10-20-drill-closeout.md).
+The following records the successful recovery snapshot, not a currently running clone.
+
 Status: native recovery of existing data verified; full application recovery and
 experiment readiness are NOT certified. Source/canary/drill resources remain intact.
 
