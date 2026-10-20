@@ -6,39 +6,28 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 SECURITY = ROOT / "k8s/infra/security"
-FILE = "network-policies/recovery-db-allow.yaml"
-DESTINATION = {
-    "namespaceSelector": {
-        "matchLabels": {"kubernetes.io/metadata.name": "recovery-db-20261019"}
-    },
-    "podSelector": {"matchLabels": {"cnpg.io/cluster": "postgres-recovery-drill"}},
-}
+DRILL_POLICY = "network-policies/recovery-db-allow.yaml"
+DRILL_TOKENS = (
+    "recovery-canary-src-20261019",
+    "recovery-canary-dst-20261019",
+    "recovery-db-20261019",
+    "postgres-recovery-drill",
+)
 
 
-class RecoveryNetworkTests(unittest.TestCase):
-    def test_only_drill_minio_and_operator_status_connections_are_allowed(self):
-        policies = list(yaml.safe_load_all((SECURITY / FILE).read_text()))
-        self.assertEqual(len(policies), 2)
-        self.assertEqual(
-            {(p["metadata"]["namespace"], p["metadata"]["name"]) for p in policies},
-            {("minio", "allow-recovery-db-read"),
-             ("database", "allow-operator-recovery-status")},
-        )
-        by_namespace = {p["metadata"]["namespace"]: p for p in policies}
-        self.assertEqual(by_namespace["minio"]["spec"], {
-            "podSelector": {},
-            "policyTypes": ["Ingress"],
-            "ingress": [{"from": [DESTINATION],
-                         "ports": [{"protocol": "TCP", "port": 9000}]}],
-        })
-        self.assertEqual(by_namespace["database"]["spec"], {
-            "podSelector": {"matchLabels": {"app.kubernetes.io/name": "cloudnative-pg"}},
-            "policyTypes": ["Egress"],
-            "egress": [{"to": [DESTINATION],
-                        "ports": [{"protocol": "TCP", "port": 8000}]}],
-        })
+class RecoveryNetworkCleanupTests(unittest.TestCase):
+    def test_drill_network_policy_file_is_removed(self):
+        self.assertFalse((SECURITY / DRILL_POLICY).exists())
+
+    def test_security_kustomization_no_longer_references_drill_policy(self):
         resources = yaml.safe_load((SECURITY / "kustomization.yaml").read_text())["resources"]
-        self.assertIn(FILE, resources)
+        self.assertNotIn(DRILL_POLICY, resources)
+
+    def test_no_committed_security_manifest_targets_drill_resources(self):
+        for path in SECURITY.rglob("*.yaml"):
+            text = path.read_text()
+            for token in DRILL_TOKENS:
+                self.assertNotIn(token, text, f"{path} still references {token}")
 
 
 if __name__ == "__main__":
