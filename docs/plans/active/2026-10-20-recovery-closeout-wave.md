@@ -70,3 +70,19 @@ execution signals with regression coverage. Lead review required completion rath
 than CR creation time, explicit absent-coverage handling, and the configured 4h
 operation grace. See [monitoring plan](2026-10-20-required-backup-monitoring.md).
 The monitoring deployment remains gated; later worker waves have not been launched.
+
+## Monitoring deployment incident
+
+Owner approved #154 deployment; merged `fcdf62a`. Deploy Verify `39365270641`
+failed: monitoring was Synced but Progressing throughout its 5m window. New KSM
+Pod `monitoring-kube-state-metrics-5565b6c4d9-4c6rv` terminated with
+`OOMKilled`, exit137, at the unchanged 64Mi memory limit during custom-resource
+discovery initialization. Logs registered the intended metric families without
+configuration parse errors. The previous KSM Pod remained Ready and preserved
+existing metrics; new backup metrics were absent and missing-data alerts pending.
+
+Owner approved one bounded rescue worker and fix-forward deployment. Monitoring
+quota allows the bounded memory correction (2368Mi/6Gi requests, 4800Mi/24Gi
+limits at inspection); nodes used 52–64% RAM. Candidate memory is not a measured
+new-collector peak: rollout, actual usage, restarts, parsed metrics and all custom
+rule evaluations must be verified before closeout. Later waves remain unlaunched.
