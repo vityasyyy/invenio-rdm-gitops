@@ -109,6 +109,13 @@ monitoring:
 # (2026-09-06 top); 64Mi limit = 3.2x.
 lokiCanary:
   enabled: true
+  # Issue #140: Loki closes the canary websocket at its 1h tail limit
+  # (close 1011). The reader reconnects and replays up to ~100s without a
+  # resume cursor. The 1m default prunes acknowledged entries before that
+  # replay arrives, so the replay is counted unexpected. 2m covers the
+  # observed gap; -max-wait keeps its 5m default.
+  extraArgs:
+    - -wait=2m
   resources:
     requests:
       memory: 64Mi
