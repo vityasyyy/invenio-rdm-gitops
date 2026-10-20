@@ -294,6 +294,11 @@ kubectl -n velero create configmap restore-drill-canary \
 
 ### Incident Triage
 
+The Celery Beat scheduler uses one replica with `Recreate` for Deployment
+revision rollouts: the old Pod stops before its replacement starts, with a brief
+scheduling interruption. This is not a distributed lock or an exactly-once
+guarantee. Its liveness probe checks process presence, not scheduling progress.
+
 Centralized application logging uses a single non-root Alloy collector reading
 Pod logs through the Kubernetes API, restricted by a Role in `invenio`. It has
 no Secret permissions or host mounts. Logs go to the internal Loki service on

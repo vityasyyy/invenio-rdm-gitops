@@ -12,6 +12,10 @@ metadata:
     app.kubernetes.io/part-of: invenio-rdm
 spec:
   replicas: 1
+  # Stop the old beat before starting another: default RollingUpdate may surge
+  # a second scheduler pod, and two beats can enqueue duplicate periodic jobs.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: invenio-scheduler
