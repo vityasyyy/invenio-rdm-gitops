@@ -115,8 +115,6 @@ alloy:
       loki.process "invenio" {
         forward_to = [loki.write.loki.receiver]
 
-        # The API source already returns decoded log lines with timestamps
-        # stripped, so no CRI stage is needed.
         stage.label_drop {
           values = ["instance", "job"]
         }

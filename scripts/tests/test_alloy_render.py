@@ -113,6 +113,7 @@ class AlloyValuesTest(unittest.TestCase):
 
     def test_config_discovery_is_namespace_scoped(self):
         config = self.values["alloy"]["configMap"]["content"]
+        self.assertNotRegex(config, r"(?m)^\s*#", "Alloy rejects YAML-style comments")
         self.assertIn('role = "pod"', config)
         self.assertIn('names = ["invenio"]', config)
         self.assertIn('regex         = "invenio"', config)
