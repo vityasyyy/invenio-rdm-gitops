@@ -175,6 +175,22 @@ class MonitoringAlertTests(unittest.TestCase):
             )
         )
 
+    def test_kube_state_metrics_budget_covers_custom_resource_startup(self):
+        values = yaml.safe_load((MONITORING / "values.yaml").read_text())
+        resources = values["kube-state-metrics"]["resources"]
+
+        def mebibytes(quantity):
+            text = str(quantity)
+            if text.endswith("Mi"):
+                return float(text[:-2])
+            if text.endswith("Gi"):
+                return float(text[:-2]) * 1024
+            raise AssertionError(f"unexpected memory quantity: {quantity!r}")
+
+        # The 64Mi limit OOMKilled the Velero collector at startup (#139).
+        self.assertEqual(mebibytes(resources["requests"]["memory"]), 64)
+        self.assertGreaterEqual(mebibytes(resources["limits"]["memory"]), 128)
+
     def test_backup_dashboard_uses_completion_not_global_success(self):
         dashboards = [
             doc for doc in yaml.safe_load_all(

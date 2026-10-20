@@ -164,14 +164,15 @@ kubeStateMetrics:
   enabled: true
 
 # Resources for the kube-state-metrics subchart Deployment.
-# Issue #74: 128Mi/1Gi (LimitRange) -> 64Mi/64Mi memory-only;
-# cpu stays LimitRange-filled. Observed 22-25Mi (2026-09-06 top); 64Mi = 2.6x.
+# Issue #139: 64Mi OOMKilled the v2.15 custom-resource startup (exit 137,
+# ~8s). 128Mi is a bounded startup candidate, not a measured peak; the 64Mi
+# request keeps KSM Burstable without reserving node memory.
 kube-state-metrics:
   resources:
     requests:
       memory: 64Mi
     limits:
-      memory: 64Mi
+      memory: 128Mi
   # Velero Backup/Schedule state comes from the installed KSM v2.15 custom
   # resource collector. The chart adds CRD list/watch RBAC automatically.
   rbac:
