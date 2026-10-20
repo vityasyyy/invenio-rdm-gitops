@@ -1,0 +1,244 @@
+rule_files: []
+evaluation_interval: 1m
+
+tests:
+  - name: healthy pipeline with a quiet application and an old drop baseline stays quiet
+    interval: 1m
+    input_series:
+      - series: 'up{job="alloy"}'
+        values: '1+0x40'
+      - series: 'up{job="loki"}'
+        values: '1+0x40'
+      - series: 'up{job="loki-canary"}'
+        values: '1+0x40'
+      - series: 'loki_write_sent_entries_total{job="alloy"}'
+        values: '0+1x40'
+      - series: 'loki_write_dropped_entries_total{job="alloy",reason="ingester_error"}'
+        values: '11359+0x40'
+      - series: 'loki_write_request_duration_seconds_count{job="alloy",status_code="204"}'
+        values: '0+1x40'
+      - series: 'loki_distributor_lines_received_total{job="loki"}'
+        values: '0+1x40'
+      - series: 'loki_canary_entries_total{job="loki-canary"}'
+        values: '0+1x40'
+      - series: 'loki_canary_missing_entries_total{job="loki-canary"}'
+        values: '0+0x40'
+      - series: 'loki_canary_websocket_missing_entries_total{job="loki-canary"}'
+        values: '0+0x40'
+      - series: 'loki_canary_unexpected_entries_total{job="loki-canary"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: LogPipelineMetricsMissing
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: LokiWriteDroppedEntriesRecent
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: LokiPushRequestsFailingRecent
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: LokiCanaryEndToEndBroken
+        exp_alerts: []
+
+  - name: missing scrape metrics or a down collector alert
+    interval: 1m
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LogPipelineMetricsMissing
+        exp_alerts:
+          - exp_labels:
+              job: alloy
+              severity: critical
+            exp_annotations:
+              summary: "Required log pipeline metrics are missing"
+              description: "Prometheus has no Alloy, Loki, or canary scrape target, or a required series is absent, for 10m. Log-pipeline alerting is blind; check the collector Deployment and the log PodMonitors."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+              dashboard: "https://grafana.vityasy.me/d/platform-health"
+          - exp_labels:
+              job: loki
+              severity: critical
+            exp_annotations:
+              summary: "Required log pipeline metrics are missing"
+              description: "Prometheus has no Alloy, Loki, or canary scrape target, or a required series is absent, for 10m. Log-pipeline alerting is blind; check the collector Deployment and the log PodMonitors."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+              dashboard: "https://grafana.vityasy.me/d/platform-health"
+          - exp_labels:
+              job: loki-canary
+              severity: critical
+            exp_annotations:
+              summary: "Required log pipeline metrics are missing"
+              description: "Prometheus has no Alloy, Loki, or canary scrape target, or a required series is absent, for 10m. Log-pipeline alerting is blind; check the collector Deployment and the log PodMonitors."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+              dashboard: "https://grafana.vityasy.me/d/platform-health"
+
+  - name: scrape target up but a required series is missing
+    interval: 1m
+    input_series:
+      - series: 'up{job="alloy"}'
+        values: '1+0x20'
+      - series: 'up{job="loki"}'
+        values: '1+0x20'
+      - series: 'up{job="loki-canary"}'
+        values: '1+0x20'
+      - series: 'loki_write_sent_entries_total{job="alloy"}'
+        values: '0+1x20'
+      - series: 'loki_distributor_lines_received_total{job="loki"}'
+        values: '0+1x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: LogPipelineMetricsMissing
+        exp_alerts:
+          - exp_labels:
+              job: loki-canary
+              severity: critical
+            exp_annotations:
+              summary: "Required log pipeline metrics are missing"
+              description: "Prometheus has no Alloy, Loki, or canary scrape target, or a required series is absent, for 10m. Log-pipeline alerting is blind; check the collector Deployment and the log PodMonitors."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+              dashboard: "https://grafana.vityasy.me/d/platform-health"
+
+  - name: recent dropped entries alert
+    interval: 1m
+    input_series:
+      - series: 'up{job="alloy"}'
+        values: '1+0x30'
+      - series: 'up{job="loki"}'
+        values: '1+0x30'
+      - series: 'up{job="loki-canary"}'
+        values: '1+0x30'
+      - series: 'loki_write_sent_entries_total{job="alloy"}'
+        values: '0+1x30'
+      - series: 'loki_write_dropped_entries_total{job="alloy",reason="ingester_error"}'
+        values: '11359x10 11400+0x30'
+      - series: 'loki_distributor_lines_received_total{job="loki"}'
+        values: '0+1x30'
+      - series: 'loki_canary_entries_total{job="loki-canary"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: LokiWriteDroppedEntriesRecent
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Alloy dropped log entries recently"
+              description: "Alloy dropped log entries in the last 30m. The rule uses increase(), not the cumulative total, so the initial backfill baseline stays quiet while new data loss pages."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+              dashboard: "https://grafana.vityasy.me/d/platform-health"
+      - eval_time: 20m
+        alertname: LogPipelineMetricsMissing
+        exp_alerts: []
+
+  - name: counter reset after restart does not look like a recent drop
+    interval: 1m
+    input_series:
+      - series: 'up{job="alloy"}'
+        values: '1+0x30'
+      - series: 'up{job="loki"}'
+        values: '1+0x30'
+      - series: 'up{job="loki-canary"}'
+        values: '1+0x30'
+      - series: 'loki_write_sent_entries_total{job="alloy"}'
+        values: '0+1x30'
+      - series: 'loki_write_dropped_entries_total{job="alloy",reason="ingester_error"}'
+        values: '11359x5 0+0x30'
+      - series: 'loki_distributor_lines_received_total{job="loki"}'
+        values: '0+1x30'
+      - series: 'loki_canary_entries_total{job="loki-canary"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: LokiWriteDroppedEntriesRecent
+        exp_alerts: []
+
+  - name: failed push responses alert
+    interval: 1m
+    input_series:
+      - series: 'up{job="alloy"}'
+        values: '1+0x30'
+      - series: 'up{job="loki"}'
+        values: '1+0x30'
+      - series: 'up{job="loki-canary"}'
+        values: '1+0x30'
+      - series: 'loki_write_sent_entries_total{job="alloy"}'
+        values: '0+1x30'
+      - series: 'loki_write_request_duration_seconds_count{job="alloy",status_code="500"}'
+        values: '0+1x30'
+      - series: 'loki_distributor_lines_received_total{job="loki"}'
+        values: '0+1x30'
+      - series: 'loki_canary_entries_total{job="loki-canary"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: LokiPushRequestsFailingRecent
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Alloy log pushes are receiving server errors"
+              description: "Alloy received 5xx responses from Loki in the last 10m. Entries may be delayed or lost while retries continue; check Loki health, disk, and limits."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+              dashboard: "https://grafana.vityasy.me/d/platform-health"
+
+  - name: canary missing entries alert
+    interval: 1m
+    input_series:
+      - series: 'up{job="alloy"}'
+        values: '1+0x30'
+      - series: 'up{job="loki"}'
+        values: '1+0x30'
+      - series: 'up{job="loki-canary"}'
+        values: '1+0x30'
+      - series: 'loki_write_sent_entries_total{job="alloy"}'
+        values: '0+1x30'
+      - series: 'loki_distributor_lines_received_total{job="loki"}'
+        values: '0+1x30'
+      - series: 'loki_canary_entries_total{job="loki-canary"}'
+        values: '0+1x30'
+      - series: 'loki_canary_missing_entries_total{job="loki-canary"}'
+        values: '0x10 1+0x30'
+      - series: 'loki_canary_websocket_missing_entries_total{job="loki-canary"}'
+        values: '0x10 0+0x30'
+      - series: 'loki_canary_unexpected_entries_total{job="loki-canary"}'
+        values: '0x10 0+0x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: LokiCanaryEndToEndBroken
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Loki canary end-to-end delivery is broken"
+              description: "The canary wrote entries it could not read back, read unexpected entries, or Loki received no lines while the canary was pushing. The canary writes continuously, so an idle application does not explain this."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+              dashboard: "https://grafana.vityasy.me/d/platform-health"
+
+  - name: ingestion stalled while the canary keeps pushing
+    interval: 1m
+    input_series:
+      - series: 'up{job="alloy"}'
+        values: '1+0x40'
+      - series: 'up{job="loki"}'
+        values: '1+0x40'
+      - series: 'up{job="loki-canary"}'
+        values: '1+0x40'
+      - series: 'loki_write_sent_entries_total{job="alloy"}'
+        values: '0+1x40'
+      - series: 'loki_distributor_lines_received_total{job="loki"}'
+        values: '19373+0x40'
+      - series: 'loki_canary_entries_total{job="loki-canary"}'
+        values: '0+1x40'
+      - series: 'loki_canary_missing_entries_total{job="loki-canary"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: LokiCanaryEndToEndBroken
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Loki canary end-to-end delivery is broken"
+              description: "The canary wrote entries it could not read back, read unexpected entries, or Loki received no lines while the canary was pushing. The canary writes continuously, so an idle application does not explain this."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
+              dashboard: "https://grafana.vityasy.me/d/platform-health"

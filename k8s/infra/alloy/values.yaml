@@ -140,7 +140,15 @@ networkPolicy:
   policyTypes:
     - Ingress
     - Egress
-  ingress: []
+  ingress:
+    # Metrics scrape only; no namespace-wide access to the Alloy UI.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: 12345
+          protocol: TCP
   egress:
     - to:
         - namespaceSelector:
