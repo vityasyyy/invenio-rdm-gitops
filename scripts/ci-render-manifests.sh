@@ -95,6 +95,7 @@ render_kustomize "k8s/infra/argocd"
 render_kustomize "k8s/infra/argocd-image-updater"
 render_kustomize "k8s/infra/minio"
 render_kustomize "k8s/infra/monitoring"
+render_kustomize "k8s/infra/alloy"
 render_kustomize "k8s/infra/sealed-secrets"
 render_kustomize "k8s/infra/security"
 render_kustomize "k8s/infra/velero"
@@ -118,6 +119,7 @@ render_helm "velero" "velero" "https://vmware-tanzu.github.io/helm-charts" "11.4
 render_helm "monitoring" "kube-prometheus-stack" "https://prometheus-community.github.io/helm-charts" "69.6.0" "monitoring" "k8s/infra/monitoring/values.yaml"
 
 render_helm "loki" "loki" "https://grafana.github.io/helm-charts" "6.24.0" "monitoring" "k8s/infra/loki/values.yaml"
+render_helm "alloy" "alloy" "https://grafana.github.io/helm-charts" "1.14.0" "monitoring" "k8s/infra/alloy/values.yaml"
 
 CLOUDNATIVE_PG_VALUES="replicaCount: 1
 resources:
