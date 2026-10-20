@@ -77,6 +77,12 @@ class LokiValuesTest(unittest.TestCase):
         self.assertTrue(canary["enabled"])
         self.assertTrue(canary.get("push", True))
 
+    def test_canary_waits_two_minutes_for_websocket_replay(self):
+        # Loki closes the canary websocket at the 1h tail limit (close 1011).
+        # The reader replays up to ~100s without a resume cursor; at the 1m
+        # default acknowledged entries are pruned before that replay arrives.
+        self.assertEqual(self.values["lokiCanary"]["extraArgs"], ["-wait=2m"])
+
     def test_no_dead_promtail_configuration(self):
         self.assertNotIn("promtail", self.values)
 
@@ -117,6 +123,12 @@ class LokiRenderTest(unittest.TestCase):
         canary = self.by_kind_name[("DaemonSet", "loki-canary")]
         args = canary["spec"]["template"]["spec"]["containers"][0]["args"]
         self.assertIn("-addr=loki.monitoring.svc.cluster.local.:3100", args)
+
+    def test_canary_renders_only_the_websocket_wait_override(self):
+        canary = self.by_kind_name[("DaemonSet", "loki-canary")]
+        args = canary["spec"]["template"]["spec"]["containers"][0]["args"]
+        self.assertEqual([arg for arg in args if arg.startswith("-wait")], ["-wait=2m"])
+        self.assertFalse([arg for arg in args if arg.startswith("-max-wait")])
 
     def test_no_scalable_or_gateway_workloads_are_rendered(self):
         workloads = {
