@@ -1,9 +1,8 @@
 # Required production-backup monitoring (#139)
 
-Status: partially deployed. #154 applied the source, but the KSM rollout
-OOMKilled at startup; the budget rescue is pending live verification. This
-change replaces canary/manual-maskable freshness with two separate signals:
-production-scope coverage and actual weekly-schedule health.
+Status: deployed and initial live checks verified after #155 corrected the #154
+startup OOM. Production coverage and actual weekly execution are separate signals.
+This does not certify application recovery or a successful new scheduled backup.
 
 ## Verified failure mode
 
@@ -111,8 +110,8 @@ is caught by `VeleroBackupNeverSucceeded`.
   Burstable and the extra limit reserves no node memory. This is a bounded
   startup candidate, not a measured peak: the OOM leaves no usable cAdvisor
   max-memory sample and the new collector never reached steady state. The
-  monitoring quota has room (requests 2368Mi/6Gi, limits 4800Mi/24Gi). Live
-  steady-state memory must confirm the budget before treating it as settled.
+  monitoring quota has room (requests 2368Mi/6Gi, limits 4800Mi/24Gi). Initial
+  live working set was 103Mi; this is not a long-term or peak measurement.
 - Dashboard `00 InvenioRDM Overview` now shows production completion age;
   `02 Data & Backups` shows actual weekly generated runs by phase.
 - `scripts/ci-validate-monitoring.sh` pins the collector config, RBAC, alert
@@ -132,8 +131,17 @@ namespaces were removed. Velero Backup/Restore/Repository records were preserved
 
 ## Remaining gaps
 
-- The budget rescue is not applied to the cluster: ArgoCD sync, live KSM
-  readiness, steady-state memory, and custom metric presence remain unverified.
+- #155 merged `1ecb2a1`; Deploy Verify `39366564455` passed. Monitoring reached
+  that exact values revision; KSM rollout completed with one Ready Pod and zero
+  restarts. Logs registered all four custom metric families without parse errors.
+- Live completion metrics matched the three retained backups: production manual
+  `1792404241`, canary `1792403166`, failed weekly `1792293341`. Actual weekly
+  attempt was `1792292430`; the canary has no production scope label.
+- Missing-metric, missing-production, stale and overdue alerts were inactive;
+  `VeleroScheduledBackupFailed` was pending its 5m hold, correctly retaining the
+  failed weekly attempt despite fresh manual coverage. All Velero rules healthy.
+  Drill quota alerts absent; production database healthy and public ping HTTP200.
+- Long-term memory and notification delivery are not established by these checks.
 - Weekly RPO is still 7 days plus the 1-day alert grace; this change makes gaps
   visible, it does not shorten RPO.
 - A legitimate backup still running after 4h pages by design; tune only with
