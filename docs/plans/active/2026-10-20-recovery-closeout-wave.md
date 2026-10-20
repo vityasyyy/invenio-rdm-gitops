@@ -69,7 +69,7 @@ The monitoring worker delivered production completion and independent weekly
 execution signals with regression coverage. Lead review required completion rather
 than CR creation time, explicit absent-coverage handling, and the configured 4h
 operation grace. See [monitoring plan](2026-10-20-required-backup-monitoring.md).
-The monitoring deployment remains gated; later worker waves have not been launched.
+The monitoring deployment was subsequently approved; later waves remain unlaunched.
 
 ## Monitoring deployment incident
 
@@ -86,3 +86,10 @@ quota allows the bounded memory correction (2368Mi/6Gi requests, 4800Mi/24Gi
 limits at inspection); nodes used 52–64% RAM. Candidate memory is not a measured
 new-collector peak: rollout, actual usage, restarts, parsed metrics and all custom
 rule evaluations must be verified before closeout. Later waves remain unlaunched.
+
+Rescue #155 merged `1ecb2a1`; Deploy Verify `39366564455` passed. Exact monitoring
+revision and completed KSM rollout independently confirmed. One Ready Pod, zero
+restarts, initial working set about103Mi at128Mi limit; new metrics present with
+correct backup phases/scope/timestamps. The weekly failure alert is pending its5m
+hold while production coverage is fresh; missing-data and quota alerts are clear.
+Production database healthy, ping200. Keep long-term memory and delivery unproven.
