@@ -2,8 +2,9 @@
 
 Status: the three drill namespaces were deleted on 2026-10-20 after the owner's
 approval. Three Retain PVs, their NFS backing directories, and the Velero
-evidence remain. Physical storage removal, MinIO backend credential revocation,
-and a fresh post-cleanup production backup proof stay owner-gated.
+evidence remain. Physical storage removal and MinIO backend credential
+revocation stay owner-gated; the Git network-policy removal is pending merge and
+live verification.
 
 ## Scope
 
@@ -45,12 +46,13 @@ All three used distinct CSI handles on `10.17.117.48` under share
    absent.
 3. The three PVs transitioned to `Released` and kept reclaim policy `Retain`
    and their original UIDs.
-4. The two drill-only network policies were removed from git. Production
+4. The two drill-only network policies were removed from Git. Live removal
+   requires merge and ArgoCD sync; verification is pending. Production
    allowlists in `k8s/infra/security` are unchanged.
 
 The Namespace Secret and SealedSecret `recovery-minio-readonly` disappeared
-with the namespace. Kubernetes RBAC/binding for the drill is gone; the network
-rules that referenced the drill identity are gone.
+with the namespace, and Kubernetes RBAC/binding is gone. The two network rules
+are removed from Git only; they remain live until the merge is synced.
 
 ## Preserved evidence
 
@@ -73,13 +75,14 @@ after cleanup; the exact command output remains in the worker report.
   directories is a separately approved storage action. Do not force-remove PV
   finalizers or issue a broad recursive delete.
 - **MinIO backend key revocation**: the drill-only identity behind
-  `recovery-minio-readonly` was provisioned outside this repository. The owner
-  must revoke that identity and policy at the MinIO backend. No root
-  credential or secret value was read. The Git reference file is gone.
+  `recovery-minio-readonly` was provisioned outside this repository; there is
+  no credential manifest in Git to remove. The owner must revoke that identity
+  and policy at the MinIO backend. No root credential or secret value was read.
 - **PV object deletion**: requires the storage decision above; retained PVs
   are intentional evidence/residuals, not leaked in-use volumes.
-- **Fresh recovery proof**: this cleanup does not prove post-cleanup backup
-  recoverability. A new isolated restore remains open under #139.
+- **Application consistency**: no new post-cleanup backup is required to prove
+  quota cleanup. Prior canary and native recovery evidence remains retained and
+  valid; seeded application-consistency proof remains open under #139.
 - Monitoring ownership and `docs/plans/README.md` updates belong to the lead
   and the monitoring worker, not this change.
 
