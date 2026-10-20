@@ -294,6 +294,12 @@ kubectl -n velero create configmap restore-drill-canary \
 
 ### Incident Triage
 
+Discord notifications identify `[FIRING]` or `[RESOLVED]` in their title and
+each alert item. A mixed group stays `[FIRING]` while any member is active;
+resolved items show their description as a previous condition. Recovery sends a
+new message rather than editing the original, subject to the 5-minute grouping
+interval. A successful manual backup does not resolve a failed scheduled run.
+
 ```bash
 # Control plane health
 kubectl -n argocd get applications
