@@ -525,6 +525,44 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(origin_auth, ["Bearer top-secret"])
         self.assertEqual(target_requests, [])
 
+    def test_302_http_error_response_is_closed(self):
+        class RedirectHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", "http://127.0.0.1:1/steal")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, format, *args):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), RedirectHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        closed = []
+        original_close = deployment_verifier.urllib.error.HTTPError.close
+
+        def track_close(error):
+            closed.append(error)
+            return original_close(error)
+
+        try:
+            client = deployment_verifier.ArgoCDClient(
+                f"http://127.0.0.1:{server.server_address[1]}", "top-secret"
+            )
+            with mock.patch.object(
+                deployment_verifier.urllib.error.HTTPError, "close", track_close
+            ):
+                with self.assertRaises(deployment_verifier.ApiError):
+                    client._get("/api/v1/applications")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        self.assertEqual(len(closed), 1)
+        self.assertTrue(closed[0].fp.closed)
+
 
 class SourceRevisionTests(unittest.TestCase):
     def test_single_git_source_uses_triggering_revision(self):

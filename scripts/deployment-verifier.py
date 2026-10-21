@@ -525,9 +525,11 @@ class ArgoCDClient:
             with self.opener.open(request, timeout=request_timeout) as response:
                 status, body = getattr(response, "status", 200), response.read()
         except urllib.error.HTTPError as exc:
-            if exc.code in (401, 403):
-                raise FatalApiError(f"ArgoCD API returned HTTP {exc.code} for {path}") from None
-            raise ApiError(f"ArgoCD API returned HTTP {exc.code} for {path}") from None
+            code = exc.code
+            exc.close()
+            if code in (401, 403):
+                raise FatalApiError(f"ArgoCD API returned HTTP {code} for {path}") from None
+            raise ApiError(f"ArgoCD API returned HTTP {code} for {path}") from None
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise ApiError(f"ArgoCD API request failed for {path}: {getattr(exc, 'reason', exc)}") from None
         if status != 200:
