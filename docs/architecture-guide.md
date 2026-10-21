@@ -694,9 +694,11 @@ Do not overlap measurements with migrations, index rebuilds, unrelated repairs o
 
 The experiment needs a verified reset procedure, repetitions, defined success/failure criteria, observation windows and explicit safety/abort conditions. A single successful demonstration is not a reproducible result.
 
-### Deployment verification is a current limitation
+### Deployment verification and its limits
 
-Issue #109 tracks verification that can pass before the expected merged revision/resources apply. Reliable proof must compare the intended revision and live object fields, wait for the corresponding rollout/hooks, and check functionality. A green workflow alone is not adequate experimental evidence.
+The revision-aware verifier addresses #109 by deriving the Application inventory from Git, checking each Git/chart source revision, waiting for requested or running operations, inspecting relevant operation/hook failures, and requiring three clean observations 30 seconds apart. Requests and the overall wait are bounded; per-Application diagnostics appear in the workflow summary. Historical terminal operations targeting another revision are reported separately, not mistaken for current failures. Superseded runs cannot pass by accepting a different commit.
+
+This still verifies configuration convergence, not every application capability. Check the intended live fields and functional operation as well: a green workflow alone cannot prove queue progress, correct vocabulary contents, file consistency or successful recovery.
 
 ## 18. Dated findings and remaining work
 
