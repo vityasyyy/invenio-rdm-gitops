@@ -7,6 +7,9 @@ on:
       - 'argocd/**'
       - 'k8s/**'
       - 'external-lb/**'
+      - '.github/workflows/deploy-verify.yaml'
+      - 'scripts/deployment-verifier.py'
+      - 'scripts/tests/test_deployment_verifier.py'
   workflow_dispatch:
 
 permissions:
@@ -17,90 +20,26 @@ jobs:
   verify-argocd-sync:
     name: Verify ArgoCD Sync
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
-      - name: Wait for sync and verify health
+      - uses: actions/checkout@v4
+
+      - name: Verify revision, sync, health, operations, and hooks
+        timeout-minutes: 16
         env:
           ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
           ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
-        run: |
-          set +e
-
-          ARGOCD_URL="https://${ARGOCD_SERVER}"
-          AUTH_HEADER="Authorization: Bearer ${ARGOCD_AUTH_TOKEN}"
-
-          echo "Waiting up to 5 minutes for ArgoCD apps to sync and become healthy..."
-          timeout=300
-          interval=10
-          elapsed=0
-
-          while [ $elapsed -lt $timeout ]; do
-            echo "Checking ArgoCD app status (elapsed: ${elapsed}s)..."
-
-            response=$(curl -s -k \
-              -H "$AUTH_HEADER" \
-              -H "Content-Type: application/json" \
-              -w "\n%{http_code}" \
-              "${ARGOCD_URL}/api/v1/applications" 2>/dev/null)
-            http_code=$(echo "$response" | tail -1)
-            body=$(echo "$response" | sed '$d')
-
-            if [ "$http_code" != "200" ]; then
-              echo "ArgoCD API returned HTTP ${http_code} (will retry)"
-              sleep $interval
-              elapsed=$((elapsed + interval))
-              continue
-            fi
-
-            unhealthy_apps=$(jq -r '
-              (.items // [])[]
-              | select(
-                  .status.health.status != "Healthy"
-                  or .status.sync.status != "Synced"
-                )
-              | .metadata.name
-            ' <<<"$body")
-
-            if [ -z "$unhealthy_apps" ]; then
-              echo "All ArgoCD apps are synced and healthy!"
-              jq -r '
-                .items[]
-                | "  \(.metadata.name) Health=\(.status.health.status) Sync=\(.status.sync.status)"
-              ' <<<"$body"
-              exit 0
-            fi
-
-            echo "Unhealthy/unsynced apps:"
-            jq -r '
-              .items[]
-              | select(
-                  .status.health.status != "Healthy"
-                  or .status.sync.status != "Synced"
-                )
-              | "  - \(.metadata.name) (Health: \(.status.health.status), Sync: \(.status.sync.status))"
-            ' <<<"$body"
-
-            sleep $interval
-            elapsed=$((elapsed + interval))
-          done
-
-          echo "Timeout: Some apps are still unhealthy or unsynced after ${timeout}s"
-          echo "Final status:"
-          curl -s -k -H "$AUTH_HEADER" \
-            "${ARGOCD_URL}/api/v1/applications" 2>/dev/null | \
-            jq -r '
-              .items[]
-              | "  - \(.metadata.name) (Health: \(.status.health.status), Sync: \(.status.sync.status))"
-            ' || \
-            echo "Could not retrieve final status from ArgoCD"
-          exit 1
+          GITHUB_SHA: ${{ github.sha }}
+        run: python3 -u scripts/deployment-verifier.py
 
       - name: Smoke test
         run: |
+          set -euo pipefail
+
           echo "Running smoke test against InvenioRDM health endpoint..."
           HEALTH_URL="${HEALTH_URL:-https://invenio.vityasy.me/ping}"
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            --connect-timeout 10 --max-time 30 "${HEALTH_URL}" || echo "000")
+            --connect-timeout 5 --max-time 15 "${HEALTH_URL}" || echo "000")
 
           if [ "$HTTP_CODE" = "200" ]; then
             echo "Smoke test passed: ${HEALTH_URL} returned HTTP ${HTTP_CODE}"
