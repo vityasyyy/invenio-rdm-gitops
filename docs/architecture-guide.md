@@ -543,6 +543,21 @@ Alloy reads authorized Invenio Pod logs through the API, without host log mounts
 
 An UP scrape target is not proof of every series, and a Ready canary is not proof of zero lost entries. Alert resolution means the alert expression no longer meets its firing condition, not that every underlying risk is eliminated.
 
+### Retention-edge replay filter
+
+```mermaid
+flowchart TD
+    Reopen[Kubernetes log stream reopen] -->|replays source history| Filter[Alloy 167h age filter]
+    Filter -->|older entries| Drop[Named drop counter]
+    Filter -->|current entries| Loki[Loki]
+```
+
+The Kubernetes log API stream can reopen and resume from an older source position instead of the last read position. Recurrence is intermittent; hourly observations do not make it an hourly guarantee. Alloy therefore drops entries older than 167h before the Loki write, with `drop_counter_reason = "older_than_loki_reject_window"`. The filter is per entry, so mixed batches keep current entries. The named signal is `loki_process_dropped_lines_total{reason="older_than_loki_reject_window"}`.
+
+This is an intentional tradeoff, not lossless backfill: up to one hour of retention-edge history is discarded so entries cannot cross Loki's unchanged 168-hour `reject_old_samples_max_age` boundary in flight, and Loki retention stays 168 hours. A batch containing only aged entries is discarded entirely. The generic `loki_write_dropped_entries_total{reason="ingester_error"}` remains available for real write failures, and no alert is weakened.
+
+The remaining limitation is the source replay itself: Alloy still reopens the Kubernetes API stream without a supported resume-from-last-position control, so recent history can replay and duplicate, while history older than the cutoff is intentionally lost. This filter bounds what reaches Loki; it does not repair source position tracking.
+
 ### The hourly replay correction
 
 Loki canary v3.3.2 reconnects at the hourly tail limit. Replayed entries older than its previous 60-second acknowledgement retention were misclassified as unexpected. The deployed `-wait=2m` retains acknowledgements longer; the final missing-entry window remains five minutes.

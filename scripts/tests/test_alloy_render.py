@@ -1,13 +1,21 @@
+import contextlib
+import datetime
+import json
 import os
 import re
 import shutil
 import subprocess
+import tempfile
+import time
 import unittest
+import urllib.request
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
+ALLOY_RUNTIME_IMAGE = "grafana/alloy:v1.21.0"
+AGED_ENTRY_DROP_REASON = "older_than_loki_reject_window"
 VALUES_PATH = ROOT / "k8s/infra/alloy/values.yaml"
 RBAC_PATH = ROOT / "k8s/infra/alloy/rbac.yaml"
 KUSTOMIZATION_PATH = ROOT / "k8s/infra/alloy/kustomization.yaml"
@@ -50,6 +58,12 @@ def render_chart():
 
 def objects(manifest):
     return [doc for doc in yaml.safe_load_all(manifest) if doc]
+
+
+def alloy_block(config, header):
+    start = config.index(header)
+    end = config.index("\n}", start) + 2
+    return config[start:end]
 
 
 class AlloyValuesTest(unittest.TestCase):
@@ -139,6 +153,14 @@ class AlloyValuesTest(unittest.TestCase):
         self.assertNotIn("stage.cri", config)
         self.assertNotIn("filename", config)
         self.assertIn('values = ["instance", "job"]', config)
+
+    def test_stale_entries_are_dropped_before_label_drop(self):
+        config = self.values["alloy"]["configMap"]["content"]
+        process = alloy_block(config, 'loki.process "invenio" {')
+        self.assertIn('older_than          = "167h"', process)
+        self.assertIn(f'drop_counter_reason = "{AGED_ENTRY_DROP_REASON}"', process)
+        self.assertLess(process.index("stage.drop"), process.index("stage.label_drop"))
+        self.assertNotIn("tail_from_end", config)
 
 
 class AlloyRenderTest(unittest.TestCase):
@@ -386,6 +408,198 @@ class GrafanaLokiDatasourceRenderTest(unittest.TestCase):
         self.assertEqual(loki[0]["uid"], "loki")
         self.assertEqual(loki[0]["url"], "http://loki.monitoring.svc.cluster.local:3100")
         self.assertFalse(loki[0]["isDefault"])
+
+
+def docker(*args, input_text=None):
+    result = subprocess.run(
+        ["docker", *args],
+        check=True,
+        capture_output=True,
+        text=True,
+        input=input_text,
+        timeout=120,
+    )
+    return result.stdout + result.stderr
+
+
+def runtime_harness_config():
+    production = load_values()["alloy"]["configMap"]["content"]
+    process = alloy_block(production, 'loki.process "invenio" {')
+    process = process.replace(
+        "forward_to = [loki.write.loki.receiver]",
+        "forward_to = [loki.echo.captured.receiver]",
+    )
+    process = process.replace(
+        "  stage.drop {",
+        '''  stage.regex {
+    expression = "^(?P<ts>[^ ]+) (?P<msg>.*)$"
+  }
+
+  stage.timestamp {
+    source = "ts"
+    format = "RFC3339"
+  }
+
+  stage.drop {''',
+        1,
+    )
+    return f'''logging {{ level = "info" }}
+
+loki.source.api "in" {{
+  http {{
+    listen_address = "0.0.0.0"
+    listen_port    = 3101
+  }}
+  forward_to = [loki.process.invenio.receiver]
+}}
+
+{process}
+
+loki.echo "captured" {{}}
+'''
+
+
+def published_port(name, container_port):
+    return int(docker("port", name, f"{container_port}/tcp").strip().rsplit(":", 1)[1])
+
+
+def wait_for_http(url, timeout=30):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=2) as response:
+                if response.status == 200:
+                    return response.read().decode()
+        except OSError:
+            pass
+        time.sleep(0.25)
+    raise AssertionError(f"{url} did not become ready")
+
+
+@contextlib.contextmanager
+def running_alloy(config_text):
+    name = f"alloy-runtime-test-{os.getpid()}"
+    (ROOT / "rendered").mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=ROOT / "rendered") as tmp:
+        (Path(tmp) / "harness.alloy").write_text(config_text)
+        docker("rm", "-f", name)
+        docker(
+            "run",
+            "-d",
+            "--name",
+            name,
+            "-p",
+            "127.0.0.1::3101",
+            "-p",
+            "127.0.0.1::12345",
+            "-v",
+            f"{tmp}:/etc/alloy:ro",
+            "--entrypoint",
+            "/bin/alloy",
+            ALLOY_RUNTIME_IMAGE,
+            "run",
+            "--stability.level=public-preview",
+            "--server.http.listen-addr=0.0.0.0:12345",
+            "--storage.path=/tmp/alloy",
+            "/etc/alloy/harness.alloy",
+        )
+        try:
+            push_url = f"http://127.0.0.1:{published_port(name, 3101)}/loki/api/v1/push"
+            metrics_url = f"http://127.0.0.1:{published_port(name, 12345)}/metrics"
+            wait_for_http(metrics_url)
+            yield push_url, metrics_url, name
+        finally:
+            docker("rm", "-f", name)
+
+
+def push_entries(url, entries):
+    values = [
+        [
+            str(int(timestamp.timestamp() * 1_000_000_000)),
+            f"{timestamp.strftime('%Y-%m-%dT%H:%M:%SZ')} {marker}",
+        ]
+        for marker, timestamp in entries
+    ]
+    payload = {"streams": [{"stream": {"job": "runtime-test"}, "values": values}]}
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=5) as response:
+        return response.status
+
+
+@unittest.skipUnless(
+    os.environ.get("ALLOY_RUNTIME_TEST") == "1",
+    "set ALLOY_RUNTIME_TEST=1 to run tests against the pinned Alloy runtime",
+)
+class AlloyRuntimeAgeDropTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if shutil.which("docker") is None:
+            raise unittest.SkipTest("docker is not installed")
+        inspect = subprocess.run(
+            ["docker", "image", "inspect", ALLOY_RUNTIME_IMAGE],
+            capture_output=True,
+            text=True,
+        )
+        if inspect.returncode:
+            raise unittest.SkipTest(
+                f"{ALLOY_RUNTIME_IMAGE} is not available locally; pull it before running"
+            )
+
+    def test_pinned_runtime_accepts_complete_config(self):
+        version = docker(
+            "run",
+            "--rm",
+            "--entrypoint",
+            "/bin/alloy",
+            ALLOY_RUNTIME_IMAGE,
+            "--version",
+        )
+        self.assertIn("v1.21.0", version)
+        docker(
+            "run",
+            "--rm",
+            "-i",
+            "--entrypoint",
+            "/bin/alloy",
+            ALLOY_RUNTIME_IMAGE,
+            "validate",
+            "/dev/stdin",
+            input_text=load_values()["alloy"]["configMap"]["content"],
+        )
+
+    def test_mixed_batch_drops_only_aged_entries(self):
+        now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+        entries = [
+            ("alloy-runtime-aged-8d", now - datetime.timedelta(days=8)),
+            ("alloy-runtime-aged-169h", now - datetime.timedelta(hours=169)),
+            ("alloy-runtime-aged-168h", now - datetime.timedelta(hours=168)),
+            ("alloy-runtime-current", now),
+        ]
+        with running_alloy(runtime_harness_config()) as (push_url, metrics_url, name):
+            self.assertEqual(push_entries(push_url, entries), 204)
+            deadline = time.monotonic() + 15
+            logs = ""
+            while time.monotonic() < deadline:
+                logs = docker("logs", name)
+                if "alloy-runtime-current" in logs:
+                    break
+                time.sleep(0.25)
+            self.assertIn("alloy-runtime-current", logs)
+            for marker, _ in entries[:-1]:
+                self.assertNotIn(marker, logs)
+            metrics = urllib.request.urlopen(metrics_url, timeout=5).read().decode()
+            dropped = [
+                line
+                for line in metrics.splitlines()
+                if line.startswith("loki_process_dropped_lines_total{")
+                and f'reason="{AGED_ENTRY_DROP_REASON}"' in line
+            ]
+            self.assertEqual(len(dropped), 1)
+            self.assertEqual(float(dropped[0].rsplit(" ", 1)[1]), 3)
 
 
 if __name__ == "__main__":
