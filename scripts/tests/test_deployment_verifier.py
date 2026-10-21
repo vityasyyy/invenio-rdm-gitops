@@ -1,7 +1,9 @@
 import importlib.util
 import sys
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest import mock
 
@@ -465,6 +467,63 @@ class ApiShapeTests(unittest.TestCase):
 
         self.assertFalse(report.clean)
         self.assertIn("resource tree", " ".join(report.apps[0].issues).lower())
+
+
+class SecurityTests(unittest.TestCase):
+    def test_cross_origin_redirect_does_not_forward_bearer_token(self):
+        target_requests = []
+        origin_auth = []
+
+        class TargetHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                target_requests.append(self.headers.get("Authorization"))
+                body = b'{"items": []}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format, *args):
+                pass
+
+        target = HTTPServer(("127.0.0.1", 0), TargetHandler)
+        target_url = f"http://127.0.0.1:{target.server_address[1]}/steal"
+
+        class OriginHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                origin_auth.append(self.headers.get("Authorization"))
+                self.send_response(302)
+                self.send_header("Location", target_url)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, format, *args):
+                pass
+
+        origin = HTTPServer(("127.0.0.1", 0), OriginHandler)
+        threads = [
+            threading.Thread(target=server.serve_forever, daemon=True)
+            for server in (origin, target)
+        ]
+        for thread in threads:
+            thread.start()
+        try:
+            client = deployment_verifier.ArgoCDClient(
+                f"http://127.0.0.1:{origin.server_address[1]}", "top-secret"
+            )
+            with self.assertRaises(deployment_verifier.ApiError) as raised:
+                client._get("/api/v1/applications")
+        finally:
+            for server in (origin, target):
+                server.shutdown()
+                server.server_close()
+            for thread in threads:
+                thread.join(timeout=2)
+
+        self.assertIn("302", str(raised.exception))
+        self.assertEqual(origin_auth, ["Bearer top-secret"])
+        self.assertEqual(target_requests, [])
 
 
 class SourceRevisionTests(unittest.TestCase):

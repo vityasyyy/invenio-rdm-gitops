@@ -37,6 +37,13 @@ class FatalApiError(Exception):
     pass
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Keep authenticated requests on the configured origin."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 @dataclass
 class AppReport:
     name: str
@@ -498,6 +505,10 @@ class ArgoCDClient:
         self.token = token
         self.request_timeout = request_timeout
         self.context = ssl.create_default_context()
+        self.opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=self.context),
+            _NoRedirectHandler(),
+        )
 
     def _get(self, path: str, deadline: float | None = None):
         request_timeout = self.request_timeout
@@ -511,7 +522,7 @@ class ArgoCDClient:
             headers={"Authorization": f"Bearer {self.token}", "Accept": "application/json"},
         )
         try:
-            with urllib.request.urlopen(request, timeout=request_timeout, context=self.context) as response:
+            with self.opener.open(request, timeout=request_timeout) as response:
                 status, body = getattr(response, "status", 200), response.read()
         except urllib.error.HTTPError as exc:
             if exc.code in (401, 403):
