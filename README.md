@@ -284,6 +284,14 @@ scrape signals, recent drops, push retries/server errors, and a stalled or faili
 canary. The canary's two-minute acknowledgement window recognizes normal hourly
 tail replay; it does not prove zero loss under sustained load.
 
+Alloy intentionally discards entries older than 167 hours before sending them to
+Loki's unchanged seven-day rejection window. This avoids repeated stale-history
+rejections, with a one-hour safety margin that sacrifices retention-edge backfill.
+Discarded entries are counted separately by
+`loki_process_dropped_lines_total{reason="older_than_loki_reject_window"}`;
+current entries pass and genuine write-failure alerts remain unchanged. This
+mitigates replay, not the source's resume behavior.
+
 The scheduler and log pipeline are operationally important but not health
 guarantees: a healthy Beat process does not prove task progress, and a Ready
 canary does not prove every log entry survived. See
