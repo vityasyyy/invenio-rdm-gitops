@@ -556,7 +556,27 @@ The Kubernetes log API stream can reopen and resume from an older source positio
 
 This is an intentional tradeoff, not lossless backfill: up to one hour of otherwise acceptable retention-edge history is discarded to leave a delivery margin before Loki's unchanged 168-hour `reject_old_samples_max_age` boundary, and Loki retention stays 168 hours. A delay exceeding that margin can still cause rejection. A batch containing only aged entries is discarded entirely. The generic `loki_write_dropped_entries_total{reason="ingester_error"}` remains available for real write failures, and no alert is weakened.
 
-The remaining limitation is the source replay itself: Alloy still reopens the Kubernetes API stream without a supported resume-from-last-position control, so recent history can replay and duplicate, while history older than the cutoff is intentionally lost. This filter bounds what reaches Loki; it does not repair source position tracking.
+The filter does not address Loki's separate stream-relative out-of-order window: history newer than 167h can still be too far behind the stream's latest accepted timestamp. The collector rollout demonstrated this second HTTP 400 path. Current-log ingestion was subsequently verified, and one natural reconnect produced no new rejections; neither observation proves all replay resolved. Loki can partially accept a mixed request while returning HTTP 400, so the client's failed-request entry counter is not a precise count of uniquely lost logs.
+
+### Source positions and reconnect limitations
+
+The pinned Alloy v1.21.0 API source **does track positions** in `positions.yml`, saving timestamps every ten seconds. Its component data is under `/tmp/alloy`, backed here by `emptyDir`: a container restart in the same Pod retains it, but Pod replacement loses it. A cold start without positions requests retained container history, which can duplicate existing logs or trigger Loki rejection.
+
+Normal reconnects are a separate case. The source deliberately reopens Kubernetes streams every hour and resumes from its stored timestamp. The API request has whole-second precision; Alloy skips entries before the resume timestamp but can forward an equal-timestamp line again. Quiet streams can therefore replay their last line. An error path also advances target bookkeeping to error time rather than necessarily the last delivered entry, creating a possible skip risk. These are upstream source behaviors, not the Loki canary websocket behavior.
+
+```mermaid
+flowchart TD
+    Restart[Collector Pod replaced] --> Lost[emptyDir positions lost]
+    Lost --> History[Retained history replay]
+    Reconnect[Normal source reconnect] --> Position[Stored timestamp resume]
+    Position --> Boundary[Equal-timestamp replay risk]
+```
+
+Persistent position storage could reduce cold-start replay without requiring host log access, but would not fix the separate reconnect defect. It has not been deployed or recovery-tested here.
+
+As checked on 21 October 2026, upstream [issue #7192](https://github.com/grafana/alloy/issues/7192) describes these problems and [PR #7193](https://github.com/grafana/alloy/pull/7193) proposes reconnect/error-resume corrections, but the PR is open and unmerged; v1.21.0 remains the latest release. Re-check actual released code before proposing an upgrade. Do not treat the open patch, a shorter history cutoff or broader Loki acceptance as a deployed root fix. File-based collection with byte offsets is an alternative architecture, but requires the host-access and IT/security review previously avoided by API collection.
+
+Source evidence: [pinned position-store setup](https://github.com/grafana/alloy/blob/v1.21.0/internal/component/loki/source/kubernetes/kubernetes.go) and [pinned tailer/resume behavior](https://github.com/grafana/alloy/blob/v1.21.0/internal/component/loki/source/kubernetes/kubetail/tailer.go).
 
 ### The hourly replay correction
 
