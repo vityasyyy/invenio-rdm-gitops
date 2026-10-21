@@ -135,12 +135,23 @@ and hooks run around the sync operation.
 findings do not fail the job. Render, selector, SealedSecret, ArgoCD path/RBAC,
 sync-wave, gitleaks, and monitoring checks are enforced.
 
-**Deploy verification** on push to `main` waits for ArgoCD applications to report
-`Synced` and `Healthy`, then smokes `https://invenio.vityasy.me/ping`. It is not a
-revision-aware release gate: its five-minute timeout, single all-green sample, and
-lack of PostSync-hook awareness can pass before a slow rollout or setup Job has
-actually finished. Use the observed revision and functional checks when the
-change matters; see issue #109.
+**Deploy verification** on push to `main` derives the expected Application
+inventory from `argocd/apps/` and `argocd/root.yaml`, then requires every tracked
+Application to report `Synced`, `Healthy`, no running or failed operation, and
+the expected revision for each source: the triggering commit for repository
+sources and the declared chart version for Helm charts. Hook phases come from
+`status.operationState.syncResult`, and hook resource health comes from the
+resource tree. It takes three consecutive clean samples 30 seconds apart within a
+15-minute deadline, writes a per-Application table to the GitHub summary, and
+then smokes `https://invenio.vityasy.me/ping`.
+
+A terminal operation whose recorded target differs from the expected revision is
+reported as historical evidence, not as a new deployment failure; an `Error` or
+`Failed` operation with no provable target fails closed. The triggering revision
+is an exact match, not a freshness check. If a newer push lands while the run is
+waiting, the run reports a revision mismatch and is treated as superseded; it
+never passes on an older green state. Changes to this workflow or its verifier
+also trigger the check so verifier-only merges are exercised.
 
 ### What ArgoCD owns — and what it does not
 
