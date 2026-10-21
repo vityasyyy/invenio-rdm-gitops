@@ -470,6 +470,36 @@ class ApiShapeTests(unittest.TestCase):
 
 
 class SecurityTests(unittest.TestCase):
+    def test_native_transport_reaches_automated_api(self):
+        received = []
+
+        class EdgeHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                received.append(self.headers.get("Authorization"))
+                native = self.headers.get("User-Agent", "").startswith("curl/")
+                body = b'{"items": []}' if native else b'error code: 1010'
+                self.send_response(200 if native else 403)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format, *args):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), EdgeHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            client = deployment_verifier.ArgoCDClient(
+                f"http://127.0.0.1:{server.server_address[1]}", "test-token"
+            )
+            self.assertEqual(client._get("/api/v1/applications"), {"items": []})
+            self.assertEqual(received, ["Bearer test-token"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_cross_origin_redirect_does_not_forward_bearer_token(self):
         target_requests = []
         origin_auth = []
@@ -525,43 +555,25 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(origin_auth, ["Bearer top-secret"])
         self.assertEqual(target_requests, [])
 
-    def test_302_http_error_response_is_closed(self):
-        class RedirectHandler(BaseHTTPRequestHandler):
-            def do_GET(self):
-                self.send_response(302)
-                self.send_header("Location", "http://127.0.0.1:1/steal")
-                self.send_header("Content-Length", "0")
-                self.end_headers()
+    def test_token_cannot_inject_curl_config(self):
+        with self.assertRaises(deployment_verifier.ConfigurationError):
+            deployment_verifier.ArgoCDClient("https://argocd.example", "token\nlocation")
 
-            def log_message(self, format, *args):
-                pass
-
-        server = HTTPServer(("127.0.0.1", 0), RedirectHandler)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        closed = []
-        original_close = deployment_verifier.urllib.error.HTTPError.close
-
-        def track_close(error):
-            closed.append(error)
-            return original_close(error)
-
-        try:
-            client = deployment_verifier.ArgoCDClient(
-                f"http://127.0.0.1:{server.server_address[1]}", "top-secret"
-            )
-            with mock.patch.object(
-                deployment_verifier.urllib.error.HTTPError, "close", track_close
-            ):
-                with self.assertRaises(deployment_verifier.ApiError):
-                    client._get("/api/v1/applications")
-        finally:
-            server.shutdown()
-            server.server_close()
-            thread.join(timeout=2)
-
-        self.assertEqual(len(closed), 1)
-        self.assertTrue(closed[0].fp.closed)
+    def test_curl_keeps_token_off_argv_and_respects_deadline(self):
+        client = deployment_verifier.ArgoCDClient("https://argocd.example", "private-token")
+        response = deployment_verifier.subprocess.CompletedProcess([], 0, '{}\n200', '')
+        with mock.patch.object(deployment_verifier.time, "monotonic", return_value=10):
+            with mock.patch.object(deployment_verifier.subprocess, "run", return_value=response) as run:
+                self.assertEqual(client._get("/api/v1/applications", deadline=12), {})
+        args, options = run.call_args
+        command = args[0]
+        self.assertNotIn("private-token", " ".join(command))
+        self.assertIn("Bearer private-token", options["input"])
+        self.assertEqual(options["timeout"], 2)
+        self.assertEqual(command[command.index("--max-time") + 1], "2")
+        self.assertEqual(command[1], "--disable")
+        for forbidden in ("--insecure", "-k", "--location", "-L"):
+            self.assertNotIn(forbidden, command)
 
 
 class SourceRevisionTests(unittest.TestCase):
