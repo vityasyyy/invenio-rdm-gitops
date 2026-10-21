@@ -3,265 +3,299 @@
 [![Validate Infrastructure](https://github.com/vityasyyy/invenio-rdm-gitops/actions/workflows/validate-infra.yaml/badge.svg)](https://github.com/vityasyyy/invenio-rdm-gitops/actions/workflows/validate-infra.yaml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Production Kubernetes infrastructure for [InvenioRDM](https://inveniosoftware.org/products/rdm/), managed entirely through GitOps with ArgoCD. Deploys the full stack — from load balancer to application — with zero inbound firewall ports.
+GitOps configuration for the UGM InvenioRDM research data repository on a
+Rancher-managed RKE2 cluster. ArgoCD reconciles the cluster from this repository;
+GitHub Actions validates the manifests and builds the custom application image.
+The public path is Cloudflare Tunnel, so the cluster needs no inbound firewall
+ports.
+
+> New to the system? Read [Understanding this InvenioRDM GitOps
+> system](docs/architecture-guide.md) for the request path, ownership boundaries,
+> storage, recovery limits, and experiment design.
 
 ## Architecture
 
 ```mermaid
-graph TB
-    INTERNET[Internet Users]
-    CF[Cloudflare Edge<br/>TLS termination, DDoS, WAF]
-    TUNNEL[Cloudflare Tunnel<br/>outbound-only]
-    TRAEFIK[Traefik Ingress<br/>traefik namespace]
-    ARGOCD[ArgoCD<br/>argocd namespace]
-    GIT[GitHub<br/>this repo]
+flowchart TD
+    Users[Users and API clients] --> CF[Cloudflare edge]
+    CF --> Tunnel[cloudflared]
+    Tunnel --> Traefik[Traefik]
+    Traefik --> Web[invenio-web]
+    Traefik --> ArgoUI[ArgoCD UI]
+    Traefik --> Grafana[Grafana]
+    Traefik --> MinIOUI[MinIO console]
 
-    WEB[invenio-web<br/>invenio namespace]
-    WORKER[invenio-worker<br/>invenio namespace]
-    PG[CloudNativePG<br/>database namespace]
-    REDIS[Redis<br/>redis namespace]
-    OPENSEARCH[OpenSearch<br/>search namespace]
-    MINIO[MinIO<br/>minio namespace]
-    PROM[Prometheus + Grafana<br/>monitoring namespace]
-    VELERO[Velero<br/>velero namespace]
-    SEALED[Sealed Secrets<br/>kube-system]
+    Web --> PG[(PostgreSQL / CNPG)]
+    Web --> Redis[(Redis)]
+    Web --> Search[(OpenSearch)]
+    Web --> Files[(NFS PVCs)]
+    Worker[invenio-worker] --> PG
+    Worker --> Redis
+    Worker --> Search
+    Worker --> Files
+    Beat[invenio-scheduler] --> Redis
 
-    INTERNET --> CF --> TUNNEL --> TRAEFIK
-    TRAEFIK --> ARGOCD
-    TRAEFIK --> WEB
-    TRAEFIK --> PROM
-    ARGOCD -->|syncs from| GIT
+    Velero[Velero] --> BackupStore[(MinIO backup bucket)]
+    CNPG[CNPG operator] --> BackupStore
 
-    WEB --> PG
-    WEB --> REDIS
-    WEB --> OPENSEARCH
-    WEB --> MINIO
-    WORKER --> PG
-    WORKER --> REDIS
-    WORKER --> OPENSEARCH
-    WORKER --> MINIO
-
-    SEALED -->|decrypts| PG
-    SEALED -->|decrypts| MINIO
-    SEALED -->|decrypts| WEB
-
-    VELERO -->|backups to| MINIO
-    PROM -->|scrapes| WEB
-    PROM -->|scrapes| PG
-    PROM -->|scrapes| OPENSEARCH
+    NFS[(Shared NFS server)] --- Files
+    NFS --- PG
+    NFS --- Redis
+    NFS --- Search
+    NFS --- BackupStore
 ```
 
-## Quick Start
+The two Invenio hostnames terminate at the same `invenio-web` Service; there is
+no separate API deployment behind `api-invenio.vityasy.me`. Uploaded file bytes
+live on NFS-backed PVCs, while MinIO is the backup object store. All of those
+services share one NFS server, so replicas and backups on that server do not
+create an independent failure domain.
 
-```bash
-# 1. Verify cluster prerequisites
-./scripts/verify-infra.sh
+### Public hostnames and shared edge
 
-# 2. Bootstrap ArgoCD (installs ArgoCD; everything else auto-syncs from Git)
-./scripts/bootstrap-infra.sh
+| Hostname | Route | Notes |
+|---|---|---|
+| `invenio.vityasy.me` | Traefik → `invenio-web:8000` → web container `:5000` | UI and REST routes |
+| `api-invenio.vityasy.me` | Traefik → the same `invenio-web:8000` | Same application and image |
+| `argocd.vityasy.me` | Traefik → ArgoCD server | Control plane UI/API |
+| `grafana.vityasy.me` | Traefik → Grafana | Metrics and logs |
+| `minio-console.vityasy.me` | Traefik → MinIO console | Backup store administration |
 
-# 3. Activate Cloudflare Tunnel
-./external-lb/scripts/bootstrap-dev.sh
+All hostnames share the `vityasy.me` DNS zone and one Cloudflare Tunnel. A DNS,
+Cloudflare, or tunnel failure can affect every hostname even while the Kubernetes
+workloads are healthy; a healthy Pod is not proof that the public path works.
 
-# 4. Verify everything is running
-./scripts/verify-infra.sh
+## Repository map
 
-# 5. Log into ArgoCD and change default password
-#    URL: https://argocd.vityasy.me
-#    Username: admin
-#    Password: (from bootstrap-infra.sh output)
+```text
+argocd/
+  root.yaml                 # App-of-apps root Application
+  apps/                     # 17 child Application definitions
+k8s/
+  apps/invenio/             # Web, worker, Beat, setup Job, HPA, PDB, PVCs, routes
+  apps/invenio-deps/        # PostgreSQL (CNPG), Redis, OpenSearch
+  infra/                    # ArgoCD, Image Updater, security, monitoring, Loki,
+                            # Alloy, MinIO, Velero, Sealed Secrets, Traefik
+external-lb/
+  k8s/                      # Cloudflare Tunnel DaemonSet and Service
+  scripts/                  # Tunnel bootstrap helper
+  terraform/                # Cloudflare tunnel/DNS source
+docker/ugm/                 # Application image: Dockerfile, invenio.cfg, uWSGI
+site/ templates/ static/ assets/ translations/ app_data/  # Image build inputs
+scripts/                    # Bootstrap, verification, CI checks, tests
+docs/                       # Architecture guide, dated assessments, plans
+.github/workflows/          # Validation, image build, deployment verification
+.opencode/                  # Agent conventions and workflow skills
 ```
 
-## Repository Structure
+`argocd/projects/` does not exist. AppProject RBAC lives in
+`k8s/infra/argocd/projects/`.
 
-```
-├── argocd/                    # ArgoCD Application manifests (app-of-apps pattern)
-│   ├── apps/                  # One YAML per application (16 apps total)
-│   ├── projects/              # AppProject RBAC definitions
-│   └── root.yaml              # Root app that bootstraps all others
-├── k8s/
-│   ├── apps/invenio/          # InvenioRDM web, worker, HPA, PDB, ingress
-│   ├── apps/invenio-deps/     # PostgreSQL (CNPG), Redis, OpenSearch
-│   └── infra/                 # Infrastructure components
-│       ├── argocd/            # ArgoCD kustomize + security patches
-│       ├── argocd-image-updater/
-│       ├── loki/              # Log aggregation
-│       ├── minio/             # S3-compatible storage
-│       ├── monitoring/        # Prometheus, Grafana, Alertmanager, Discord bridge
-│       ├── security/          # NetworkPolicies, PodSecurityAdmission, quotas
-│       ├── sealed-secrets/
-│       ├── traefik/           # Ingress controller
-│       └── velero/            # Backup/DR
-├── external-lb/               # Cloudflare Tunnel (Terraform + DaemonSet)
-├── docker/ugm/                # UGM-branded InvenioRDM Docker image
-├── scripts/                   # Bootstrap, verify, CI, and secret generation scripts
-└── secrets/                   # Gitignored directory for local secret material
-```
+### Source, generated, and legacy material
 
-## Sync Waves & Boot Order
+| Class | Paths | How to treat it |
+|---|---|---|
+| **Source of truth** | `argocd/`, `k8s/`, `external-lb/`, `docker/ugm/`, `app_data/`, `assets/`, `static/`, `templates/`, `translations/`, `scripts/`, `.github/workflows/` | Hand-edited, reviewed, and committed. Changes reach the cluster through ArgoCD or an image build. |
+| **Generated or runtime-only** | `rendered/` (gitignored CI output), Kubernetes Secrets decrypted from SealedSecrets, Velero `Backup`/`Restore` objects, CNPG `Backup` objects and PVCs, MinIO objects, application data, and an Image Updater override written through the ArgoCD API | Not committed. Do not edit it as if it were Git desired state; verify live ownership before changing it. |
+| **Legacy / historical** | `docs/cluster-assessment-*.md`, `docs/plans/completed/`, `site/.gitkeep`, and `k8s/apps/invenio-deps/opensearch/values.yaml` | Dated evidence, placeholders, or a validation mirror. The OpenSearch Application inlines its Helm values; the values file is not the live source. MinIO is no longer the primary application-file store. |
 
-ArgoCD orchestrates deployment through sync waves — infrastructure with negative waves deploys first, then databases, then the application layer.
+## Delivery and reconciliation
 
 ```mermaid
-sequenceDiagram
-    participant Git
-    participant ArgoCD
-    participant Cluster
-
-    Note over ArgoCD,Cluster: Wave -5: Security Foundations
-    ArgoCD->>Cluster: NetworkPolicies, PSA, Quotas, LimitRanges
-    Note over ArgoCD,Cluster: Wave -4: Ingress
-    ArgoCD->>Cluster: Traefik (Helm), Cloudflared
-    Note over ArgoCD,Cluster: Wave -3: Secret Management
-    ArgoCD->>Cluster: Sealed Secrets controller, ArgoCD self-manages
-    Note over ArgoCD,Cluster: Wave -1: Tunnel
-    ArgoCD->>Cluster: Cloudflared (needs sealed secrets)
-    Note over ArgoCD,Cluster: Wave 1-2: Storage & Backup
-    ArgoCD->>Cluster: MinIO, MinIO extras, Velero
-    Note over ArgoCD,Cluster: Wave 5-6: Observability
-    ArgoCD->>Cluster: Prometheus/Grafana stack, Loki, Alertmanager-Discord
-    Note over ArgoCD,Cluster: Wave 7-9: Application Dependencies & App
-    ArgoCD->>Cluster: OpenSearch, Redis, PostgreSQL
-    ArgoCD->>Cluster: InvenioRDM (setup job, web, worker, HPA, PDB, ingress)
+flowchart TD
+    Change[Git change] --> PR[Pull request]
+    PR --> CI[Validation checks]
+    CI --> Merge[Merge to main]
+    Merge --> Argo[ArgoCD reconciles]
+    Merge -->|image inputs changed| Build[Build image]
+    Build --> GHCR[GHCR]
+    GHCR -.->|optional: Image Updater observes digest or writes an API override| Argo
+    Argo --> K8s[Kubernetes API]
+    K8s --> Workloads[Pods, hooks, controllers]
 ```
 
-| Wave | App | What it deploys |
-|------|-----|-----------------|
-| -5 | security-policies | NetworkPolicies, PSA labels, ResourceQuotas, LimitRanges |
-| -4 | traefik | Traefik ingress controller (Helm) |
-| -3 | sealed-secrets | Sealed Secrets controller (kube-system) |
-| -3 | argocd-self | ArgoCD self-management (kustomize + security patches) |
-| -1 | cloudflared | Cloudflare Tunnel DaemonSet (kube-system) |
-| 1 | minio | MinIO S3 storage (Helm) |
-| 2 | minio-extras | MinIO console IngressRoute, bucket creation Job |
-| 2 | velero | Velero backup (Helm + manifests) |
-| 2 | argocd-image-updater | Tracks GHCR for Invenio image updates |
-| 5 | loki | Loki log aggregation (Helm) |
-| 5 | monitoring | kube-prometheus-stack (Helm) |
-| 6 | monitoring-extras | Alertmanager-Discord bridge, Loki netpol |
-| 7 | invenio-opensearch | OpenSearch (Helm + manifests) |
-| 7 | invenio-redis | Redis (raw manifests) |
-| 7 | invenio-postgresql | CloudNativePG operator (Helm + manifests) |
-| 9 | invenio-bootstrap | InvenioRDM full stack (kustomize) |
+A manifest-only change does not rebuild the image. Publishing an image does not
+deploy it by itself: the cluster changes only when the pinned desired digest
+changes or Image Updater writes an Application override through the ArgoCD API.
+ArgoCD compares and applies resources; Kubernetes controllers perform the rollout
+and hooks run around the sync operation.
 
-## Secrets Management
-
-```mermaid
-flowchart LR
-    DEV[Developer laptop]
-    KUBESEAL[kubeseal CLI]
-    GIT[Git repo]
-    ARGO[ArgoCD]
-    CTRL[Sealed Secrets<br/>controller]
-    SEC[Kubernetes Secret]
-
-    DEV -->|1. create secret --dry-run| KUBESEAL
-    KUBESEAL -->|2. encrypt with<br/>public key| GIT
-    GIT -->|3. git push| ARGO
-    ARGO -->|4. sync SealedSecret<br/>to cluster| CTRL
-    CTRL -->|5. decrypt to<br/>Kubernetes Secret| SEC
-
-    style DEV fill:#4CAF50,color:#fff
-    style GIT fill:#2196F3,color:#fff
-    style CTRL fill:#FF9800,color:#fff
-    style SEC fill:#9C27B0,color:#fff
-```
-
-**Key points:**
-- Only ciphertext is committed to Git (`spec.encryptedData` starts with `Ag`)
-- Plaintext exists only locally under `secrets/` (gitignored)
-- Rotation: override env vars and rerun `./scripts/generate-sealed-secrets.sh`
-- **Back up the private key!** Without it, all sealed secrets are permanently lost
-
-```bash
-# Export the private key for disaster recovery
-kubectl get secret -n kube-system sealed-secrets-key* \
-  -o jsonpath='{.data.tls\.key}' | base64 -d > secrets/sealed-secrets-private.pem
-
-# Generate / rotate sealed secrets
-./scripts/generate-sealed-secrets.sh           # all components
-./scripts/generate-sealed-secrets.sh invenio   # Invenio only
-```
-
-## Access & Services
-
-| Service | URL / Endpoint | Auth Source |
-|---------|---------------|-------------|
-| ArgoCD UI | `https://argocd.vityasy.me` | `argocd-initial-admin-secret` |
-| Grafana UI | `https://grafana.vityasy.me` | SealedSecret `monitoring-grafana` |
-| MinIO Console | `https://minio-console.vityasy.me` | SealedSecret `minio-credentials` |
-| MinIO S3 API | `minio.minio.svc.cluster.local:9000` (internal) | SealedSecret `minio-credentials` |
-| Invenio RDM | `https://invenio.vityasy.me` | Invenio internal auth |
-| Invenio API | `https://api-invenio.vityasy.me` | Invenio internal auth |
-
-## CI/CD Pipeline
-
-```mermaid
-flowchart LR
-    PUSH[git push] --> CI[CI Validate]
-    CI -->|pass| PR[PR Review]
-    PR -->|merge| MAIN[main branch]
-    MAIN --> ARGO[ArgoCD auto-sync]
-    ARGO --> DEPLOY[Cluster deployment]
-
-    style CI fill:#4CAF50,color:#fff
-    style ARGO fill:#2196F3,color:#fff
-```
-
-**CI checks** (runs on every PR to `main`):
+**CI checks** on pull requests to `main`:
 
 | Check | What it validates |
-|-------|-------------------|
-| Validate YAML Syntax | yamllint on all YAML files |
-| Render & Validate Manifests | kustomize build + kubeconform + selector validation + SealedSecret format |
-| Validate ArgoCD Applications | kube-linter + app path references + project RBAC |
-| Verify Sync Wave Ordering | Correct wave dependencies, no infra apps in positive waves |
-| Scan for Secrets | gitleaks — no plaintext secrets in git |
+|---|---|
+| Validate YAML Syntax | yamllint plus Velero ownership and Python tests |
+| Render & Validate Manifests | kustomize/Helm render, advisory kubeconform, selectors, SealedSecret format |
+| Validate ArgoCD Applications | kube-linter, source paths, AppProject repository allowlists |
+| Verify Sync Wave Ordering | Wave annotations and project/wave sanity |
+| Scan for Secrets | gitleaks |
+| Validate Monitoring Rules & Dashboards | promtool, amtool, alert/dashboard contracts |
 
-**Branch protection:** 1 required review, linear history, status checks must pass, no force pushes.
+**Advisory check:** the kubeconform step is invoked with `|| true`; schema
+findings do not fail the job. Render, selector, SealedSecret, ArgoCD path/RBAC,
+sync-wave, gitleaks, and monitoring checks are enforced.
 
-**Deploy verification** (runs on push to `main`):
+**Deploy verification** on push to `main` waits for ArgoCD applications to report
+`Synced` and `Healthy`, then smokes `https://invenio.vityasy.me/ping`. It is not a
+revision-aware release gate: its five-minute timeout, single all-green sample, and
+lack of PostSync-hook awareness can pass before a slow rollout or setup Job has
+actually finished. Use the observed revision and functional checks when the
+change matters; see issue #109.
 
-After merge, a separate workflow waits up to 5 minutes for all ArgoCD apps to reach `Synced` + `Healthy` status, then runs a smoke test against the Invenio health endpoint.
+### What ArgoCD owns — and what it does not
+
+| Thing | Source of truth | Runtime owner | Consequence |
+|---|---|---|---|
+| Manifests, Applications, AppProjects | Git | ArgoCD | A manual managed-field edit is drift and may be reverted by self-heal. |
+| Web/worker replica count | HPA bounds in Git | HPA | ArgoCD ignores `/spec/replicas` for both Deployments; a manual replica edit is not the desired-state mechanism. |
+| Application image digest | Kustomize pin in Git | Kubernetes pulls the pinned digest | Image Updater can write an override through the ArgoCD API, not Git. Freeze it or pin digests for reproducible experiments. |
+| Velero backup schedule | Git `Schedule` | Velero creates `Backup`/`Restore` objects | Generated backup objects are excluded from ArgoCD pruning; backup data lives in MinIO. |
+| PostgreSQL backups | Git `Cluster`/`ScheduledBackup` | CNPG operator creates native `Backup` objects and WAL archives | Native DB recovery is separate from Velero filesystem recovery. |
+| SealedSecret ciphertext | Git | Sealed Secrets controller | The controller decrypts to a Kubernetes Secret; the private key is outside Git. |
+| Research records, files, search documents | Invenio/PostgreSQL/NFS | Invenio and its workers | ArgoCD does not reconcile application data or search documents. |
+
+### HPA and scheduler ownership
+
+- `invenio-web-hpa`: 2–4 replicas, CPU target 70% and memory target 80% of requests.
+- `invenio-worker-hpa`: 1–4 replicas, same utilization targets; each worker runs
+  Celery concurrency 2.
+- `invenio-scheduler`: one replica with `Recreate`. This prevents overlap during a
+  normal Deployment revision rollout; it is not a distributed lock or an
+  exactly-once task guarantee. The liveness probe checks process presence, not
+  scheduling progress.
+- PDBs constrain applicable voluntary evictions only. They do not guarantee
+  availability during node loss, direct Pod deletion, or a shared dependency failure.
+
+### The setup Job is a PostSync hook
+
+`invenio-setup` runs after the sync, not before new web/worker Pods start. It runs
+database initialization/migration, file-location setup, fixtures, queue declaration,
+and index rebuilding. Several commands continue on failure (`|| true` or equivalent),
+so a successful Job can hide a failed setup step. A green sync is not proof that a
+migration completed, that a repeated fixture/rebuild was harmless, or that the
+application is functionally correct. Reverting an image does not reverse a database
+migration.
+
+## Storage, backup, and recovery
+
+`invenio-data` and `invenio-archive` are `ReadWriteMany` PVCs on the `btd-nfs`
+StorageClass, which points at one shared NFS server and uses `Retain`. PostgreSQL,
+Redis, OpenSearch, MinIO, Loki, Prometheus, Grafana, and Alertmanager also use
+`btd-nfs`. The requested PVC sizes are scheduling/claim requests, not enforced
+per-directory quotas, and they do not isolate services from NFS-server loss.
+
+### Backup & Restore
+
+The backup design has three separate pieces:
+
+1. Velero backs up selected Kubernetes resources and opt-in Pod volumes to MinIO.
+2. CloudNativePG writes PostgreSQL native backups and WAL to MinIO.
+3. Invenio stores uploaded file bytes on the NFS PVCs; these are not in MinIO.
+
+Read-only checks:
+
+```bash
+kubectl -n velero get backupstoragelocation default
+kubectl -n velero get schedules
+kubectl -n velero get backups -o wide
+kubectl -n database get clusters.postgresql.cnpg.io postgres
+kubectl -n database get backups.postgresql.cnpg.io
+```
+
+Before creating or restoring anything, get approval. A restore is a mutation and
+can overwrite production data. Use an isolated namespace, never restore into
+`invenio`, preserve `Retain` PVs, and verify the seeded record, file checksum,
+database state, permissions, and search/index behavior. Do not delete backups or
+PVs to make an alert quiet.
+
+| Recovery claim | What the evidence supports |
+|---|---|
+| Kubernetes resources and selected files via Velero | A weekly schedule exists and manual production/canary backups have completed. The latest actual weekly run observed on 21 October was `PartiallyFailed` (4 errors, 58 warnings); this is not a successful scheduled-backup claim. |
+| PostgreSQL native recovery | CNPG backups/WAL go to MinIO. Recovery of existing data into an isolated CNPG cluster was verified by schema, row-count, and vocabulary-digest comparison. No seeded application record/file consistency proof exists. |
+| Uploaded-file recovery | A 35,840-byte canary file restored with the same SHA-256 into an isolated namespace. The owner approved a private draft with a deterministic 64 KiB file, save-only with no publication or DOI; the upload/save ID is still awaited and no seeded restore has completed. Production file recovery remains unproven. |
+| Application-consistent recovery | Not proven. No seeded Invenio record plus file, permissions, and index state has been restored and verified together. |
+| Independent disaster recovery | Not demonstrated. MinIO and the primary NFS data share the same NFS server; an off-site or independent copy is not provided here. |
+| RPO/RTO | No contractual guarantee. Velero is weekly, CNPG is more frequent, and actual restore time depends on data size, credentials, storage, and operator behavior. |
+
+See [Storage and recovery](docs/architecture-guide.md#13-storage-and-recovery)
+for the failure-domain diagram and the evidence boundaries.
 
 ## Operations
 
-### Day-1: Bootstrap from Scratch
+### Incident Triage
+
+Start read-only and follow the failing boundary. Do not restart, purge, reindex,
+or delete storage merely to clear an alert.
 
 ```bash
-# 1. Bootstrap base infrastructure and tunnel
-./scripts/bootstrap-infra.sh
-./external-lb/scripts/bootstrap-dev.sh
-./scripts/verify-infra.sh
-
-# 2. Confirm ArgoCD infra apps are healthy
+# Control plane and ArgoCD
 kubectl -n argocd get applications
+kubectl get pods -A --field-selector=status.phase!=Running
 
-# 3. Apply Invenio app definition
-kubectl apply -f argocd/apps/invenio-bootstrap.yaml
+# Invenio and dependencies
+kubectl -n invenio get all
+kubectl -n invenio describe deploy invenio-web
+kubectl -n invenio logs deploy/invenio-web --tail=200
+kubectl -n invenio get svc invenio-postgresql invenio-redis invenio-search
+kubectl -n minio get svc minio
 
-# 4. Wait for rollout
-kubectl -n invenio rollout status deploy/invenio-web --timeout=180s
+# Edge and ingress
+kubectl -n kube-system get ds cloudflared
+kubectl -n traefik get pods,svc
+kubectl get ingressroutes -A
+
+# Bounded log-pipeline evidence (read-only)
+kubectl -n monitoring logs deploy/alloy --since=30m --tail=200
+kubectl -n monitoring logs loki-0 -c loki --since=30m --tail=200
+kubectl -n monitoring logs -l app.kubernetes.io/component=canary --since=30m --tail=100 --prefix
+
+# Scheduled backup state (read-only; replace the placeholder with a listed name)
+kubectl -n velero describe schedule weekly-infra-backup
+kubectl -n velero get backups.velero.io -o wide
+kubectl -n velero describe backup <generated-backup-name>
 ```
 
-### Day-2: Upgrades & Rollbacks
+The log commands are bounded to 30 minutes and a fixed tail; widen the window only
+to cover the alert's own range. A resolved alert means its sliding expression
+stopped firing; it does not restore entries already lost. A websocket-missing
+increase while the HTTP missing counter stays at zero is a websocket-path gap, not
+proof of global log loss. Confirm with the HTTP missing counter and a direct Loki
+query before making a loss claim. For a scheduled backup, `describe schedule`
+shows `lastBackup`; `describe backup` shows the generated run's phase, errors and
+warnings without changing it.
 
-```bash
-# Update versions/manifests in Git, then:
-git push origin main
-argocd app sync invenio-bootstrap
-argocd app wait invenio-bootstrap --health --timeout 300
+| Symptom | Start with |
+|---|---|
+| Git change not deployed | Application source/revision, render errors, sync operation, hooks |
+| Pods Pending | Scheduling events, requests, PVCs, node capacity |
+| Container not starting | Image pull status, command, config, container logs |
+| App Ready but operation fails | Actual API response, DB/index state, task path |
+| Public URL fails, internal works | Cloudflare, tunnel, Traefik, IngressRoute |
+| Empty dropdown | Vocabulary API, DB rows, search index, indexing queue |
+| Tasks accumulate | Queue routing, consumer subscriptions, failures, observed progress |
+| Backup says Completed | Restore test and data consistency, not status alone |
 
-# Rollback via Git revert (ArgoCD auto-syncs)
-git revert <bad-commit-sha>
-git push origin main
+Logging uses one non-root Alloy collector reading Invenio Pod logs through the
+Kubernetes API, restricted by a Role in `invenio`; Loki serves queries on port
+3100 and Grafana provisions the `loki` datasource. Retention is seven days, but
+the 10Gi PVC is a request, not a hard byte cap. Collector restarts can replay
+logs; this is not an audit-log guarantee. Log-pipeline alerts cover missing
+scrape signals, recent drops, push retries/server errors, and a stalled or failing
+canary. The canary's two-minute acknowledgement window recognizes normal hourly
+tail replay; it does not prove zero loss under sustained load.
 
-# Emergency app-level rollback
-argocd app history invenio-bootstrap
-argocd app rollback invenio-bootstrap <history-id>
-```
+The scheduler and log pipeline are operationally important but not health
+guarantees: a healthy Beat process does not prove task progress, and a Ready
+canary does not prove every log entry survived. See
+[Troubleshooting](docs/architecture-guide.md#19-troubleshooting-and-glossary) and
+[metrics, logs and alerts](docs/architecture-guide.md#14-metrics-logs-and-alerts)
+for the detailed limits.
 
-### Secret Rotation
+### Secret rotation
+
+Only SealedSecret ciphertext is committed. Plaintext stays local under
+`secrets/` (gitignored). Back up the Sealed Secrets private key independently;
+without it the encrypted values cannot be recovered.
 
 ```bash
 # Rotate Invenio secrets
@@ -271,113 +305,61 @@ INVENIO_SECRET_KEY="$(openssl rand -hex 32)" ./scripts/generate-sealed-secrets.s
 ./scripts/generate-sealed-secrets.sh minio grafana velero
 ```
 
-### Backup & Restore
+### Quick start and bootstrap
 
 ```bash
-# Check backup freshness
-kubectl -n velero get backupstoragelocation default -o jsonpath='{.status.phase}'
-kubectl -n velero get schedule weekly-infra-backup
+# 1. Verify prerequisites and current access
+./scripts/verify-infra.sh
 
-# Manual backup trigger
-BACKUP_NAME="manual-infra-$(date +%Y%m%d-%H%M%S)"
-velero backup create "$BACKUP_NAME" \
-  --include-namespaces argocd,traefik,monitoring,minio,invenio,velero \
-  --storage-location default --ttl 168h --wait
+# 2. Install ArgoCD once on a clean cluster
+./scripts/bootstrap-infra.sh
 
-# Restore drill (safe canary)
-DRILL_ID="$(date +%Y%m%d-%H%M%S)"
-kubectl -n velero create configmap restore-drill-canary \
-  --from-literal=drill-id="$DRILL_ID" --from-literal=source=velero-readiness \
-  --dry-run=client -o yaml | kubectl apply -f -
-# ... (see SETUP.md for full drill procedure)
-```
+# 3. Create/activate the Cloudflare tunnel credentials
+./external-lb/scripts/bootstrap-dev.sh
 
-### Incident Triage
-
-The Celery Beat scheduler uses one replica with `Recreate` for Deployment
-revision rollouts: the old Pod stops before its replacement starts, with a brief
-scheduling interruption. This is not a distributed lock or an exactly-once
-guarantee. Its liveness probe checks process presence, not scheduling progress.
-
-Centralized application logging uses a single non-root Alloy collector reading
-Pod logs through the Kubernetes API, restricted by a Role in `invenio`. It has
-no Secret permissions or host mounts. Logs go to the internal Loki service on
-port 3100; Grafana provisions the `loki` datasource. Loki retention is seven
-days, but its 10Gi NFS PVC request is not a hard disk-use limit. Watch actual
-shared free space and collector/API overhead before increasing experiment load.
-Collector rollout/restarts may replay logs; this is not an audit-log guarantee.
-Log-pipeline alerts cover missing scrape signals, recent drops, push retries/server
-errors and a stalled or failing canary. They do not treat a quiet application as
-failure or a historical cumulative drop count as new loss.
-The canary remembers acknowledgements for two minutes to recognize replay after
-Loki's normal hourly tail reconnect. Websocket-missing fallback therefore starts
-after two minutes; the final missing-entry query window remains five minutes.
-
-Discord notifications identify `[FIRING]` or `[RESOLVED]` in their title and
-each alert item. A mixed group stays `[FIRING]` while any member is active;
-resolved items show their description as a previous condition. Recovery sends a
-new message rather than editing the original, subject to the 5-minute grouping
-interval. A successful manual backup does not resolve a failed scheduled run.
-
-```bash
-# Control plane health
+# 4. Confirm ArgoCD and the public path
+./scripts/verify-infra.sh
 kubectl -n argocd get applications
-kubectl get pods -A --field-selector=status.phase!=Running
-
-# Invenio namespace quick triage
-kubectl -n invenio get all
-kubectl -n invenio describe deploy invenio-web
-kubectl -n invenio logs deploy/invenio-web --tail=200
-
-# Dependency checks
-kubectl -n invenio get svc invenio-postgresql invenio-redis invenio-search
-kubectl -n minio get svc minio
-
-# Tunnel/ingress
-kubectl -n kube-system get ds cloudflared
-kubectl -n traefik get pods,svc
 ```
+
+Bootstrap is an imperative exception: it installs ArgoCD, after which the
+app-of-apps root manages the remaining Applications. A working cluster, access
+credentials, and the root Application must already exist for self-management to
+start. Recovery must not depend exclusively on a working ArgoCD installation.
+
+## Access and services
+
+| Service | URL / endpoint | Authentication |
+|---|---|---|
+| ArgoCD UI | `https://argocd.vityasy.me` | `argocd-initial-admin-secret` |
+| Grafana | `https://grafana.vityasy.me` | SealedSecret `monitoring-grafana` |
+| MinIO console | `https://minio-console.vityasy.me` | SealedSecret `minio-credentials` |
+| MinIO S3 API | `minio.minio.svc.cluster.local:9000` | Internal only |
+| Invenio RDM | `https://invenio.vityasy.me` | Invenio accounts |
+| Invenio API | `https://api-invenio.vityasy.me` | Invenio accounts |
 
 ## Security
 
-- **Zero inbound ports**: Cloudflare Tunnel creates outbound-only connections — no firewall holes needed
-- **DDoS protection**: All traffic flows through Cloudflare's global network
-- **Encrypted-at-rest secrets**: SealedSecrets are safe to commit to Git (ciphertext only)
-- **Pod security**: All namespaces enforce Pod Security Admission (`restricted` or `baseline`)
-- **Network policies**: Default-deny ingress in all application namespaces, explicit allow rules for required traffic paths
-- **Non-root containers**: All workloads run as non-root with dropped capabilities and `seccompProfile: RuntimeDefault`
-- **Resource quotas**: Every namespace has CPU/memory limits to prevent resource exhaustion
-
-## Disaster Recovery
-
-If the cluster is destroyed and needs to be rebuilt:
-
-```bash
-# 1. Restore Sealed Secrets private key (MUST be backed up beforehand)
-kubectl create secret tls sealed-secrets-key \
-  -n kube-system \
-  --cert=secrets/sealed-secrets-public.pem \
-  --key=secrets/sealed-secrets-private.pem
-
-# 2. Re-bootstrap infrastructure
-./scripts/bootstrap-infra.sh
-./external-lb/scripts/bootstrap-dev.sh
-
-# 3. ArgoCD will automatically sync all SealedSecrets,
-#    the controller decrypts them into Kubernetes Secrets
-# 4. Verify
-./scripts/verify-infra.sh
-```
+- Cloudflare Tunnel makes outbound-only connections; no inbound firewall ports.
+- SealedSecrets keep only ciphertext in Git; the controller's private key is
+  stored outside the repository and must be backed up separately.
+- Pod Security Admission, default-deny NetworkPolicies, non-root containers,
+  dropped capabilities, and `seccompProfile: RuntimeDefault` are configured in
+  `k8s/infra/security/` and the workload manifests.
+- Network reachability, Kubernetes API authorization, ArgoCD RBAC, and Invenio
+  roles are separate boundaries. Application administration does not grant
+  cluster administration.
 
 ## Contributing
 
-1. Create a feature branch from `main`
-2. Make changes to manifests
-3. Open a PR — CI must pass (yamllint, kustomize build, kubeconform, selector validation, secret scanning)
-4. After review, merge to `main`
-5. ArgoCD auto-syncs changes to the cluster (~30s)
-
-See `.opencode/skills/issue-to-pr-workflow/SKILL.md` for the structured issue-to-PR workflow used in this repo.
+1. Create a branch from `main` and open a pull request; every change starts with
+   an issue and follows the repository's issue-to-PR workflow.
+2. Update the affected product docs in the same PR.
+3. Wait for the required validation checks; a docs-only PR still runs them.
+4. Merge with squash merge, then verify ArgoCD converged on the intended revision.
+5. Do not commit plan docs, plan-index updates, `WORKER-REPORT.md`, or other
+   process artifacts into the product history. Keep them untracked or outside the
+   repository.
 
 ## License
 
