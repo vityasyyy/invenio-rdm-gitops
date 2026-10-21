@@ -102,33 +102,38 @@ docs/                       # Architecture guide, dated assessments, plans
 ## Delivery and reconciliation
 
 ```mermaid
-flowchart LR
+flowchart TD
     Change[Git change] --> PR[Pull request]
     PR --> CI[Validation checks]
     CI --> Merge[Merge to main]
     Merge --> Argo[ArgoCD reconciles]
     Merge -->|image inputs changed| Build[Build image]
     Build --> GHCR[GHCR]
-    GHCR --> Argo
+    GHCR -.->|optional: Image Updater observes digest or writes an API override| Argo
     Argo --> K8s[Kubernetes API]
     K8s --> Workloads[Pods, hooks, controllers]
 ```
 
-A manifest-only change does not rebuild the image. An image build does not deploy
-by itself unless the effective desired digest changes. ArgoCD compares and applies
-resources; Kubernetes controllers perform the rollout and hooks run around the
-sync operation.
+A manifest-only change does not rebuild the image. Publishing an image does not
+deploy it by itself: the cluster changes only when the pinned desired digest
+changes or Image Updater writes an Application override through the ArgoCD API.
+ArgoCD compares and applies resources; Kubernetes controllers perform the rollout
+and hooks run around the sync operation.
 
 **CI checks** on pull requests to `main`:
 
 | Check | What it validates |
 |---|---|
 | Validate YAML Syntax | yamllint plus Velero ownership and Python tests |
-| Render & Validate Manifests | kustomize/Helm render, kubeconform, selectors, SealedSecret format |
+| Render & Validate Manifests | kustomize/Helm render, advisory kubeconform, selectors, SealedSecret format |
 | Validate ArgoCD Applications | kube-linter, source paths, AppProject repository allowlists |
 | Verify Sync Wave Ordering | Wave annotations and project/wave sanity |
 | Scan for Secrets | gitleaks |
 | Validate Monitoring Rules & Dashboards | promtool, amtool, alert/dashboard contracts |
+
+**Advisory check:** the kubeconform step is invoked with `|| true`; schema
+findings do not fail the job. Render, selector, SealedSecret, ArgoCD path/RBAC,
+sync-wave, gitleaks, and monitoring checks are enforced.
 
 **Deploy verification** on push to `main` waits for ArgoCD applications to report
 `Synced` and `Healthy`, then smokes `https://invenio.vityasy.me/ping`. It is not a
@@ -207,7 +212,7 @@ PVs to make an alert quiet.
 |---|---|
 | Kubernetes resources and selected files via Velero | A weekly schedule exists and manual production/canary backups have completed. The latest actual weekly run observed on 21 October was `PartiallyFailed` (4 errors, 58 warnings); this is not a successful scheduled-backup claim. |
 | PostgreSQL native recovery | CNPG backups/WAL go to MinIO. Recovery of existing data into an isolated CNPG cluster was verified by schema, row-count, and vocabulary-digest comparison. No seeded application record/file consistency proof exists. |
-| Uploaded-file recovery | A 35,840-byte canary file restored with the same SHA-256 into an isolated namespace. The recovery preflight found production `invenio-data` and `invenio-archive` empty and no production seed has been authorized, so production file recovery is unproven. |
+| Uploaded-file recovery | A 35,840-byte canary file restored with the same SHA-256 into an isolated namespace. The owner approved a private draft with a deterministic 64 KiB file, save-only with no publication or DOI; the upload/save ID is still awaited and no seeded restore has completed. Production file recovery remains unproven. |
 | Application-consistent recovery | Not proven. No seeded Invenio record plus file, permissions, and index state has been restored and verified together. |
 | Independent disaster recovery | Not demonstrated. MinIO and the primary NFS data share the same NFS server; an off-site or independent copy is not provided here. |
 | RPO/RTO | No contractual guarantee. Velero is weekly, CNPG is more frequent, and actual restore time depends on data size, credentials, storage, and operator behavior. |
@@ -238,7 +243,26 @@ kubectl -n minio get svc minio
 kubectl -n kube-system get ds cloudflared
 kubectl -n traefik get pods,svc
 kubectl get ingressroutes -A
+
+# Bounded log-pipeline evidence (read-only)
+kubectl -n monitoring logs deploy/alloy --since=30m --tail=200
+kubectl -n monitoring logs loki-0 -c loki --since=30m --tail=200
+kubectl -n monitoring logs -l app.kubernetes.io/component=canary --since=30m --tail=100 --prefix
+
+# Scheduled backup state (read-only; replace the placeholder with a listed name)
+kubectl -n velero describe schedule weekly-infra-backup
+kubectl -n velero get backups.velero.io -o wide
+kubectl -n velero describe backup <generated-backup-name>
 ```
+
+The log commands are bounded to 30 minutes and a fixed tail; widen the window only
+to cover the alert's own range. A resolved alert means its sliding expression
+stopped firing; it does not restore entries already lost. A websocket-missing
+increase while the HTTP missing counter stays at zero is a websocket-path gap, not
+proof of global log loss. Confirm with the HTTP missing counter and a direct Loki
+query before making a loss claim. For a scheduled backup, `describe schedule`
+shows `lastBackup`; `describe backup` shows the generated run's phase, errors and
+warnings without changing it.
 
 | Symptom | Start with |
 |---|---|
@@ -330,11 +354,12 @@ start. Recovery must not depend exclusively on a working ArgoCD installation.
 
 1. Create a branch from `main` and open a pull request; every change starts with
    an issue and follows the repository's issue-to-PR workflow.
-2. Update the affected docs and plan index in the same PR.
+2. Update the affected product docs in the same PR.
 3. Wait for the required validation checks; a docs-only PR still runs them.
 4. Merge with squash merge, then verify ArgoCD converged on the intended revision.
-5. Do not push secrets, rendered output, `WORKER-REPORT.md`, or planning artifacts
-   into the product history.
+5. Do not commit plan docs, plan-index updates, `WORKER-REPORT.md`, or other
+   process artifacts into the product history. Keep them untracked or outside the
+   repository.
 
 ## License
 

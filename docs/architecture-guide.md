@@ -496,8 +496,8 @@ CNPG native database recovery and Velero resource/filesystem recovery serve diff
 | --- | --- |
 | Kubernetes resources and selected files via Velero | Weekly schedule and manual/canary Backups exist. The latest actual weekly run at the 21 October audit was `PartiallyFailed` (4 errors, 58 warnings); backup status is not restore proof. |
 | PostgreSQL native recovery | Native restore of existing data into an isolated CNPG cluster matched schema, row counts and a vocabulary content digest. It did not include a seeded application record or file. |
-| Uploaded-file recovery | A 35,840-byte canary file restored with the same SHA-256. The recovery preflight found production `invenio-data` and `invenio-archive` empty and no production seed has been authorized, so production-file recovery is unproven. |
-| Application-consistent recovery | Not proven: no seeded record plus file, permissions, publication state and search/index behavior has been restored and verified together. |
+| Uploaded-file recovery | A 35,840-byte canary file restored with the same SHA-256. The owner approved a private draft with a deterministic 64 KiB file, save-only with no publication or DOI; the upload/save ID is still awaited and no seeded restore has completed. Production-file recovery is unproven. |
+| Application-consistent recovery | Not proven: the approved private draft/64 KiB seed has not yet been uploaded, saved, backed up and restored together with permissions, publication state and search/index behavior. |
 | Independent disaster recovery | Not demonstrated. MinIO and primary NFS data share the same NFS server; no off-site or independent copy is established here. |
 | RPO/RTO | No guarantee. Velero is weekly, CNPG is more frequent, and restore time varies with data size, credentials, storage and operator behavior. |
 
@@ -509,7 +509,7 @@ CNPG native database recovery and Velero resource/filesystem recovery serve diff
 
 ### What recovery must prove
 
-A useful seeded test checks a known draft/record, its permissions, associated file metadata, exact file bytes/checksum, and relevant indexing behavior after restore. It also proves that the experiment can return to the same baseline.
+A useful seeded test checks a known draft/record, its permissions, associated file metadata, exact file bytes/checksum, and relevant indexing behavior after restore. It also proves that the experiment can return to the same baseline. The approved seed scope is one private draft with a deterministic 64 KiB file, save-only and without publication or DOI; the upload/save ID is pending, and a restore has not yet been completed.
 
 A private-draft test does not prove published-record, DOI or public-search recovery. Backup completion is evidence of backup execution, not proof of successful restoration.
 
@@ -547,7 +547,7 @@ An UP scrape target is not proof of every series, and a Ready canary is not proo
 
 Loki canary v3.3.2 reconnects at the hourly tail limit. Replayed entries older than its previous 60-second acknowledgement retention were misclassified as unexpected. The deployed `-wait=2m` retains acknowledgements longer; the final missing-entry window remains five minutes.
 
-On 20 October around 20:22 UTC+7, both natural reconnects were logged, with zero unexpected/missing-entry log reports, 99–100 replay duplicates, Ready status and zero restarts. The subsequent Prometheus query returned HTTP 400, so **full metric/alert verification remained incomplete**. A read-only range query on 21 October still showed websocket-missing increments after the canary fix while the HTTP missing-entry counter remained zero. This supports keeping #140 open for sustained natural-reconnect verification; neither a Ready canary nor one clean cycle is a lossless-log guarantee.
+On 20 October around 20:22 UTC+7, both natural reconnects were logged, with zero unexpected/missing-entry log reports, 99–100 replay duplicates, Ready status and zero restarts. The subsequent Prometheus query returned HTTP 400, so **full metric/alert verification remained incomplete**. A read-only range query on 21 October showed websocket-missing increments after the canary fix while the HTTP missing-entry counter remained zero. That is a websocket-path gap, not evidence of global log loss: the HTTP missing-entry counter stayed zero (the fallback path reported no loss), and a websocket-only counter must not be used alone to claim entries were lost globally. Sustained natural-reconnect verification remains open in #140; neither a Ready canary nor one clean cycle is a lossless-log guarantee.
 
 ## 15. Security and access boundaries
 
@@ -708,7 +708,7 @@ Issue #109 tracks verification that can pass before the expected merged revision
 | #104 | Scrape wiring is present and required jobs were observed; evidence supports closing it with the live target inventory. |
 | #91 | The original zero-Backup/plugin-crashloop symptom is superseded by #139; the remaining weekly `PartiallyFailed` run is not a separate #91 root cause. |
 | #109 | Active: deploy verification still samples a single all-green state, times out at five minutes, and is not hook- or revision-aware. |
-| #139 | Partly completed: ownership, native DB restore, canary file restore and monitoring are verified; seeded application recovery, host/NFS evidence and independent DR remain open. Split rather than close. |
+| #139 | Partly completed: ownership, native DB restore, canary file restore and monitoring are verified. A private draft with a deterministic 64 KiB file is approved but its upload/save ID and seeded restore are pending; host/NFS evidence and independent DR also remain open. Split rather than close. |
 | #140 | Initial Loki/Alloy restoration is verified; sustained natural-reconnect and authenticated Grafana query proof remain open. |
 | #145 | Software/alert work and FIRING/RESOLVED delivery are verified; external IT restart-policy prevention is outside the repository. Close candidate for the software scope. |
 | #161 | Vocabulary API/index repair is verified; owner browser confirmation and durable bulk-queue backlog handling remain open. Keep open and split the queue work. |
