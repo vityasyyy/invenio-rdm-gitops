@@ -369,6 +369,10 @@ def evaluate_app(app: dict, tree: dict | None, release: str, tree_error: str | N
         historical = True
         issues.append("operation state malformed")
 
+    if app.get("operation"):
+        operation = "Requested"
+        issues.append("operation requested but not started")
+
     if tree_error:
         issues.append(f"resource tree unavailable: {tree_error}")
     else:
@@ -428,6 +432,7 @@ def verify(
     interval: int = INTERVAL, timeout: int = TIMEOUT, sleep=time.sleep, clock=time.monotonic,
 ) -> VerificationResult:
     started = clock()
+    deadline = started + timeout
     streak = taken = 0
     report: SnapshotReport | None = None
     message = ""
@@ -438,7 +443,7 @@ def verify(
             return VerificationResult(False, report, taken, streak, elapsed, f"timed out after {timeout:.0f}s")
         taken += 1
         try:
-            report = client.snapshot(expected_names, release)
+            report = client.snapshot(expected_names, release, deadline=deadline)
         except FatalApiError as exc:
             return VerificationResult(False, report, taken, streak, clock() - started, str(exc))
         except ApiError as exc:
@@ -494,13 +499,19 @@ class ArgoCDClient:
         self.request_timeout = request_timeout
         self.context = ssl.create_default_context()
 
-    def _get(self, path: str):
+    def _get(self, path: str, deadline: float | None = None):
+        request_timeout = self.request_timeout
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ApiError(f"verification deadline exceeded before {path}")
+            request_timeout = min(request_timeout, remaining)
         request = urllib.request.Request(
             self.server + path,
             headers={"Authorization": f"Bearer {self.token}", "Accept": "application/json"},
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.request_timeout, context=self.context) as response:
+            with urllib.request.urlopen(request, timeout=request_timeout, context=self.context) as response:
                 status, body = getattr(response, "status", 200), response.read()
         except urllib.error.HTTPError as exc:
             if exc.code in (401, 403):
@@ -515,8 +526,10 @@ class ArgoCDClient:
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise ApiError(f"ArgoCD API returned malformed JSON for {path}") from None
 
-    def snapshot(self, expected_names: list[str], release: str) -> SnapshotReport:
-        payload = self._get("/api/v1/applications")
+    def snapshot(
+        self, expected_names: list[str], release: str, deadline: float | None = None
+    ) -> SnapshotReport:
+        payload = self._get("/api/v1/applications", deadline)
         items = payload.get("items") if isinstance(payload, dict) else None
         if not isinstance(items, list):
             return SnapshotReport([], ["ArgoCD application list is malformed: items is not a list"])
@@ -530,9 +543,12 @@ class ArgoCDClient:
         trees: dict[str, dict] = {}
         tree_errors: dict[str, str] = {}
         for name in names:
+            if deadline is not None and time.monotonic() >= deadline:
+                tree_errors[name] = "verification deadline exceeded"
+                continue
             path = f"/api/v1/applications/{urllib.parse.quote(name, safe='')}/resource-tree"
             try:
-                tree = self._get(path)
+                tree = self._get(path, deadline)
             except ApiError as exc:
                 tree_errors[name] = str(exc)
                 continue

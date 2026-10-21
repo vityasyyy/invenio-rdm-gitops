@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -164,6 +165,15 @@ class OperationTests(unittest.TestCase):
         issues = " ".join(report.apps[0].issues)
         self.assertIn("operation Failed", issues)
         self.assertIn("hook error", issues)
+
+    def test_requested_operation_is_not_clean(self):
+        app = application("demo")
+        app["operation"] = {"sync": {"revision": RELEASE}}
+        report = evaluate([app])
+
+        self.assertFalse(report.clean)
+        self.assertEqual(report.apps[0].operation, "Requested")
+        self.assertIn("operation requested", " ".join(report.apps[0].issues))
 
     def test_active_running_operation_waits_even_with_old_target(self):
         report = evaluate([
@@ -527,7 +537,7 @@ class SamplingTests(unittest.TestCase):
             self.reports = list(reports)
             self.samples = 0
 
-        def snapshot(self, expected_names, release):
+        def snapshot(self, expected_names, release, deadline=None):
             self.samples += 1
             return self.reports.pop(0)
 
@@ -578,7 +588,7 @@ class SamplingTests(unittest.TestCase):
         clean = report_for("demo")
 
         class SlowClient:
-            def snapshot(self, expected_names, release):
+            def snapshot(self, expected_names, release, deadline=None):
                 clock.now += 901
                 return clean
 
@@ -595,6 +605,54 @@ class SamplingTests(unittest.TestCase):
 
         self.assertFalse(result.passed)
         self.assertIn("deadline", " ".join(result.report.issues))
+
+
+class DeadlineTests(unittest.TestCase):
+    def test_verify_passes_single_deadline_to_client(self):
+        clock = SamplingTests.FakeClock()
+        clean = report_for("demo")
+
+        class RecordingClient:
+            deadline = None
+
+            def snapshot(self, expected_names, release, deadline=None):
+                self.deadline = deadline
+                return clean
+
+        client = RecordingClient()
+        result = deployment_verifier.verify(
+            client,
+            ["demo"],
+            RELEASE,
+            samples=1,
+            interval=30,
+            timeout=900,
+            sleep=clock.sleep,
+            clock=clock,
+        )
+
+        self.assertTrue(result.passed)
+        self.assertEqual(client.deadline, 900)
+
+    def test_snapshot_stops_tree_reads_at_deadline(self):
+        client = deployment_verifier.ArgoCDClient("https://argocd.example", "token")
+        now = [0.0]
+        tree_calls = []
+
+        def fake_get(path, deadline=None):
+            if path == "/api/v1/applications":
+                return {"items": [application("a"), application("b")]}
+            tree_calls.append(path)
+            now[0] = 10.0
+            return {"nodes": []}
+
+        client._get = fake_get
+        with mock.patch.object(deployment_verifier.time, "monotonic", lambda: now[0]):
+            report = client.snapshot(["a", "b"], RELEASE, deadline=5.0)
+
+        self.assertEqual(len(tree_calls), 1)
+        self.assertFalse(report.clean)
+        self.assertIn("deadline", " ".join(report.apps[1].issues).lower())
 
 
 class SummaryTests(unittest.TestCase):
