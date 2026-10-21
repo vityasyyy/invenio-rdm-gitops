@@ -153,6 +153,11 @@ waiting, the run reports a revision mismatch and is treated as superseded; it
 never passes on an older green state. Changes to this workflow or its verifier
 also trigger the check so verifier-only merges are exercised.
 
+Authenticated API reads use the runner's native curl transport with certificate
+verification, redirects disabled and bounded deadlines. The bearer token is
+passed through stdin configuration, not command-line arguments. This retains the
+existing automated access path without changing Cloudflare or ArgoCD policies.
+
 ### What ArgoCD owns — and what it does not
 
 | Thing | Source of truth | Runtime owner | Consequence |

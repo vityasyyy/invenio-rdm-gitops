@@ -6,12 +6,10 @@ from __future__ import annotations
 import json
 import os
 import re
-import ssl
+import subprocess
 import sys
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,13 +33,6 @@ class ApiError(Exception):
 
 class FatalApiError(Exception):
     pass
-
-
-class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Keep authenticated requests on the configured origin."""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
 
 
 @dataclass
@@ -502,13 +493,10 @@ def normalize_server(value: str) -> str:
 class ArgoCDClient:
     def __init__(self, server: str, token: str, request_timeout: int = REQUEST_TIMEOUT):
         self.server = normalize_server(server)
+        if any(ord(char) < 32 or ord(char) == 127 for char in token):
+            raise ConfigurationError("ARGOCD_AUTH_TOKEN contains control characters")
         self.token = token
         self.request_timeout = request_timeout
-        self.context = ssl.create_default_context()
-        self.opener = urllib.request.build_opener(
-            urllib.request.HTTPSHandler(context=self.context),
-            _NoRedirectHandler(),
-        )
 
     def _get(self, path: str, deadline: float | None = None):
         request_timeout = self.request_timeout
@@ -517,26 +505,35 @@ class ArgoCDClient:
             if remaining <= 0:
                 raise ApiError(f"verification deadline exceeded before {path}")
             request_timeout = min(request_timeout, remaining)
-        request = urllib.request.Request(
-            self.server + path,
-            headers={"Authorization": f"Bearer {self.token}", "Accept": "application/json"},
-        )
+        config = "\n".join([
+            "url = " + json.dumps(self.server + path),
+            "header = " + json.dumps(f"Authorization: Bearer {self.token}"),
+            'header = "Accept: application/json"',
+            'header = "Content-Type: application/json"',
+        ])
         try:
-            with self.opener.open(request, timeout=request_timeout) as response:
-                status, body = getattr(response, "status", 200), response.read()
-        except urllib.error.HTTPError as exc:
-            code = exc.code
-            exc.close()
-            if code in (401, 403):
-                raise FatalApiError(f"ArgoCD API returned HTTP {code} for {path}") from None
-            raise ApiError(f"ArgoCD API returned HTTP {code} for {path}") from None
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise ApiError(f"ArgoCD API request failed for {path}: {getattr(exc, 'reason', exc)}") from None
+            response = subprocess.run(
+                ["curl", "--disable", "--silent", "--show-error", "--globoff",
+                 "--connect-timeout", str(min(5, request_timeout)),
+                 "--max-time", str(request_timeout),
+                 "--write-out", "\n%{http_code}", "--config", "-"],
+                input=config, capture_output=True, text=True, timeout=request_timeout,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            raise ApiError(f"curl request failed or timed out for {path}") from None
+        if response.returncode:
+            raise ApiError(f"curl transport failed for {path} (exit {response.returncode})")
+        body, separator, status = response.stdout.rpartition("\n")
+        if not separator or not re.fullmatch(r"\d{3}", status):
+            raise ApiError(f"curl returned malformed HTTP status for {path}")
+        status = int(status)
+        if status in (401, 403):
+            raise FatalApiError(f"ArgoCD API returned HTTP {status} for {path}")
         if status != 200:
             raise ApiError(f"ArgoCD API returned HTTP {status} for {path}")
         try:
-            return json.loads(body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
+            return json.loads(body)
+        except json.JSONDecodeError:
             raise ApiError(f"ArgoCD API returned malformed JSON for {path}") from None
 
     def snapshot(
