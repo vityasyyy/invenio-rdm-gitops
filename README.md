@@ -308,6 +308,18 @@ Discarded entries are counted separately by
 current entries pass and genuine write-failure alerts remain unchanged. This
 mitigates replay, not the source's resume behavior.
 
+The API source saves read timestamps in `positions.yml`, but the current
+`emptyDir` storage loses them when the collector Pod is replaced. Cold starts
+can therefore replay retained history. Normal reconnects have a separate
+boundary-timestamp replay defect in Alloy v1.21.0; upstream
+[fix #7193](https://github.com/grafana/alloy/pull/7193) was still unmerged on
+21 October 2026. A persistent positions volume would address cold-start replay,
+not that reconnect defect; neither a storage change nor an unreleased upgrade
+is deployed here. Loki can also reject history within seven days if it falls
+outside the stream's out-of-order window. A failed-request entry count is not
+necessarily a count of uniquely lost logs: valid entries can be partially
+accepted while a mixed request returns HTTP 400. See issue #140.
+
 The scheduler and log pipeline are operationally important but not health
 guarantees: a healthy Beat process does not prove task progress, and a Ready
 canary does not prove every log entry survived. See
