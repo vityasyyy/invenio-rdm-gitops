@@ -11,7 +11,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOCAL_SECRETS_DIR="$REPO_ROOT/secrets"
 INFRA_SECRETS_DIR="$REPO_ROOT/k8s/infra"
 APPS_SECRETS_DIR="$REPO_ROOT/k8s/apps"
-EXTERNAL_LB_SECRETS_DIR="$REPO_ROOT/external-lb/k8s"
+EXTERNAL_LB_SECRETS_DIR="$REPO_ROOT/k8s/infra/cloudflared/resources"
 
 MINIO_ROOT_USER_VALUE=""
 MINIO_ROOT_PASSWORD_VALUE=""
@@ -72,11 +72,12 @@ ensure_dirs() {
     "$LOCAL_SECRETS_DIR/velero" \
     "$LOCAL_SECRETS_DIR/invenio" \
     "$LOCAL_SECRETS_DIR/cloudflared" \
-    "$INFRA_SECRETS_DIR/minio" \
-    "$INFRA_SECRETS_DIR/monitoring" \
-    "$INFRA_SECRETS_DIR/velero" \
-    "$APPS_SECRETS_DIR/invenio" \
-    "$REPO_ROOT/k8s/apps/invenio-deps/postgresql" \
+    "$INFRA_SECRETS_DIR/minio/resources" \
+    "$INFRA_SECRETS_DIR/monitoring/resources" \
+    "$INFRA_SECRETS_DIR/velero/resources" \
+    "$INFRA_SECRETS_DIR/argocd-image-updater/resources" \
+    "$APPS_SECRETS_DIR/invenio/resources" \
+    "$REPO_ROOT/k8s/dependencies/postgresql/resources" \
     "$EXTERNAL_LB_SECRETS_DIR"
 }
 
@@ -168,7 +169,7 @@ generate_minio() {
   write_text "$LOCAL_SECRETS_DIR/minio/root-password.txt" "$MINIO_ROOT_PASSWORD_VALUE"
 
   seal_literals "minio" "minio-credentials" \
-    "$INFRA_SECRETS_DIR/minio/minio-credentials-secret.yaml" \
+    "$INFRA_SECRETS_DIR/minio/resources/minio-credentials-secret.yaml" \
     "rootUser=$MINIO_ROOT_USER_VALUE" \
     "rootPassword=$MINIO_ROOT_PASSWORD_VALUE"
   echo "done"
@@ -183,7 +184,7 @@ generate_grafana() {
   write_text "$LOCAL_SECRETS_DIR/monitoring/admin-password.txt" "$grafana_admin_password"
 
   seal_literals "monitoring" "monitoring-grafana" \
-    "$INFRA_SECRETS_DIR/monitoring/grafana-admin-secret.yaml" \
+    "$INFRA_SECRETS_DIR/monitoring/resources/grafana-admin-secret.yaml" \
     "admin-user=$grafana_admin_user" \
     "admin-password=$grafana_admin_password"
   echo "done"
@@ -205,7 +206,7 @@ EOF
 
   seal_file "velero" "velero-credentials" "cloud" \
     "$velero_cloud_file" \
-    "$INFRA_SECRETS_DIR/velero/velero-credentials-secret.yaml"
+    "$INFRA_SECRETS_DIR/velero/resources/velero-credentials-secret.yaml"
   echo "done"
 }
 
@@ -249,11 +250,11 @@ EOF
 
   seal_env_file "invenio" "invenio-app-secrets" \
     "$invenio_env_file" \
-    "$APPS_SECRETS_DIR/invenio/app-sealed-secret.yaml"
+    "$APPS_SECRETS_DIR/invenio/resources/app-sealed-secret.yaml"
 
   # Also seal the CloudNativePG app-user secret so the DB password matches
   seal_literals "database" "postgres-invenio-app-user" \
-    "$REPO_ROOT/k8s/apps/invenio-deps/postgresql/app-user-sealed-secret.yaml" \
+    "$REPO_ROOT/k8s/dependencies/postgresql/resources/app-user-sealed-secret.yaml" \
     "password=$db_password"
 
   echo "done"
@@ -311,7 +312,7 @@ generate_ghcr() {
     --dry-run=client -o yaml |
     kubeseal --controller-namespace kube-system \
       --controller-name sealed-secrets-controller \
-      -o yaml >"$APPS_SECRETS_DIR/invenio/ghcr-pull-secret.yaml"
+      -o yaml >"$APPS_SECRETS_DIR/invenio/resources/ghcr-pull-secret.yaml"
   echo "done"
 }
 
@@ -329,7 +330,7 @@ generate_image_updater_ghcr() {
     --dry-run=client -o yaml |
     kubeseal --controller-namespace kube-system \
       --controller-name sealed-secrets-controller \
-      -o yaml >"$INFRA_SECRETS_DIR/argocd-image-updater/ghcr-credentials-secret.yaml"
+      -o yaml >"$INFRA_SECRETS_DIR/argocd-image-updater/resources/ghcr-credentials-secret.yaml"
   echo "done"
 }
 
@@ -407,14 +408,14 @@ main() {
 
   echo ""
   echo "Generated sealed secret files:"
-  [[ "$want_minio" -eq 1 ]] && echo "  - $INFRA_SECRETS_DIR/minio/minio-credentials-secret.yaml"
-  [[ "$want_grafana" -eq 1 ]] && echo "  - $INFRA_SECRETS_DIR/monitoring/grafana-admin-secret.yaml"
-  [[ "$want_velero" -eq 1 ]] && echo "  - $INFRA_SECRETS_DIR/velero/velero-credentials-secret.yaml"
-  [[ "$want_invenio" -eq 1 ]] && echo "  - $APPS_SECRETS_DIR/invenio/app-sealed-secret.yaml"
-  [[ "$want_invenio" -eq 1 ]] && echo "  - $REPO_ROOT/k8s/apps/invenio-deps/postgresql/app-user-sealed-secret.yaml"
+  [[ "$want_minio" -eq 1 ]] && echo "  - $INFRA_SECRETS_DIR/minio/resources/minio-credentials-secret.yaml"
+  [[ "$want_grafana" -eq 1 ]] && echo "  - $INFRA_SECRETS_DIR/monitoring/resources/grafana-admin-secret.yaml"
+  [[ "$want_velero" -eq 1 ]] && echo "  - $INFRA_SECRETS_DIR/velero/resources/velero-credentials-secret.yaml"
+  [[ "$want_invenio" -eq 1 ]] && echo "  - $APPS_SECRETS_DIR/invenio/resources/app-sealed-secret.yaml"
+  [[ "$want_invenio" -eq 1 ]] && echo "  - $REPO_ROOT/k8s/dependencies/postgresql/resources/app-user-sealed-secret.yaml"
   [[ "$want_cloudflared" -eq 1 ]] && echo "  - $EXTERNAL_LB_SECRETS_DIR/cloudflared-credentials-secret.yaml"
-  [[ "$want_ghcr" -eq 1 ]] && echo "  - $APPS_SECRETS_DIR/invenio/ghcr-pull-secret.yaml"
-  [[ "$want_image_updater" -eq 1 ]] && echo "  - $INFRA_SECRETS_DIR/argocd-image-updater/ghcr-credentials-secret.yaml"
+  [[ "$want_ghcr" -eq 1 ]] && echo "  - $APPS_SECRETS_DIR/invenio/resources/ghcr-pull-secret.yaml"
+  [[ "$want_image_updater" -eq 1 ]] && echo "  - $INFRA_SECRETS_DIR/argocd-image-updater/resources/ghcr-credentials-secret.yaml"
   echo ""
   echo "Plaintext files were written under: $LOCAL_SECRETS_DIR/"
   echo "Commit only the sealed YAML files; keep $LOCAL_SECRETS_DIR/ untracked."

@@ -1,20 +1,20 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - pod-security-admission.yaml
-  - traefik-full-egress.yaml
-  - monitoring-egress.yaml
-  - network-policies/default-deny.yaml
-  - network-policies/argocd-allow.yaml
-  - network-policies/cloudflared-allow.yaml
-  - network-policies/monitoring-allow.yaml
-  - network-policies/minio-allow.yaml
-  - network-policies/traefik-allow.yaml
-  - network-policies/invenio-netpol.yaml
-  - limit-ranges/default-limits.yaml
-  - resource-quotas/argocd-quota.yaml
-  - resource-quotas/default-quota.yaml
-  - resource-quotas/monitoring-quota.yaml
-  - resource-quotas/minio-quota.yaml
-  - resource-quotas/velero-quota.yaml
-  - shared-security-headers-middleware.yaml
+  - resources/pod-security-admission.yaml
+  - resources/traefik-full-egress.yaml
+  - resources/monitoring-egress.yaml
+  - resources/network-policies/default-deny.yaml
+  - resources/network-policies/argocd-allow.yaml
+  - resources/network-policies/cloudflared-allow.yaml
+  - resources/network-policies/monitoring-allow.yaml
+  - resources/network-policies/minio-allow.yaml
+  - resources/network-policies/traefik-allow.yaml
+  - resources/network-policies/invenio-netpol.yaml
+  - resources/limit-ranges/default-limits.yaml
+  - resources/resource-quotas/argocd-quota.yaml
+  - resources/resource-quotas/default-quota.yaml
+  - resources/resource-quotas/monitoring-quota.yaml
+  - resources/resource-quotas/minio-quota.yaml
+  - resources/resource-quotas/velero-quota.yaml
+  - resources/shared-security-headers-middleware.yaml

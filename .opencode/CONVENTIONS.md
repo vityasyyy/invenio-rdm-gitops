@@ -6,13 +6,16 @@ the global lead agent config (skill trigger map).
 
 ## Repo layout & GitOps
 
-- GitOps-first: everything is YAML manifests or Helm values committed to this
-  repo and synced by ArgoCD (app-of-apps: `argocd/root.yaml` + `argocd/apps/`).
-  `k8s/apps/` = application workloads (invenio, invenio-deps/{postgresql,
-  redis, opensearch}), `k8s/infra/` = platform (argocd, traefik, monitoring,
-  loki, minio, velero, sealed-secrets, security), `external-lb/k8s/` =
-  Cloudflare Tunnel + cloudflared daemonset, `docker/ugm/` = the vendored
-  UGM Invenio instance layer (Dockerfile, invenio.cfg, uwsgi configs).
+- GitOps selectors: `argocd/root.yaml` + `argocd/apps/`. Runtime sources:
+  `k8s/apps/invenio/`, `k8s/dependencies/{postgresql,redis,opensearch}/`,
+  `k8s/infra/{component}/` (including cloudflared). Component roots contain
+  only consumed `values.yaml`, `kustomization.yaml`, `resources/`, `patches/`,
+  or monitoring dashboards/tests. No empty ceremonial directories. Terraform
+  remains in `external-lb/terraform/`; `docker/ugm/` builds the Invenio image.
+  See `docs/repository-map.md` for the canonical consumer inventory.
+- Helm values have one authoritative file referenced by the Application;
+  no inline overrides or editable validation mirrors. CI renders actual
+  Application sources, including their release names, versions and values.
 - Cluster: `btd-rke2` (Rancher-managed RKE2, reachable only via university
   VPN). Storage: NFS CSI (`btd-nfs` StorageClass, `nfs.csi.k8s.io`). Domains:
   `invenio.vityasy.me` (UI) and `api-invenio.vityasy.me` (API) via Cloudflare
@@ -25,7 +28,7 @@ the global lead agent config (skill trigger map).
 - Secrets: SealedSecrets (encrypted in git, `bitnami.com/v1alpha1`), sealed
   via `kubeseal`; the private key lives OUTSIDE the repo (`~/.sealed-secrets/`).
   Never commit plaintext secrets; `secrets/` and `keys.txt` are gitignored.
-- ExternalName services: `k8s/apps/invenio/dependencies-external-services.yaml`
+- ExternalName services: `k8s/apps/invenio/resources/dependencies-external-services.yaml`
   maps invenio-deps services to their real namespaces — keep in sync when
   moving dependencies.
 

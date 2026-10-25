@@ -17,13 +17,13 @@ ROOT = Path(__file__).resolve().parents[2]
 ALLOY_RUNTIME_IMAGE = "grafana/alloy:v1.21.0"
 AGED_ENTRY_DROP_REASON = "older_than_loki_reject_window"
 VALUES_PATH = ROOT / "k8s/infra/alloy/values.yaml"
-RBAC_PATH = ROOT / "k8s/infra/alloy/rbac.yaml"
+RBAC_PATH = ROOT / "k8s/infra/alloy/resources/rbac.yaml"
 KUSTOMIZATION_PATH = ROOT / "k8s/infra/alloy/kustomization.yaml"
 MONITORING_VALUES_PATH = ROOT / "k8s/infra/monitoring/values.yaml"
-MONITORING_API_NETPOL_PATH = ROOT / "k8s/infra/monitoring/networkpolicy-kube-api.yaml"
-MONITORING_EGRESS_PATH = ROOT / "k8s/infra/security/monitoring-egress.yaml"
-MONITORING_ALLOW_PATH = ROOT / "k8s/infra/security/network-policies/monitoring-allow.yaml"
-PODMONITOR_PATH = ROOT / "k8s/infra/alloy/podmonitor.yaml"
+MONITORING_API_NETPOL_PATH = ROOT / "k8s/infra/monitoring/resources/networkpolicy-kube-api.yaml"
+MONITORING_EGRESS_PATH = ROOT / "k8s/infra/security/resources/monitoring-egress.yaml"
+MONITORING_ALLOW_PATH = ROOT / "k8s/infra/security/resources/network-policies/monitoring-allow.yaml"
+PODMONITOR_PATH = ROOT / "k8s/infra/alloy/resources/podmonitor.yaml"
 
 
 def load_yaml(path):
@@ -353,7 +353,7 @@ class AlloyPodMonitorTest(unittest.TestCase):
 class AlloyKustomizationTest(unittest.TestCase):
     def test_applies_rbac_and_pod_monitor(self):
         kustomization = load_yaml(KUSTOMIZATION_PATH)
-        self.assertEqual(kustomization["resources"], ["podmonitor.yaml", "rbac.yaml"])
+        self.assertEqual(kustomization["resources"], ["resources/podmonitor.yaml", "resources/rbac.yaml"])
 
 
 class GrafanaLokiDatasourceTest(unittest.TestCase):

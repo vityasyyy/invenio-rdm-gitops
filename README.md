@@ -72,12 +72,11 @@ argocd/
   root.yaml                 # App-of-apps root Application
   apps/                     # 17 child Application definitions
 k8s/
-  apps/invenio/             # Web, worker, Beat, setup Job, HPA, PDB, PVCs, routes
-  apps/invenio-deps/        # PostgreSQL (CNPG), Redis, OpenSearch
+  apps/invenio/             # Kustomization + resources/ (web, workers, setup, PVCs)
+  dependencies/             # PostgreSQL (CNPG), Redis, OpenSearch
   infra/                    # ArgoCD, Image Updater, security, monitoring, Loki,
                             # Alloy, MinIO, Velero, Sealed Secrets, Traefik
 external-lb/
-  k8s/                      # Cloudflare Tunnel DaemonSet and Service
   scripts/                  # Tunnel bootstrap helper
   terraform/                # Cloudflare tunnel/DNS source
 docker/ugm/                 # Application image: Dockerfile, invenio.cfg, uWSGI
@@ -88,8 +87,10 @@ docs/                       # Architecture guide, dated assessments, plans
 .opencode/                  # Agent conventions and workflow skills
 ```
 
-`argocd/projects/` does not exist. AppProject RBAC lives in
-`k8s/infra/argocd/projects/`.
+The canonical [repository map](docs/repository-map.md) lists component entrypoints,
+renderers and consumers. AppProject RBAC lives in `k8s/infra/argocd/resources/`;
+cloudflared runtime lives in `k8s/infra/cloudflared/`, separately from Terraform.
+See [operations](docs/operations.md) for validation and recovery checks.
 
 ### Source, generated, and legacy material
 
@@ -97,7 +98,7 @@ docs/                       # Architecture guide, dated assessments, plans
 |---|---|---|
 | **Source of truth** | `argocd/`, `k8s/`, `external-lb/`, `docker/ugm/`, `app_data/`, `assets/`, `static/`, `templates/`, `translations/`, `scripts/`, `.github/workflows/` | Hand-edited, reviewed, and committed. Changes reach the cluster through ArgoCD or an image build. |
 | **Generated or runtime-only** | `rendered/` (gitignored CI output), Kubernetes Secrets decrypted from SealedSecrets, Velero `Backup`/`Restore` objects, CNPG `Backup` objects and PVCs, MinIO objects, application data, and an Image Updater override written through the ArgoCD API | Not committed. Do not edit it as if it were Git desired state; verify live ownership before changing it. |
-| **Legacy / historical** | `docs/cluster-assessment-*.md`, `docs/plans/completed/`, `site/.gitkeep`, and `k8s/apps/invenio-deps/opensearch/values.yaml` | Dated evidence, placeholders, or a validation mirror. The OpenSearch Application inlines its Helm values; the values file is not the live source. MinIO is no longer the primary application-file store. |
+| **Legacy / historical** | `docs/cluster-assessment-*.md`, `docs/plans/completed/`, `site/.gitkeep` | Dated evidence or placeholders, not current deployment instructions. MinIO is no longer the primary application-file store. |
 
 ## Delivery and reconciliation
 

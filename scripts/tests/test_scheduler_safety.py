@@ -5,7 +5,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SCHEDULER = ROOT / "k8s/apps/invenio/invenio-scheduler-deployment.yaml"
+SCHEDULER = ROOT / "k8s/apps/invenio/resources/invenio-scheduler-deployment.yaml"
 
 
 class SchedulerSafetyTests(unittest.TestCase):

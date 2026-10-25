@@ -4,7 +4,6 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ENV_DIR="$REPO_ROOT/external-lb/terraform/envs/dev"
-K8S_DIR="$REPO_ROOT/external-lb/k8s"
 
 echo "==> Loading environment variables from .env"
 if [ -f "$ENV_DIR/.env" ]; then
