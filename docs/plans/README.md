@@ -1,57 +1,60 @@
 # Plans Index
 
-Plans live in `docs/plans/` — `active/` for ongoing work, `completed/` for
-plans whose work is merged/verified. Every PR that changes behavior updates
-the relevant plan and this index (docs-follow-code). New concerns/findings
-discovered during a wave go into `docs/plans/active/` as part of the wave's PR.
+Plans live in `docs/plans/` — `active/` for work that still has an owner action,
+`completed/` for merged, executed or reviewed work. Current cluster facts live in
+[`docs/current-state.md`](../current-state.md); open issue tracking remains in GitHub.
 
 ## Active
 
-| Plan | Branch | PR | Status |
-|---|---|---|---|
-| [Required backup monitoring](active/2026-10-20-required-backup-monitoring.md) | docs/139-wave1-live-proof | #154, #155 | Deployed after collector startup-memory correction; correct backup metrics and initial alert evaluation verified. Long-term memory/delivery remain unproven. |
-| [Recovery closeout wave](active/2026-10-20-recovery-closeout-wave.md) | feat/139-wave1-closeout | Pending | Three approved drill namespaces removed; backup evidence preserved. Temporary-rule removal and independent backup-freshness repair in progress. |
-| [Drill closeout](active/2026-10-20-drill-closeout.md) | feat/139-wave1-closeout | Pending | Exact drill inventory verified; three Retain PVs/backing directories preserved, MinIO backend key revocation remains owner action. |
-| [Native recovery proof](active/2026-10-19-native-recovery-proof.md) | docs/139-native-proof | Pending | PG16.4 native recovery verified: schema/counts/vocabulary digest match, isolated new PV. Application sample/file consistency and production-schedule monitoring remain unproven. |
-| [Native recovery preflight](active/2026-10-19-native-recovery-preflight.md) | feat/139-native-network | #151 | Scoped network rules deployed and native recovery executed; see later proof and failure/correction record. |
-| [Drill readiness](active/2026-10-19-drill-readiness.md) | docs/139-drill-readiness | Pending | Canary checksum restore verified after approved filter correction; resources retained. Native DB/application recovery and drill-only read credentials remain gated; ten-repository budget reached. |
-| [Batch 1 recovery](active/2026-10-19-recovery-batch1.md) | feat/139-recovery-batch1 | #147 | Repair deployed and live-verified; expired backup GC surfaced during rollout. Seeded backup and isolated restore remain gated; recovery unproven. |
-| [Restore contract](active/2026-10-19-restore-contract.md) | feat/139-recovery-batch1 | #147 | Design only; file restore needs sanitized Pod/PVR path, native CNPG track and isolation/capacity validation. |
-| [Worker-02 incident](active/2026-10-16-worker02-incident.md) | feat/145-worker02-incident | Pending | Host-maintenance trigger confirmed; monitoring deployment authorized 2026-10-19, verification pending. IT restart policy remains external. |
-| [Alert correctness](active/2026-10-16-alert-truth.md) | feat/145-worker02-incident | Pending | Tested scoped reconciliation, readiness/crash-loop rules and Discord formatting; live verification pending. |
-| [Recovery and logging](active/2026-10-16-recovery-logging-review.md) | feat/145-worker02-incident | Pending | Assessment only; backup/restore and Loki implementation remain separately gated under #139/#140. |
-| [2026-10-15-runtime-selection.md](active/2026-10-15-runtime-selection.md) | fix/139-runtime-selection | #143 | **Wiring verified live** — both local API aliases protected; all 24 custom rules loaded without evaluation errors. Backup recoverability remains open. |
-| [2026-10-15-monitoring-repairs.md](active/2026-10-15-monitoring-repairs.md) | fix/139-monitoring-review | #142, #143 | **Deployed and verified** — three exporter targets up; stale-backup alert now exposes the real success gap. |
-| [2026-10-15-cluster-repairs.md](active/2026-10-15-cluster-repairs.md) | feat/139-cluster-repairs | #141–#143 | **Repair batch verified; follow-ups open** — backup/restore proof and host observation remain open in #139; missing Loki backend in #140. |
-| [2026-10-15-velero-ownership.md](active/2026-10-15-velero-ownership.md) | feat/139-cluster-repairs | #141, #143 | **Ownership verified live** — Backup UIDs survived multiple sync cycles; no new prune records in the observed window. Old Backups remain PartiallyFailed. |
-| [2026-10-15-baseline-stability-audit.md](active/2026-10-15-baseline-stability-audit.md) | feat/137-audit-integration | Issue #137 | **Active** — read-only cluster assessment and behavior-preserving planning-language cleanup; baseline blocked by control-plane storage stalls and unverified Velero recovery. No production remediation applied. |
-| [2026-10-15-invenio-deployment-review.md](active/2026-10-15-invenio-deployment-review.md) | feat/137-stability-audit | Issue #137 | **Review** — deployment configuration risks, evidence and baseline gates; fixes require separate approval. |
-| [2026-09-15-followup-sync.md](active/2026-09-15-followup-sync.md) | fix/120-docs-sync | #120 | **Active** — docs sync for behavior PRs #113 (PodMonitor rename `postgres` → `postgres-metrics`, velero/minio scrape ingress, standalone traefik SM), #115 (PodMonitor RBAC in invenio AppProject), #118 (Prometheus egress 8085/9000 + traefik scrape ingress + validator pins). **Update 2026-09-15:** #119 merged (#122) — live 31/34 `up` (kubelet/coredns/node-exporter/operator recovered, KubeletDown resolved). Residual localhost-only + heartbeat noise tracked in the #123 plan below |
-| [2026-09-03-architecture-and-dr.md](active/2026-09-03-architecture-and-dr.md) | — | — | **Active** — architecture deep-dive + failure-mode matrix + DR findings (InvenioRDM vs DBRepo, data plane, 10 findings, restore-drill roadmap). 2026-09-05: worker-02 streaming restored (IT restart), postgres 1/1/1 Ready+Archiving True. Operator actions still pending (sealed-secrets key backup, machineID IT ticket — flap risk remains, off-site storage decision, SMTP creds) |
-| [2026-09-02-db-recovery.md](active/2026-09-02-db-recovery.md) | fix/76-db-recovery | #77 | **EXECUTED + VERIFIED 2026-09-05** — WALs moved aside (42 objects, reversible), archiver unblocked, operator reconciled to **spec 1 / status 1 / ready 1**, postgres-1/2 removed (PVs now Released — see Task 16), conditions Ready True + ContinuousArchiving True. **Update:** blocking failed Backup deleted 2026-09-05 (approved), `manual-backup-verify-20260905` **completed** — LastBackupSucceeded now True. Scheduler loop recovered (timestamps 2026-09-05, 3 completed) — see completed deadlock plan |
-| [2026-09-02-proxy-502.md](active/2026-09-02-proxy-502.md) | fix/75-proxy-502 | #78 | **RESOLVED 2026-09-05** — university IT killed + restarted worker-02 then reconnected the agent session; logs/exec/healthz to worker-02 all OK ×3. Root cause confirmed as dropped remotedialer session. **machineID collision (all 3 nodes `de88ca16...`) remains — flap risk remains, IT ticket still needed** |
-| [2026-09-02-email-confirmation.md](active/2026-09-02-email-confirmation.md) | feat/67-mail-config (#69) + fix/71-image-digest-bump (#72) | #69, #72 | **DEPLOYED + VERIFIED 2026-09-02, still placeholder 2026-09-05** — SMTP plumbing live in cluster (ConfigMap relay vars, sealed MAIL_USERNAME/MAIL_PASSWORD, mail-enabled image `0f685be` rolled to web/worker/scheduler and pinned in git + live). Awaiting operator-supplied university SMTP relay credentials (re-seal + replace placeholder host `smtp.example.org`) |
-| [2026-05-19-codebase-improvements.md](active/2026-05-19-codebase-improvements.md) | main (merged #9–#36) | — | **Mostly complete** — Tasks 1–15 verified in repo (sync waves, orphan cleanup, probes, Loki, netpol IPs, HPA/PDB, AppProject split, cert-manager removal, alerts). Remaining: Task 16 (released-PVC cleanup — now 3 Released PVs 2026-09-05: postgres-1, postgres-2, old redis-data), Task 17 (kubelet 502 — worker-02 streaming restored 2026-09-05 via IT restart, but machineID collision keeps flap risk; out of scope for manifests), Task 18 (off-site backup — placeholder, needs external S3 provider + credentials) |
+| Plan | Status |
+|---|---|
+| [Codebase improvements](active/2026-05-19-codebase-improvements.md) | Most tasks merged. Open: released-PV cleanup, independent/off-site backup, and the worker-02 kubelet/IT dependency. |
+| [Email confirmation / SMTP](active/2026-09-02-email-confirmation.md) | Mail plumbing deployed, but the live host is still `smtp.example.org`; university relay credentials, CA and firewall details are pending. |
+| [Architecture and DR findings](active/2026-09-03-architecture-and-dr.md) | Failure-mode/DR roadmap. Independent MinIO/NFS recovery and host-maintenance prevention remain open. |
+| [Worker-02 incident](active/2026-10-16-worker02-incident.md) | Software and alert work merged; university IT restart-policy prevention remains external under #145. |
 
-## Completed (merged to main)
+## Completed
 
-| Plan | Branch | Merged |
-|---|---|---|
-| [2026-05-20-ci-cd-and-reconciliation.md](completed/2026-05-20-ci-cd-and-reconciliation.md) | main (merged #9) | Phase A/B/C/D done — AppProject whitelist, Discord bridge image fix, CI/CD pipeline rewrite (`ci-render-manifests.sh`, `ci-validate-selectors.sh`, `validate-infra.yaml`, `deploy-verify.yaml`, `.pre-commit-config.yaml`, `setup-branch-protection.sh`), `rendered/` gitignored |
-| [2026-05-25-cluster-health-fixes-and-improvements.md](completed/2026-05-25-cluster-health-fixes-and-improvements.md) | main (merged #9) | Tasks 1–14 done — PDB selectors, HPA drift, probes, cloudflared seccomp, branch protection, resource quotas, Replace=true removal, orphan cleanup, duplicate AppProject removal, prometheus scrape ports, syncOptions, theme ConfigMap removal, Dockerfile pip cache |
-| [2026-05-29-cluster-health-fixes.md](completed/2026-05-29-cluster-health-fixes.md) | main (merged #12, #17, #18) | Tasks 1–5 done — CNPG apiserver egress netpol (ports 443+6443), Loki chunks-cache sizing, worker startup probe, Velero LimitRange, ArgoCD-self ignoreDifferences |
-| [2026-06-01-traefik-404-fix-overhaul.md](completed/2026-06-01-traefik-404-fix-overhaul.md) | main (merged #24–#36) | Tasks 1–11 done — Traefik apiserver egress fix, default-deny ingress, cross-namespace Middleware, shared security-headers Middleware, IngressRoute updates, duplicate AppProject removal, README overhaul, sealed-secrets key moved out of repo |
-| [2026-08-14-cluster-recovery-and-ugm-migration.md](completed/2026-08-14-cluster-recovery-and-ugm-migration.md) | main (merged #54–#64) | **Phase 1 + Phase 2 COMPLETE** — cluster recovered to baseline (all ArgoCD apps Synced+Healthy, 500 saga cleared), UGM image vendored + built (`ghcr.io/vityasyyy/invenio-ugm`), deployed with NFS storage, API regression fixed (combined wsgi), debug artifacts removed. See `docs/planning-ledger` for the full task-by-task record |
-| [2026-09-05-backup-scheduler-deadlock.md](completed/2026-09-05-backup-scheduler-deadlock.md) | feat/81-scheduler-recovery | **RESOLVED + VERIFIED 2026-09-05 (closes #81)** — scheduler `already exists` deadlock unblocked (failed object deleted, approved), manual backup completed (first since 06-04), loop recovered (timestamps 2026-09-05, 3 completed, zero errors in 30 min), all conditions green |
-| [2026-09-05-worker-02-rebalance.md](completed/2026-09-05-worker-02-rebalance.md) | feat/74-phase2-impl-2026-09-06 | **DONE 2026-09-08 (closes #74)** — v3 limits cuts rolled out (16 rows, memory-only); live worker-02 **52.8% req / 169.9% lim**, worker-01 **71.8% / 184.1%** — acceptance met on both nodes. Rollout incident: monitoring quota 96% wedged 3 Deployments, fixed 16→24 CPU (#94). Residual: kopia-herd placement churn (follow-up hygiene) |
-| [fix-cluster-health.md](completed/fix-cluster-health.md) | main (merged #9) | Done — kustomize patch format fix (8 patch files), ArgoCD infra project + Application manifests applied, bootstrap completed |
-| [fix-invenio-upload-and-minio-buckets.md](completed/fix-invenio-upload-and-minio-buckets.md) | main (merged #49, #59) | Tasks 1–6 done — MinIO buckets created, bucket creation moved into `invenio-setup-job` (PostSync hook removed), OpenSearch worker connection fixed, uploads verified. Superseded for storage by the UGM migration (NFS local files, MinIO retired for app files) |
-| [2026-09-08-monitoring-overhaul.md](completed/2026-09-08-monitoring-overhaul.md) | feat/96-monitoring-overhaul | **DONE 2026-09-14 (closes #96)** — one `InvenioRDM` Grafana folder (00 Overview + 3 drill-downs), A–E alert rewrite, native-Discord delivery via AlertmanagerConfig CR (bridge deleted), PostSync pipecheck delivery proof, `promtool` + `amtool` + dashboard-lint CI gates. Follow-ups #98 (CR self-contained routes), #100 (pipecheck limits), #102 (AM egress), #107 (monitoring DNS), #110 (Watchdog→null) |
-| [2026-09-14-monitoring-scrapes.md](completed/2026-09-14-monitoring-scrapes.md) | feat/105-monitoring-scrapes | **DONE 2026-09-14 (closes #105)** — velero/cloudflared ServiceMonitors, opensearch exporter plugin + SM fix (+search egress), minio includeNode + release labels, traefik metrics Service/SM, manual `postgres-metrics` PodMonitor, invenio-SM deleted, `matchers:` migration. Follow-ups #112 (collision/ingress/traefik-SM), #114 (PodMonitor RBAC) — both landed (#113 `541fb11`, #115 `6c02b74`); #117 follow-on also landed (#118 `5dcfab3`, Prometheus egress + traefik ingress). See active follow-up sync plan |
-| [2026-09-15-monitor-noise-cleanup.md](completed/2026-09-15-monitor-noise-cleanup.md) | fix/123-monitor-noise-cleanup | **DONE 2026-09-15 (closes #123)** — 3 localhost-only RKE2 scrapes disabled (controller/scheduler/etcd), Watchdog/InfoInhibitor blackholed. Live-proof done: 31 targets 0 down, TargetDowns resolved, blackhole delivery proven via AM API, Grafana backing series live |
-| [2026-09-15-worker-probe-burn.md](completed/2026-09-15-worker-probe-burn.md) | fix/127-worker-probes | **DONE 2026-09-15 (closes #127)** — exec-probe burn fixed (readiness→120s, liveness→300s). Live-proof done: workers 677/838m → 1m/1m, HPA 186% → 35%; throttle/HPA-maxed alerts decaying on window math |
+These are historical execution/review records, not current cluster instructions.
 
-## Archive (superseded / historical)
+| Plan | Evidence |
+|---|---|
+| [2026-05-20-ci-cd-and-reconciliation](completed/2026-05-20-ci-cd-and-reconciliation.md) | Phase A/B/C/D done — AppProject whitelist, Discord bridge image fix, CI/CD pipeline rewrite, branch protection, generated `rendered/` |
+| [2026-05-25-cluster-health-fixes-and-improvements](completed/2026-05-25-cluster-health-fixes-and-improvements.md) | Tasks 1–14 done — PDB selectors, HPA drift, probes, cloudflared seccomp, quotas, orphan cleanup, scrape fixes |
+| [2026-05-29-cluster-health-fixes](completed/2026-05-29-cluster-health-fixes.md) | Tasks 1–5 done — CNPG egress, Loki cache sizing, worker startup probe, Velero LimitRange, ArgoCD ignoreDifferences |
+| [2026-06-01-traefik-404-fix-overhaul](completed/2026-06-01-traefik-404-fix-overhaul.md) | Tasks 1–11 done — Traefik egress, default-deny ingress, shared middleware, IngressRoutes, README overhaul |
+| [2026-08-14-cluster-recovery-and-ugm-migration](completed/2026-08-14-cluster-recovery-and-ugm-migration.md) | Cluster recovered, UGM image vendored/built/deployed; API regression fixed |
+| [2026-09-05-backup-scheduler-deadlock](completed/2026-09-05-backup-scheduler-deadlock.md) | Scheduler deadlock cleared; first completed backup since June; loop recovered |
+| [2026-09-05-worker-02-rebalance](completed/2026-09-05-worker-02-rebalance.md) | Resource cuts rolled out; acceptance met; kopia placement follow-up noted |
+| [fix-cluster-health](completed/fix-cluster-health.md) | Kustomize patch format, AppProject/Application bootstrap fixed |
+| [fix-invenio-upload-and-minio-buckets](completed/fix-invenio-upload-and-minio-buckets.md) | Buckets/uploads/store path fixed; later storage layout superseded by MinIO file store |
+| [2026-09-08-monitoring-overhaul](completed/2026-09-08-monitoring-overhaul.md) | Dashboards, alerts, native Discord receiver and CI gates completed |
+| [2026-09-14-monitoring-scrapes](completed/2026-09-14-monitoring-scrapes.md) | Velero/cloudflared/OpenSearch/MinIO/Traefik scrape wiring completed; follow-ups landed |
+| [2026-09-15-monitor-noise-cleanup](completed/2026-09-15-monitor-noise-cleanup.md) | Localhost-only scrapes disabled; Watchdog/InfoInhibitor blackholed; live proof done |
+| [2026-09-15-worker-probe-burn](completed/2026-09-15-worker-probe-burn.md) | Exec-probe burn fixed; worker CPU/HPA recovered; live proof done |
+| [2026-09-02-db-recovery](completed/2026-09-02-db-recovery.md) | Executed and verified 2026-09-05; native recovery later proven on 2026-10-25 |
+| [2026-09-02-proxy-502](completed/2026-09-02-proxy-502.md) | Resolved; worker-02 restored by IT; machineID/restart risk moved to architecture/DR |
+| [2026-09-15-followup-sync](completed/2026-09-15-followup-sync.md) | Docs sync for #113/#115/#118; #119/#122 merged and live-proofed |
+| [2026-09-15-infra-scrape-gaps](completed/2026-09-15-infra-scrape-gaps.md) | Merged #122; live scrape proof recorded |
+| [2026-10-15-baseline-stability-audit](completed/2026-10-15-baseline-stability-audit.md) | Read-only assessment completed; current facts superseded by current-state; follow-ups in #139/#145 |
+| [2026-10-15-cluster-repairs](completed/2026-10-15-cluster-repairs.md) | Repairs merged/verified; recovery follow-ups in #139 |
+| [2026-10-15-invenio-deployment-review](completed/2026-10-15-invenio-deployment-review.md) | Static review completed; findings tracked by later plans and current-state |
+| [2026-10-15-monitoring-repairs](completed/2026-10-15-monitoring-repairs.md) | Merged/verified; stale-backup alert exposed #139 |
+| [2026-10-15-runtime-selection](completed/2026-10-15-runtime-selection.md) | Wiring verified live; backup recoverability tracked in #139 |
+| [2026-10-15-velero-ownership](completed/2026-10-15-velero-ownership.md) | Ownership protection verified; backup freshness tracked in #139 |
+| [2026-10-16-alert-truth](completed/2026-10-16-alert-truth.md) | Rules/formatting merged and verified; current alert routing/state in current-state and #145 |
+| [2026-10-16-recovery-logging-review](completed/2026-10-16-recovery-logging-review.md) | Read-only assessment; Loki/Alloy implementation tracked in #140 |
+| [2026-10-19-backup-repair](completed/2026-10-19-backup-repair.md) | Merged #147; post-merge checks passed; weekly evidence in #139 |
+| [2026-10-19-drill-readiness](completed/2026-10-19-drill-readiness.md) | Canary/file mechanism verified; native DB proof completed 2026-10-25 |
+| [2026-10-19-native-recovery-preflight](completed/2026-10-19-native-recovery-preflight.md) | Scoped policies/credential executed; native proof completed |
+| [2026-10-19-native-recovery-proof](completed/2026-10-19-native-recovery-proof.md) | Native recovery verified 2026-10-19 and re-verified 2026-10-25; seeded app consistency remains in #139 |
+| [2026-10-19-recovery-batch1](completed/2026-10-19-recovery-batch1.md) | Repair deployed/verified; native recovery completed; seed/app consistency in #139 |
+| [2026-10-19-restore-contract](completed/2026-10-19-restore-contract.md) | Design executed by isolated drill; current runbook in current-state/operations |
+| [2026-10-20-drill-closeout](completed/2026-10-20-drill-closeout.md) | Drill namespaces removed; Retain PVs and MinIO-key revocation remain owner/storage actions |
+| [2026-10-20-recovery-closeout-wave](completed/2026-10-20-recovery-closeout-wave.md) | Closeout deployed; temporary access removed |
+| [2026-10-20-required-backup-monitoring](completed/2026-10-20-required-backup-monitoring.md) | Deployed #154/#155; long-term delivery evidence remains in #139 |
 
-No archived plans yet. Superseded execution plans and historical design
-documents will be moved to `docs/archive/` when they accumulate.
+## Historical assessments
+
+Dated cluster assessments remain in `docs/cluster-assessment-*.md`. They describe
+past observations and are not current deployment instructions.
