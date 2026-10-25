@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
     targetRevision: main
-    path: k8s/apps/invenio-deps/redis/manifests
+    path: k8s/dependencies/redis
   destination:
     server: https://kubernetes.default.svc
     namespace: redis

@@ -1,16 +1,16 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - grafana-ingress.yaml
-  - alerts.yaml
-  - grafana-admin-secret.yaml
-  - grafana-dashboards.yaml
-  - networkpolicy-kube-api.yaml
-  - alertmanager-discord-secret.yaml
-  - discord-receivers.yaml
-  - alertmanager-egress-netpol.yaml
-  - loki-networkpolicy.yaml
-  - loki-podmonitors.yaml
-  - monitoring-pipecheck.yaml
-  - pipecheck-egress-netpol.yaml
-  - traefik-servicemonitor.yaml
+  - resources/grafana-ingress.yaml
+  - resources/alerts.yaml
+  - resources/grafana-admin-secret.yaml
+  - resources/grafana-dashboards.yaml
+  - resources/networkpolicy-kube-api.yaml
+  - resources/alertmanager-discord-secret.yaml
+  - resources/discord-receivers.yaml
+  - resources/alertmanager-egress-netpol.yaml
+  - resources/loki-networkpolicy.yaml
+  - resources/loki-podmonitors.yaml
+  - resources/monitoring-pipecheck.yaml
+  - resources/pipecheck-egress-netpol.yaml
+  - resources/traefik-servicemonitor.yaml

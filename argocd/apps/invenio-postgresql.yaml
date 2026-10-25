@@ -13,24 +13,13 @@ spec:
       repoURL: https://cloudnative-pg.github.io/charts
       targetRevision: "0.23.0"
       helm:
-        values: |
-          replicaCount: 1
-          resources:
-            limits:
-              cpu: 500m
-              memory: 512Mi
-            requests:
-              cpu: 100m
-              memory: 256Mi
-          webhook:
-            livenessProbe:
-              initialDelaySeconds: 60
-            readinessProbe:
-              initialDelaySeconds: 30
+        valueFiles:
+          - $values/k8s/dependencies/postgresql/values.yaml
     # Raw manifests: namespace, cluster, netpols
     - repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
       targetRevision: main
-      path: k8s/apps/invenio-deps/postgresql
+      ref: values
+      path: k8s/dependencies/postgresql
   destination:
     server: https://kubernetes.default.svc
     namespace: database

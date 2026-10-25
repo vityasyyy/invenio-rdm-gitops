@@ -174,8 +174,8 @@ fi
 # --- Apply the infra project (so ArgoCD has a project to sync apps into) ---
 echo ""
 echo "==> Applying ArgoCD project (infra)"
-kubectl apply -f "$REPO_ROOT/argocd/projects/infra-project.yaml"
-kubectl apply -f "$REPO_ROOT/argocd/projects/invenio-project.yaml"
+kubectl apply -f "$REPO_ROOT/k8s/infra/argocd/resources/infra-project.yaml"
+kubectl apply -f "$REPO_ROOT/k8s/infra/argocd/resources/invenio-project.yaml"
 
 # --- Summary ---
 echo ""

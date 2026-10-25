@@ -10,7 +10,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 MONITORING = ROOT / "k8s/infra/monitoring"
-MONITORING_ALLOW = ROOT / "k8s/infra/security/network-policies/monitoring-allow.yaml"
+MONITORING_ALLOW = ROOT / "k8s/infra/security/resources/network-policies/monitoring-allow.yaml"
 EXPECTED_RULES = {
     "app-slo": sorted({
         "InvenioWebReplicasUnavailable",
@@ -117,8 +117,8 @@ def render(message, alerts, *, receiver="discord-critical"):
 class MonitoringAlertTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.alerts = yaml.safe_load((MONITORING / "alerts.yaml").read_text())
-        cls.receivers = yaml.safe_load((MONITORING / "discord-receivers.yaml").read_text())
+        cls.alerts = yaml.safe_load((MONITORING / "resources/alerts.yaml").read_text())
+        cls.receivers = yaml.safe_load((MONITORING / "resources/discord-receivers.yaml").read_text())
 
     def discord_configs(self):
         return {
@@ -329,7 +329,7 @@ class MonitoringAlertTests(unittest.TestCase):
     def test_backup_dashboard_uses_completion_not_global_success(self):
         dashboards = [
             doc for doc in yaml.safe_load_all(
-                (MONITORING / "grafana-dashboards.yaml").read_text()
+                (MONITORING / "resources/grafana-dashboards.yaml").read_text()
             ) if doc
         ]
         exprs = [
@@ -387,7 +387,7 @@ class MonitoringAlertTests(unittest.TestCase):
         monitors = {
             doc["metadata"]["name"]: doc
             for doc in yaml.safe_load_all(
-                (MONITORING / "loki-podmonitors.yaml").read_text()
+                (MONITORING / "resources/loki-podmonitors.yaml").read_text()
             )
             if doc
         }
@@ -416,7 +416,7 @@ class MonitoringAlertTests(unittest.TestCase):
         kustomization = yaml.safe_load(
             (MONITORING / "kustomization.yaml").read_text()
         )
-        self.assertIn("loki-podmonitors.yaml", kustomization["resources"])
+        self.assertIn("resources/loki-podmonitors.yaml", kustomization["resources"])
 
     def test_log_pipeline_scrape_network_policy_is_prometheus_only(self):
         policies = {

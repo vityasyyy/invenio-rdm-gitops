@@ -21,7 +21,7 @@ jobs:
         run: pip install yamllint
 
       - name: Lint YAML files
-        run: yamllint argocd/ k8s/ external-lb/k8s/
+        run: yamllint argocd/ k8s/
 
       - name: Validate Velero resource ownership
         run: |
@@ -61,7 +61,9 @@ jobs:
           helm repo update
 
       - name: Render manifests
-        run: bash scripts/ci-render-manifests.sh
+        run: |
+          python3 -m pip install PyYAML
+          bash scripts/ci-render-manifests.sh
 
       - name: Validate rendered manifests with kubeconform
         run: |
@@ -182,7 +184,7 @@ jobs:
               continue
             fi
 
-            proj_file="k8s/infra/argocd/projects/${project}-project.yaml"
+            proj_file="k8s/infra/argocd/resources/${project}-project.yaml"
             if [ ! -f "$proj_file" ]; then
               echo "::error file=$f::App $app_name references project '$project' but no project file found at $proj_file"
               failed=true
@@ -262,7 +264,7 @@ jobs:
             fi
           done
 
-          for f in k8s/infra/argocd/*.yaml external-lb/k8s/*.yaml k8s/apps/invenio/*.yaml k8s/infra/**/*.yaml; do
+          for f in $(find k8s -name '*.yaml'); do
             [ -f "$f" ] || continue
             wave=$(grep 'argocd.argoproj.io/sync-wave:' "$f" 2>/dev/null | head -1 | grep -o '[0-9]*' || echo "none")
             if [ "$wave" != "none" ] && [ -n "$wave" ]; then
@@ -313,7 +315,7 @@ jobs:
 
       - name: Check PrometheusRule syntax (extract spec.groups — promtool cannot parse the CR wrapper)
         run: |
-          python3 -c "import yaml; d=yaml.safe_load(open('k8s/infra/monitoring/alerts.yaml')); yaml.safe_dump({'groups': d['spec']['groups']}, open('/tmp/rules-check.yaml','w'))"
+          python3 -c "import yaml; d=yaml.safe_load(open('k8s/infra/monitoring/resources/alerts.yaml')); yaml.safe_dump({'groups': d['spec']['groups']}, open('/tmp/rules-check.yaml','w'))"
           promtool check rules /tmp/rules-check.yaml
 
       - name: Check Alertmanager routing (base + CR receivers as native stub)

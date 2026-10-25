@@ -54,7 +54,7 @@ def convert_route(cr_route):
 
 values = yaml.safe_load(open(os.path.join(MON, "values.yaml")))
 cfg = values["alertmanager"]["config"]
-cr = yaml.safe_load(open(os.path.join(MON, "discord-receivers.yaml")))
+cr = yaml.safe_load(open(os.path.join(MON, "resources", "discord-receivers.yaml")))
 crspec = cr.get("spec", {})
 
 receivers = list(cfg.get("receivers", []))

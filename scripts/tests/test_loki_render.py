@@ -8,7 +8,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 VALUES_PATH = ROOT / "k8s/infra/loki/values.yaml"
-NETWORK_POLICY_PATH = ROOT / "k8s/infra/monitoring/loki-networkpolicy.yaml"
+NETWORK_POLICY_PATH = ROOT / "k8s/infra/monitoring/resources/loki-networkpolicy.yaml"
 
 
 def load_values():

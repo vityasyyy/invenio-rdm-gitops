@@ -1,22 +1,22 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
-  - app-config.yaml
-  - namespace-governance.yaml
-  - dependencies-external-services.yaml
-  - app-sealed-secret.yaml
-  - ghcr-pull-secret.yaml
-  - serviceaccount.yaml
-  - invenio-data-pvc.yaml
-  - invenio-deployment.yaml
-  - invenio-worker-deployment.yaml
-  - invenio-scheduler-deployment.yaml
-  - invenio-setup-job.yaml
-  - invenio-ingressroute.yaml
-  - invenio-hpa.yaml
-  - invenio-pdb.yaml
-  - argocd-log-reader.yaml
+  - resources/namespace.yaml
+  - resources/app-config.yaml
+  - resources/namespace-governance.yaml
+  - resources/dependencies-external-services.yaml
+  - resources/app-sealed-secret.yaml
+  - resources/ghcr-pull-secret.yaml
+  - resources/serviceaccount.yaml
+  - resources/invenio-data-pvc.yaml
+  - resources/invenio-deployment.yaml
+  - resources/invenio-worker-deployment.yaml
+  - resources/invenio-scheduler-deployment.yaml
+  - resources/invenio-setup-job.yaml
+  - resources/invenio-ingressroute.yaml
+  - resources/invenio-hpa.yaml
+  - resources/invenio-pdb.yaml
+  - resources/argocd-log-reader.yaml
 
 images:
   - name: ghcr.io/vityasyyy/invenio-ugm
