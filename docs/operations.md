@@ -138,3 +138,24 @@ Review the Argo diff before approved adoption; stop on unexpected deletion,
 recreation, permissions or ownership changes. Revert the path/value-reference
 commit as a unit to restore selectors and source paths, not individual Secrets.
 Do not reset installations, remove finalizers or reseal secrets for a path move.
+
+## Image update precedence
+
+`k8s/apps/invenio/image-pin/kustomization.yaml` is the single Git digest source.
+The application Kustomization includes it as a component; the manual initialization
+Kustomization includes the same component. The ImageUpdater CR targets
+`invenio-bootstrap`, tracks `ghcr.io/vityasyyy/invenio-ugm` by digest and uses
+`writeBackConfig.method: argocd`.
+
+ArgoCD's Application-level `spec.source.kustomize.images` override is applied after
+the component, so the updater's API-written digest wins while it is present. The
+Application manifest intentionally has no static `kustomize.images`; adding one
+would create a second Application-level source. The live Application had no
+override at the 2026-10-25 inspection (`imagesManaged: 0`), so the component digest
+was effective. The manual initialization Job is outside ImageUpdater's scope.
+
+To change the Git fallback, edit only the component. To freeze an image for an
+experiment, pin the component and freeze/suspend the updater; do not add another
+editable digest. The precedence and updater contract are covered by
+`scripts/tests/test_image_update_contracts.py`; the application override is a
+runtime write-back, not durable Git desired state.
