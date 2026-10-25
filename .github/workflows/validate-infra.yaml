@@ -298,10 +298,16 @@ jobs:
 
       - name: Install promtool (match bundled Prometheus major)
         run: |
-          PROM_TAG=$(curl -s --max-time 20 https://api.github.com/repos/prometheus/prometheus/releases | jq -r '[.[].tag_name | select(startswith("v3."))] | first // empty')
-          [ -z "$PROM_TAG" ] && PROM_TAG="v3.3.0"
+          # GitHub API rate limits return a JSON object, so only read an array.
+          PROM_TAG="$(curl -fsSL --max-time 20 https://api.github.com/repos/prometheus/prometheus/releases \
+            | jq -r 'if type == "array" then ([.[].tag_name | select(startswith("v3."))] | first // empty) else empty end' \
+            2>/dev/null || true)"
+          PROM_TAG="${PROM_TAG:-v3.3.0}"
           echo "Using promtool ${PROM_TAG}"
-          curl -sL "https://github.com/prometheus/prometheus/releases/download/${PROM_TAG}/prometheus-${PROM_TAG#v}.linux-amd64.tar.gz" | tar xz -C /tmp
+          curl -fsSL --retry 3 --retry-delay 2 \
+            "https://github.com/prometheus/prometheus/releases/download/${PROM_TAG}/prometheus-${PROM_TAG#v}.linux-amd64.tar.gz" \
+            -o /tmp/prometheus.tar.gz
+          tar xzf /tmp/prometheus.tar.gz -C /tmp
           sudo mv "/tmp/prometheus-${PROM_TAG#v}.linux-amd64/promtool" /usr/local/bin/
           promtool --version
 
