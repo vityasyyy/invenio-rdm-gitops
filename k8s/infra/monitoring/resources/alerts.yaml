@@ -51,15 +51,21 @@ spec:
             dashboard: "https://grafana.vityasy.me/d/invenio-app"
         - alert: TraefikServiceDown
           expr: |
-            sum by (exported_service) (rate(traefik_service_requests_total{
-              exported_service=~"invenio-invenio-.*",code=~"502|503|504"
-            }[5m])) > 0
+            (
+              sum by (exported_service) (rate(traefik_service_requests_total{
+                exported_service=~"invenio-invenio-.*",code=~"502|503|504"
+              }[5m]))
+              /
+              clamp_min(sum by (exported_service) (rate(traefik_service_requests_total{
+                exported_service=~"invenio-invenio-.*"
+              }[5m])), 0.001)
+            ) > 0.5
           for: 5m
           labels:
             severity: critical
           annotations:
-            summary: "Traefik backend {{ $labels.exported_service }} returns unavailable"
-            description: "Traefik has reported sustained 503 responses for this Invenio route. Inspect ready endpoints and application health."
+            summary: "Traefik backend {{ $labels.exported_service }} is mostly unavailable"
+            description: "More than half of requests for this Invenio route returned 502/503/504 for 5m. Inspect ready endpoints and application health."
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
             dashboard: "https://grafana.vityasy.me/d/overview-invenio-rdm"
         - alert: InvenioPodRestartHigh
