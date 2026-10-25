@@ -161,7 +161,7 @@ if [ "$FAIL" -gt 0 ]; then
   echo "  - Tunnel not connecting: kubectl get pods -n kube-system -l app=cloudflared"
   echo "  - DNS not resolving: wait a few minutes for propagation"
   echo ""
-  echo "To start fresh, run: ./scripts/bootstrap-infra.sh --force-reset"
+  echo "Inspect failed components before repair; bootstrap refuses existing installations."
   exit 1
 else
   echo ""
