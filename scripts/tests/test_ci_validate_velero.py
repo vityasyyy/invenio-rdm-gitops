@@ -164,18 +164,17 @@ def write_fixture(
     }))
 
     for relative_path, kind, volumes in (
-        ("k8s/apps/invenio/resources/invenio-deployment.yaml", "Deployment", "data,archive"),
+        ("k8s/apps/invenio/resources/invenio-deployment.yaml", "Deployment", None),
         ("k8s/dependencies/redis/resources/redis.yaml", "Deployment", "data"),
     ):
         manifest = root / relative_path
         manifest.parent.mkdir(parents=True, exist_ok=True)
+        metadata = {"annotations": {"backup.velero.io/backup-volumes": volumes}} if volumes else {}
         manifest.write_text(yaml.safe_dump({
             "apiVersion": "apps/v1",
             "kind": kind,
             "metadata": {"name": "fixture"},
-            "spec": {"template": {"metadata": {"annotations": {
-                "backup.velero.io/backup-volumes": volumes,
-            }}}},
+            "spec": {"template": {"metadata": metadata}},
         }))
 
 
@@ -260,13 +259,13 @@ class VeleroValidatorTests(unittest.TestCase):
 class VeleroBackupScopeTests(unittest.TestCase):
     """The opt-in allowlist is explicit; scratch and self-backup volumes stay out."""
 
-    def test_invenio_backs_up_application_volumes_only(self):
+    def test_invenio_does_not_opt_in_shared_volume_backups(self):
         value = _pod_annotation(
             ROOT / "k8s/apps/invenio/resources/invenio-deployment.yaml",
             "Deployment",
             "backup.velero.io/backup-volumes",
         )
-        self.assertEqual({item.strip() for item in value.split(",")}, {"data", "archive"})
+        self.assertIsNone(value)
 
     def test_redis_backs_up_its_durable_volume(self):
         value = _pod_annotation(
@@ -298,7 +297,6 @@ class VeleroBackupScopeTests(unittest.TestCase):
         self.assertEqual(
             sorted(annotated),
             [
-                "k8s/apps/invenio/resources/invenio-deployment.yaml",
                 "k8s/dependencies/redis/resources/redis.yaml",
                 "k8s/infra/monitoring/values.yaml",
             ],

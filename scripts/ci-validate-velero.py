@@ -267,10 +267,19 @@ def _pod_annotation(path, kind_name, key):
 
 
 def validate_backup_scope(root, errors):
-    """Opt-in allowlist: durable volumes only, no temp or self-backup volumes."""
+    """Opt-in allowlist: durable single-owner volumes only, no duplicates or scratch."""
     root = Path(root)
+    invenio_path = "k8s/apps/invenio/resources/invenio-deployment.yaml"
+    path = root / invenio_path
+    if not path.exists():
+        errors.append(f"{invenio_path} is required for backup scope validation")
+    elif _pod_annotation(path, "Deployment", "backup.velero.io/backup-volumes") is not None:
+        errors.append(
+            f"{invenio_path} must not opt in shared data/archive volumes; "
+            "file bytes live in MinIO and per-replica backups duplicate the PVC"
+        )
+
     expected = {
-        ("k8s/apps/invenio/resources/invenio-deployment.yaml", "Deployment"): {"data", "archive"},
         ("k8s/dependencies/redis/resources/redis.yaml", "Deployment"): {"data"},
     }
     for (relative_path, kind_name), volumes in expected.items():

@@ -30,6 +30,7 @@ spec:
 
   # Backup configuration: WAL archive to existing MinIO
   backup:
+    # Keep 30 days until an isolated restore drill verifies the base-backup/WAL chain.
     retentionPolicy: "30d"
     barmanObjectStore:
       destinationPath: "s3://invenio-rdm-backups/postgres"
@@ -53,7 +54,8 @@ spec:
       - name: cnpg-default-monitoring
         key: queries
 ---
-# Scheduled daily backup at 02:00
+# Daily backup at 02:00 UTC. CloudNativePG cron has six fields (seconds first);
+# a five-field expression runs hourly at the second-field minute.
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup
 metadata:
@@ -62,7 +64,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "2"
 spec:
-  schedule: "0 2 * * *"
+  schedule: "0 0 2 * * *"
   backupOwnerReference: self
   cluster:
     name: postgres
