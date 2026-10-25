@@ -165,7 +165,7 @@ existing automated access path without changing Cloudflare or ArgoCD policies.
 |---|---|---|---|
 | Manifests, Applications, AppProjects | Git | ArgoCD | A manual managed-field edit is drift and may be reverted by self-heal. |
 | Web/worker replica count | HPA bounds in Git | HPA | ArgoCD ignores `/spec/replicas` for both Deployments; a manual replica edit is not the desired-state mechanism. |
-| Application image digest | Kustomize pin in Git | Kubernetes pulls the pinned digest | Image Updater can write an override through the ArgoCD API, not Git. Freeze it or pin digests for reproducible experiments. |
+| Application image digest | Shared `k8s/apps/invenio/image-pin/` component in Git | Kubernetes pulls the pinned digest | Image Updater can write an Application-level override through the ArgoCD API, not Git; Kustomize applies that override after the component, so it wins while present. Freeze it or pin digests for reproducible experiments. |
 | Velero backup schedule | Git `Schedule` | Velero creates `Backup`/`Restore` objects | Generated backup objects are excluded from ArgoCD pruning; backup data lives in MinIO. |
 | PostgreSQL backups | Git `Cluster`/`ScheduledBackup` | CNPG operator creates native `Backup` objects and WAL archives | Native DB recovery is separate from Velero filesystem recovery. |
 | SealedSecret ciphertext | Git | Sealed Secrets controller | The controller decrypts to a Kubernetes Secret; the private key is outside Git. |
