@@ -68,6 +68,9 @@ jobs:
           python3 -m pip install PyYAML
           bash scripts/ci-render-manifests.sh
 
+      - name: Render manual initialization Job
+        run: kustomize build k8s/apps/invenio/initialization > rendered/manual-initialize.yaml
+
       - name: Validate rendered manifests with kubeconform
         run: |
           for f in rendered/*.yaml; do
