@@ -359,10 +359,20 @@ INVENIO_SECRET_KEY="$(openssl rand -hex 32)" ./scripts/generate-sealed-secrets.s
 kubectl -n argocd get applications
 ```
 
-Bootstrap is an imperative exception: it installs ArgoCD, after which the
-app-of-apps root manages the remaining Applications. A working cluster, access
-credentials, and the root Application must already exist for self-management to
-start. Recovery must not depend exclusively on a working ArgoCD installation.
+Bootstrap is a clean-cluster-only imperative exception: it creates the ArgoCD
+namespace, installs ArgoCD and its AppProjects, waits for the API/controllers,
+then applies `argocd/root.yaml`. The root manages the remaining Applications
+asynchronously; bootstrap submission does not prove child readiness. A working
+cluster, access credentials, and Python 3 with PyYAML are prerequisites. The
+pinned upstream ArgoCD manifest must be reachable when rendering the installation.
+The installation is rendered once, then CRDs are established before applying
+the remaining resources (including AppProjects).
+
+An existing `argocd` namespace causes a nonzero exit without mutation. There is
+no reset/overwrite mode: inspect partial or existing installations and use a
+reviewed recovery procedure rather than deleting namespaces or finalizers.
+Required waits and API errors fail visibly; admin credentials are never read or
+printed. Recovery must not depend exclusively on a working ArgoCD installation.
 
 ## Access and services
 
