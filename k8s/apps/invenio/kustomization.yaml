@@ -18,6 +18,5 @@ resources:
   - resources/invenio-pdb.yaml
   - resources/argocd-log-reader.yaml
 
-images:
-  - name: ghcr.io/vityasyyy/invenio-ugm
-    digest: sha256:0f685be3fc05e4fb517a68c2508ac649ce40d9bf7af50c42d738aa93351a82c0
+components:
+  - image-pin
