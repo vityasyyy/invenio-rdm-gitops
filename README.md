@@ -12,6 +12,9 @@ ports.
 > New to the system? Read [Understanding this InvenioRDM GitOps
 > system](docs/architecture-guide.md) for the request path, ownership boundaries,
 > storage, recovery limits, and experiment design.
+>
+> For the dated operational snapshot, placement, backup schedules and experiment
+> readiness, see [current verified state](docs/current-state.md).
 
 ## Architecture
 
@@ -28,20 +31,22 @@ flowchart TD
     Web --> PG[(PostgreSQL / CNPG)]
     Web --> Redis[(Redis)]
     Web --> Search[(OpenSearch)]
-    Web --> Files[(NFS PVCs)]
+    Web --> Files[(MinIO invenio-rdm bucket)]
     Worker[invenio-worker] --> PG
     Worker --> Redis
     Worker --> Search
     Worker --> Files
     Beat[invenio-scheduler] --> Redis
+    Web -.-> Local[(data/archive PVCs, empty)]
 
-    Velero[Velero] --> BackupStore[(MinIO backup bucket)]
+    Velero[Velero] --> BackupStore[(MinIO backup buckets)]
     CNPG[CNPG operator] --> BackupStore
 
-    NFS[(Shared NFS server)] --- Files
+    NFS[(Shared NFS server)] --- Local
     NFS --- PG
     NFS --- Redis
     NFS --- Search
+    NFS --- Files
     NFS --- BackupStore
 ```
 
@@ -170,7 +175,7 @@ existing automated access path without changing Cloudflare or ArgoCD policies.
 | Velero backup schedule | Git `Schedule` | Velero creates `Backup`/`Restore` objects | Generated backup objects are excluded from ArgoCD pruning; backup data lives in MinIO. |
 | PostgreSQL backups | Git `Cluster`/`ScheduledBackup` | CNPG operator creates native `Backup` objects and WAL archives | Native DB recovery is separate from Velero filesystem recovery. |
 | SealedSecret ciphertext | Git | Sealed Secrets controller | The controller decrypts to a Kubernetes Secret; the private key is outside Git. |
-| Research records, files, search documents | Invenio/PostgreSQL/NFS | Invenio and its workers | ArgoCD does not reconcile application data or search documents. |
+| Research records, files, search documents | Invenio/PostgreSQL/MinIO | Invenio and its workers | ArgoCD does not reconcile application data or search documents. |
 
 ### HPA and scheduler ownership
 
@@ -183,6 +188,10 @@ existing automated access path without changing Cloudflare or ArgoCD policies.
   scheduling progress.
 - PDBs constrain applicable voluntary evictions only. They do not guarantee
   availability during node loss, direct Pod deletion, or a shared dependency failure.
+
+Node assignment is automatic; HPA changes replica count while the Kubernetes scheduler
+chooses nodes from requests and constraints. See
+[scheduling and placement](docs/architecture-guide.md#scheduling-and-placement).
 
 ### Setup verification and initialization are separate
 
@@ -221,14 +230,18 @@ per-directory quotas, and they do not isolate services from NFS-server loss.
 
 The backup design has three separate pieces:
 
-1. Velero backs up selected Kubernetes resources and opt-in Pod volumes to MinIO.
+1. Velero backs up selected Kubernetes resources and opt-in volumes (Redis and
+   Grafana storage) to MinIO.
 2. CloudNativePG writes PostgreSQL native backups and WAL to MinIO.
 3. Invenio stores uploaded file bytes in MinIO; its local data/archive PVCs are
    empty and are not opted in to Velero.
 
 Velero runs weekly with 28-day retention. CNPG runs daily at 02:00 UTC and retains
-30 days until an isolated restore drill verifies the chain. MinIO is also the
-backup store, so it remains a single failure domain; no off-site copy is configured.
+30 days. The 25 October drill verified database recovery, but retention stays at
+30 days until dependency-aware cleanup and file-store compatibility are proven.
+MinIO is also the backup store, so it remains a single failure domain; no off-site
+copy is configured. The 25 October Velero run was `PartiallyFailed`; the next weekly
+run is the evidence gate for the deduplication fix.
 
 Read-only checks:
 
@@ -249,11 +262,11 @@ PVs to make an alert quiet.
 | Recovery claim | What the evidence supports |
 |---|---|
 | Kubernetes resources and selected files via Velero | A weekly schedule exists. The 25 October run was `PartiallyFailed` because two duplicate `invenio-archive` volume backups on worker-01 were canceled after their expose Pods failed; the same shared PVC completed on worker-02. Duplicate per-replica opt-ins were removed, but a new scheduled run has not yet been observed and the expose cause remains unproven. Manual production and canary completions do not prove scheduled coverage. |
-| PostgreSQL native recovery | CNPG backups/WAL go to MinIO. Recovery of existing data into an isolated CNPG cluster was verified by schema, row-count, and vocabulary-digest comparison. No seeded application record/file consistency proof exists. |
+| PostgreSQL native recovery | CNPG backups/WAL go to MinIO. The 25 October drill recovered `20261025T080202` into an isolated CNPG cluster and matched production on 80 public tables, schema digest, 7 users, 9,138 vocabularies and vocabulary digest. No seeded application record/file consistency proof exists. |
 | Uploaded-file recovery | A 35,840-byte canary file restored with the same SHA-256 into an isolated namespace. The owner approved a private draft with a deterministic 64 KiB file, save-only with no publication or DOI; the upload/save ID is still awaited and no seeded restore has completed. Production file recovery remains unproven. |
 | Application-consistent recovery | Not proven. No seeded Invenio record plus file, permissions, and index state has been restored and verified together. |
 | Independent disaster recovery | Not demonstrated. MinIO and the primary NFS data share the same NFS server; an off-site or independent copy is not provided here. |
-| RPO/RTO | No contractual guarantee. Velero is weekly, CNPG is more frequent, and actual restore time depends on data size, credentials, storage, and operator behavior. |
+| RPO/RTO | No contractual guarantee. Velero is weekly and CNPG is daily; actual restore time depends on data size, credentials, storage, and operator behavior. |
 
 See [Storage and recovery](docs/architecture-guide.md#13-storage-and-recovery)
 for the failure-domain diagram and the evidence boundaries.

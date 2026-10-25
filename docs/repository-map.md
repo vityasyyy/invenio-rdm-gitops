@@ -64,6 +64,10 @@ obsolete unused file's extra probes or lock-deletion init container.
 - `scripts/manifest_sources.py`: discovers actual Application sources, release
   names, namespaces, chart versions and values references for CI rendering.
 - `rendered/`: generated validation output, never desired state.
+- `docs/current-state.md`: dated operational snapshot, current placement, backup
+  schedules and experiment-readiness gates.
+- `docs/architecture-guide.md`: controller, scheduling and data-flow concepts;
+  `docs/operations.md`: day-to-day checks and recovery boundaries.
 
 ## Safe structural changes
 
@@ -74,5 +78,6 @@ equivalence. A source-path change does not authorize a chart upgrade, migration,
 bootstrap rerun or secret reseal. Before approved adoption, inspect the Argo diff
 for deletions/recreations; rollback restores selectors and source paths together.
 
-See [architecture](architecture-guide.md) for controller/data-flow concepts and
-[operations](operations.md) for validation and recovery limits.
+See [architecture](architecture-guide.md) for controller/data-flow concepts,
+[operations](operations.md) for validation and recovery limits, and
+[current state](current-state.md) for the dated live snapshot.

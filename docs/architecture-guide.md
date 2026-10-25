@@ -72,7 +72,7 @@ from the cloudflared workload. See [operations](operations.md) for checks.
 | --- | --- | --- |
 | Source of truth | `argocd/`, `k8s/`, `external-lb/`, `docker/ugm/`, `app_data/`, `assets/`, `static/`, `templates/`, `translations/`, `scripts/`, `.github/workflows/` | Hand-edited and reviewed. Changes reach the cluster through ArgoCD or an image build. |
 | Generated or runtime-only | `rendered/` (gitignored CI output), Kubernetes Secrets produced by Sealed Secrets, Velero `Backup`/`Restore` objects, CNPG `Backup` objects and PVCs, MinIO objects, application data, and an Image Updater override written through the ArgoCD API | Not committed as desired state. Inspect ownership before changing it; a controller may recreate or overwrite it. |
-| Legacy / historical | `docs/cluster-assessment-*.md`, `docs/plans/completed/`, `site/.gitkeep` | Dated evidence or placeholders, not current configuration. MinIO is no longer the primary application-file store. |
+| Legacy / historical | `docs/cluster-assessment-*.md`, `docs/plans/completed/`, `site/.gitkeep` | Dated evidence or placeholders, not current configuration. Use the current source and live checks for storage layout. |
 
 An image-baked configuration change, such as `docker/ugm/invenio.cfg`, requires a new image and deployment. A manifest-only change, an application ConfigMap change, or a live image-updater override follows a different path and does not necessarily rebuild the image.
 
@@ -373,20 +373,59 @@ flowchart TD
 
 Request handling and task execution are separate paths. Healthy worker processes do not prove every queue is consumed or every task is successful.
 
-### Scaling and scheduler behavior
+### Scheduling and placement
 
-At inspection:
+Kubernetes scheduling is automatic. We declare **requests and constraints**; the
+scheduler chooses a node for each unscheduled Pod.
 
-- Web HPA: 2–4 replicas.
-- Worker HPA: 1–4 replicas.
-- Worker concurrency: 2 per Pod.
-- Beat: one replica, with `Recreate` for Deployment revision rollouts.
+```mermaid
+flowchart TD
+    HPA[HPA] -->|changes replica count| Controller[Deployment or StatefulSet]
+    Controller -->|creates Pods| Scheduler[Kubernetes scheduler]
+    Scheduler -->|requests and constraints| Node[Selected node]
+    Node --> Kubelet[kubelet]
+    Kubelet --> Container[Container]
+```
 
-HPA utilization targets are relative to requests, not limits. With a 250m CPU request, a 70% target corresponds to roughly 175m per Pod, not 70% of a 1-core limit.
+The scheduler considers CPU/memory requests, node allocatable capacity, taints and
+tolerations, node selectors and affinity, pod affinity/anti-affinity, topology spread,
+and volume-node locality. HPA does **not** choose nodes; it only changes replica count.
+The Deployment/StatefulSet controller creates the Pods, and kubelet runs them on the
+node the scheduler selected.
 
-Beat's `Recreate` prevents normal revision-rollout overlap; it is not distributed locking or exactly-once task execution. Queue redelivery and task idempotency remain separate concerns.
+At this deployment:
 
-PDBs constrain applicable voluntary evictions. They do not guarantee availability during machine loss, direct Pod deletion or shared dependency failure, and they are not substitutes for Deployment rollout strategy.
+- Web HPA: 2–4 replicas; worker HPA: 1–4; worker concurrency: 2 per Pod; Beat is one
+  replica with `Recreate` during rollout.
+- Invenio web, worker and scheduler Pod templates have **no nodeSelector or node
+  affinity**. Their `ReadWriteMany` NFS PVCs have no node locality, so the scheduler can
+  place them on either worker. Current placement is a snapshot, not a pin.
+- PostgreSQL is a **single CNPG instance**. Preferred pod anti-affinity has no practical
+  effect with one instance; there is no database failover. Losing the node or Pod means
+  recreating the instance and reattaching its volume.
+- Alloy excludes control-plane nodes. Cloudflared is a DaemonSet that tolerates
+  control-plane taints. Velero node-agent runs as a DaemonSet on the workers.
+- Velero `PodVolumeBackup` expose Pods run on the **same node as the source Pod** because
+  they need that node's `/var/lib/kubelet/pods` hostPath. A report saying worker-01 or
+  worker-02 describes source-Pod locality, not an arbitrary Velero placement.
+- The 25 October recovery drill pinned its instance to worker-02 with node affinity.
+  That was a drill constraint; production Invenio does not use it.
+
+If deterministic placement is required, add `nodeSelector`, node affinity,
+pod anti-affinity or topology spread constraints deliberately. That reduces scheduling
+flexibility and can leave Pods Pending when capacity or labels change; ordinary
+workloads should normally rely on requests and let the scheduler decide.
+
+HPA utilization targets are relative to requests, not limits. With a 250m CPU request, a
+70% target corresponds to roughly 175m per Pod, not 70% of a 1-core limit.
+
+Beat's `Recreate` prevents normal revision-rollout overlap; it is not distributed
+locking or exactly-once task execution. Queue redelivery and task idempotency remain
+separate concerns.
+
+PDBs constrain applicable voluntary evictions. They do not guarantee availability
+during machine loss, direct Pod deletion or shared dependency failure, and they are not
+substitutes for Deployment rollout strategy.
 
 ## 11. Vocabulary repair and application data
 
@@ -705,14 +744,16 @@ This still verifies configuration convergence, not every application capability.
 
 ## 18. Dated findings and remaining work
 
-**These observations describe 20–21 October 2026, not the current cluster.**
+**This is a 20–21 October 2026 audit snapshot, retained for history. Current
+operations, placement and experiment readiness are in
+[current verified state](current-state.md).**
 
 | Area | Observation and limitation |
 | --- | --- |
 | Nodes | Three Ready, no reported memory/disk/PID pressure in the audit snapshot |
 | Workloads | No unready workload in the audit snapshot; this is not a health guarantee |
 | Metrics | The required scrape jobs were present and no active target was down in the 21 October read-only query |
-| PostgreSQL | Native backups complete. Git declares a daily 02:00 `ScheduledBackup`; live `Backup` objects were observed hourly at HH:02 on 21 October. The cadence discrepancy was not explained and needs verification before relying on RPO. |
+| PostgreSQL | Historical: the five-field schedule ran hourly. Corrected on 25 October to a six-field daily 02:00 schedule; see current state. |
 | Velero | Backup location Available. `weekly-infra-backup-20261018030030` was PartiallyFailed with 4 errors and 58 warnings; a later manual production Backup and the canary Backup completed. No successful actual weekly run was demonstrated. |
 | OpenSearch | Single node, yellow, active primaries but unassigned replicas; no search HA |
 | Redis | Approximately 272MiB used of 512MiB maxmemory; zero recorded evictions; `allkeys-lru` still risky for shared broker/session/cache |
@@ -738,15 +779,21 @@ Open issues are neither untouched failures nor all stale. They need evidence-bac
 
 ### Readiness priorities
 
-1. Complete canary metric/alert verification.
-2. Seed a private draft with a known file and prove isolated recovery/reset.
-3. Diagnose durable vocabulary bulk-queue progress.
-4. Correct revision-aware deployment verification.
-5. Define and approve the ArgoCD experiment protocol.
-6. Measure a bounded representative baseline.
-7. Execute only approved service faults, with verified recovery and reset.
+The current gates are maintained in
+[current state](current-state.md#experiment-readiness). The critical path is:
 
-Private draft/file recovery, published-record recovery and independent storage disaster recovery are different claims. Shared NFS/MinIO failure experiments remain excluded; host maintenance requires university coordination. SMTP remains a separate unavailable capability even though manually confirmed account login works.
+1. Seed the private draft and deterministic 64 KiB file; prove isolated recovery and
+   reset.
+2. Provision two real-Invenio environments and a reviewed live measurement adapter.
+3. Freeze the HPA-control method and obtain owner/supervisor approval.
+4. Verify the 1 November weekly Velero run and the 26 October daily CNPG run.
+5. Obtain audit, SMTP, capacity/NTP and maintenance evidence from university IT.
+6. Add an independent copy of MinIO file/backup data.
+
+Private draft/file recovery, published-record recovery and independent storage
+disaster recovery are different claims. Shared NFS/MinIO failure experiments remain
+excluded; host maintenance requires university coordination. SMTP remains a separate
+unavailable capability even though manually confirmed account login works.
 
 ## 19. Troubleshooting and glossary
 
