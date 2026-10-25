@@ -1,3 +1,4 @@
+import json
 import re
 import shutil
 import subprocess
@@ -48,19 +49,31 @@ def env_refs(container_spec):
 
 def alembic_block(command):
     match = re.search(
-        r'python3 - "\$CURRENT_OUTPUT" "\$HEADS_OUTPUT" <<\'PY\'\n(.*?)\nPY',
+        r"invenio shell -c '\n([^']*migration_context[^']*)\n'",
         command,
         re.S,
     )
     if not match:
-        raise AssertionError("Alembic current/heads checker block is missing")
+        raise AssertionError("Structured Alembic graph checker is missing")
     return match.group(1)
 
 
 def run_alembic_block(block, current, heads):
+    # Flask/Alembic are installed in the image, not the local test environment.
+    setup = '''
+import json, sys, types
+current, heads = json.loads(sys.argv[1])
+class Alembic:
+    migration_context = types.SimpleNamespace(get_current_heads=lambda: current)
+    def heads(self, resolve_dependencies=False):
+        return [types.SimpleNamespace(revision=r) for r in
+                (heads if resolve_dependencies else heads + ["dependency-only"])]
+sys.modules["flask"] = types.SimpleNamespace(current_app=types.SimpleNamespace(
+    extensions={"invenio-db": types.SimpleNamespace(alembic=Alembic())}))
+'''
     return subprocess.run(
-        ["python3", "-", current, heads],
-        input=block,
+        ["python3", "-", json.dumps([current, heads])],
+        input=setup + block,
         text=True,
         capture_output=True,
     )
@@ -71,7 +84,7 @@ class SetupLifecycleTests(unittest.TestCase):
         command = job_command(SETUP)
         for mutation in MUTATIONS:
             self.assertNotIn(mutation, command)
-        for check in ("alembic current", "files location list", "index list", "queues list"):
+        for check in ("migration_context.get_current_heads", "files location list", "index list", "queues list"):
             self.assertIn(check, command)
 
     def test_routine_hook_fails_closed_without_broad_swallowing(self):
@@ -161,25 +174,31 @@ class SetupLifecycleTests(unittest.TestCase):
 
     def test_alembic_checker_passes_only_when_all_branches_are_at_heads(self):
         block = alembic_block(job_command(SETUP))
-        at_head = run_alembic_block(block, "INFO  [alembic] current\nabc (head), ok\n", "Rev: abc (head)\nParent: root\n")
+        at_head = run_alembic_block(block, ["abc"], ["abc"])
         self.assertEqual(at_head.returncode, 0, at_head.stderr)
         self.assertIn("at all 1 heads", at_head.stdout)
 
-        behind = run_alembic_block(block, "old -> new (head), behind\n", "Rev: new (head)\n")
+        behind = run_alembic_block(block, ["old"], ["new"])
         self.assertNotEqual(behind.returncode, 0)
         self.assertIn("behind=['old']", behind.stderr)
         self.assertIn("missing=['new']", behind.stderr)
         self.assertIn("targeted approved", behind.stderr)
 
-        missing = run_alembic_block(block, "abc (head), ok\n", "Rev: abc (head)\nRev: def (head)\n")
+        missing = run_alembic_block(block, ["abc"], ["abc", "def"])
         self.assertNotEqual(missing.returncode, 0)
         self.assertIn("missing=['def']", missing.stderr)
 
     def test_initialization_alembic_checker_uses_the_same_behavior(self):
         block = alembic_block(job_command(INITIALIZE))
-        behind = run_alembic_block(block, "old -> new (head)\n", "Rev: new (head)\n")
+        behind = run_alembic_block(block, ["old"], ["new"])
         self.assertNotEqual(behind.returncode, 0)
         self.assertIn("behind=['old']", behind.stderr)
+
+    def test_alembic_checker_rejects_empty_or_unreadable_state(self):
+        block = alembic_block(job_command(SETUP))
+        for current, heads in (([], ["abc"]), (["abc"], []), (None, ["abc"])):
+            with self.subTest(current=current, heads=heads):
+                self.assertNotEqual(run_alembic_block(block, current, heads).returncode, 0)
 
     def test_missing_postconditions_recommend_targeted_remediation(self):
         command = job_command(SETUP)
