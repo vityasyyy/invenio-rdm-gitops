@@ -68,9 +68,9 @@ hooks and deny-all egress. PVs and `btd-nfs` are cluster-scoped and shared, so n
 PVs must be proven by UID; `database` holds the cluster-wide CNPG operator, which
 would reconcile the drill CR; restoring `argocd`/`velero` can recreate
 auto-syncing controllers; Invenio `ExternalName` Services point at production
-([deps](../../../k8s/apps/invenio/dependencies-external-services.yaml)) and
+([deps](../../../k8s/apps/invenio/resources/dependencies-external-services.yaml)) and
 `app-config.yaml` hardcodes production URLs and broker hosts; `invenio-setup` is
-a PostSync hook ([setup](../../../k8s/apps/invenio/invenio-setup-job.yaml)) and
+a PostSync hook ([setup](../../../k8s/apps/invenio/resources/invenio-setup-job.yaml)) and
 the scheduler runs Celery beat; restored SealedSecrets decrypt with the
 cluster-wide key.
 
