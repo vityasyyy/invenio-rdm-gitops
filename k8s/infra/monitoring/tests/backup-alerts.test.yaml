@@ -231,3 +231,22 @@ tests:
       - eval_time: 200h
         alertname: VeleroScheduledBackupFailed
         exp_alerts: []
+
+  - name: combined Velero failure metrics evaluate without label collisions
+    interval: 5m
+    input_series:
+      - series: 'velero_backup_failure_total{schedule="weekly-infra-backup"}'
+        values: '0+0x12'
+      - series: 'velero_backup_partial_failure_total{schedule="weekly-infra-backup"}'
+        values: '0+1x12'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: VeleroBackupFailed
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Velero backup failed"
+              description: "At least one Velero backup failed or partially failed in the last hour. Check backup errors and volume coverage."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+              dashboard: "https://grafana.vityasy.me/d/data-backups"

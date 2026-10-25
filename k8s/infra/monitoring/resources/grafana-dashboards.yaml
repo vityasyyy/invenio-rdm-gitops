@@ -1477,7 +1477,7 @@ data:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "sum(rate({__name__=~\"velero_backup_(partial_)?failure_total\",schedule=\"weekly-infra-backup\"}[1h])) * 3600",
+              "expr": "(sum(rate(velero_backup_failure_total{schedule=\"weekly-infra-backup\"}[1h])) + sum(rate(velero_backup_partial_failure_total{schedule=\"weekly-infra-backup\"}[1h]))) * 3600",
               "legendFormat": "Failures/hour",
               "refId": "A"
             }
@@ -1699,7 +1699,7 @@ data:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "sum by (schedule) (increase({__name__=~\"velero_backup_(partial_)?failure_total\"}[24h]))",
+              "expr": "sum by (schedule) (increase(velero_backup_failure_total[24h])) + sum by (schedule) (increase(velero_backup_partial_failure_total[24h]))",
               "legendFormat": "{{schedule}}",
               "refId": "A"
             }

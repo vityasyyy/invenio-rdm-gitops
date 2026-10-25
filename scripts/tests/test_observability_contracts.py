@@ -44,7 +44,9 @@ class ObservabilityContracts(unittest.TestCase):
         self.assertIn("cnpg_pg_settings_setting", joined)
         self.assertIn("cnpg_pg_replication_lag", joined)
         self.assertNotIn("cnpg_collection_", joined)
-        self.assertIn("velero_backup_(partial_)?failure_total", joined)
+        self.assertIn("velero_backup_failure_total", joined)
+        self.assertIn("velero_backup_partial_failure_total", joined)
+        self.assertNotIn('{__name__=~"velero_backup_(partial_)?failure_total"', joined)
         self.assertIn("absent(cnpg_collector_last_available_backup_timestamp", joined)
 
     def test_dashboards_use_real_contracts_and_no_duplicate_opensearch_status(self):
@@ -71,7 +73,9 @@ class ObservabilityContracts(unittest.TestCase):
         self.assertIn("cnpg_backends_total", joined)
         self.assertNotIn("cnpg_collection_", joined)
         self.assertNotIn("service=~\\\"invenio-web", joined)
-        self.assertIn("velero_backup_(partial_)?failure_total", joined)
+        self.assertIn("velero_backup_failure_total", joined)
+        self.assertIn("velero_backup_partial_failure_total", joined)
+        self.assertNotIn('{__name__=~"velero_backup_(partial_)?failure_total"', joined)
         self.assertIn("velero_backup_deletion_failure_total", joined)
 
     def test_logs_dashboard_uses_loki_with_stable_uid_and_filters(self):
