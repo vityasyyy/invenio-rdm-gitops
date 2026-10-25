@@ -31,14 +31,14 @@ spec:
             100 * (
               sum(rate(
                 traefik_service_requests_total{
-                  service=~"invenio-web.*",code=~"5.."
+                  exported_service=~"invenio-invenio-.*",code=~"5.."
                 }[10m]
-              )) / clamp_min(
+              )) / (
                 sum(rate(
                   traefik_service_requests_total{
-                    service=~"invenio-web.*"
+                    exported_service=~"invenio-invenio-.*"
                   }[10m]
-                )), 0.001
+                ))
               )
             ) > 2
           for: 10m
@@ -51,14 +51,15 @@ spec:
             dashboard: "https://grafana.vityasy.me/d/invenio-app"
         - alert: TraefikServiceDown
           expr: |
-            count(traefik_service_server_up) by (service) == 0
-            and on(service) count(traefik_service_requests_total) by (service) > 0
+            sum by (exported_service) (rate(traefik_service_requests_total{
+              exported_service=~"invenio-invenio-.*",code=~"502|503|504"
+            }[5m])) > 0
           for: 5m
           labels:
             severity: critical
           annotations:
-            summary: "Traefik backend {{ $labels.service }} has no healthy servers"
-            description: "All backend servers for this Traefik service are down while it still receives traffic."
+            summary: "Traefik backend {{ $labels.exported_service }} returns unavailable"
+            description: "Traefik has reported sustained 503 responses for this Invenio route. Inspect ready endpoints and application health."
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
             dashboard: "https://grafana.vityasy.me/d/overview-invenio-rdm"
         - alert: InvenioPodRestartHigh
@@ -78,13 +79,13 @@ spec:
       rules:
         - alert: VeleroBackupFailed
           expr: |
-            sum(increase(velero_backup_failure_total[1h])) > 0
+            sum(increase({__name__=~"velero_backup_(partial_)?failure_total"}[1h])) > 0
           for: 5m
           labels:
             severity: critical
           annotations:
             summary: "Velero backup failed"
-            description: "At least one Velero backup failed in the last hour. Check velero backup logs; cluster disaster recovery is at risk."
+            description: "At least one Velero backup failed or partially failed in the last hour. Check backup errors and volume coverage."
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
             dashboard: "https://grafana.vityasy.me/d/data-backups"
         - alert: VeleroBackupMetricsMissing
@@ -205,35 +206,38 @@ spec:
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
             dashboard: "https://grafana.vityasy.me/d/data-backups"
         - alert: PostgreSQLHighConnections
-          expr: cnpg_collection_connections_total / cnpg_collection_connections_max > 0.8
+          expr: |
+            sum by (namespace, pod) (cnpg_backends_total{namespace="database"})
+            / on (namespace, pod) cnpg_pg_settings_setting{namespace="database",name="max_connections"} > 0.8
           for: 5m
           labels:
             severity: warning
           annotations:
             summary: "PostgreSQL connection usage above 80%"
-            description: "Cluster {{ $labels.cluster_name }} is using more than 80% of available connections. Scale the pool or investigate leaks."
+            description: "Database pod {{ $labels.namespace }}/{{ $labels.pod }} is using more than 80% of max_connections. Investigate connection usage."
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
             dashboard: "https://grafana.vityasy.me/d/data-backups"
         - alert: CNPGReplicationLagHigh
-          expr: cnpg_collection_replication_lag > 30
+          expr: cnpg_pg_replication_lag{namespace="database"} > 30
           for: 5m
           labels:
             severity: warning
           annotations:
             summary: "PostgreSQL replication lag is high"
-            description: "Cluster {{ $labels.cluster_name }} has replication lag above 30 seconds."
+            description: "Database pod {{ $labels.namespace }}/{{ $labels.pod }} reports replication lag above 30 seconds."
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
             dashboard: "https://grafana.vityasy.me/d/data-backups"
         - alert: CNPGBackupStale
           expr: |
-            cnpg_collector_last_available_backup_timestamp > 0
-            and (time() - cnpg_collector_last_available_backup_timestamp) > 26 * 3600
+            cnpg_collector_last_available_backup_timestamp{namespace="database"} == 0
+            or (time() - cnpg_collector_last_available_backup_timestamp{namespace="database"}) > 26 * 3600
+            or absent(cnpg_collector_last_available_backup_timestamp{namespace="database"})
           for: 1h
           labels:
             severity: warning
           annotations:
             summary: "No CNPG backup in over 26 hours"
-            description: "The last available CloudNativePG backup is older than 26h (daily schedule + 2h grace). Point-in-time recovery coverage has a gap."
+            description: "CloudNativePG reports no available backup or one older than the 26h freshness budget. Inspect the base backup and required WAL chain; freshness alone does not prove recovery."
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
             dashboard: "https://grafana.vityasy.me/d/data-backups"
         - alert: CNPGArchivingDown

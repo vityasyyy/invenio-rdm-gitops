@@ -183,15 +183,20 @@ existing automated access path without changing Cloudflare or ArgoCD policies.
 - PDBs constrain applicable voluntary evictions only. They do not guarantee
   availability during node loss, direct Pod deletion, or a shared dependency failure.
 
-### The setup Job is a PostSync hook
+### Setup verification and initialization are separate
 
-`invenio-setup` runs after the sync, not before new web/worker Pods start. It runs
-database initialization/migration, file-location setup, fixtures, queue declaration,
-and index rebuilding. Several commands continue on failure (`|| true` or equivalent),
-so a successful Job can hide a failed setup step. A green sync is not proof that a
-migration completed, that a repeated fixture/rebuild was harmless, or that the
-application is functionally correct. Reverting an image does not reverse a database
-migration.
+`invenio-setup` runs after the sync, not before new web/worker Pods start. It is
+read-only: it verifies Alembic heads, the default file location, search index
+aliases, declared queues, and the admin superuser permission. It does not migrate,
+import fixtures, declare queues, or rebuild indexes, and it fails closed when a
+postcondition is missing. A green sync therefore proves those checks passed, not
+that the application is functionally correct.
+
+Initialization is a manual, separately approved Job at
+`k8s/apps/invenio/initialization/invenio-initialize-job.yaml`. It is not referenced
+by the Application Kustomization, so it cannot run during an ordinary sync or a
+measured repair. Do not rerun it to make the verification hook green; inspect which
+postcondition is missing. Reverting an image does not reverse a database migration.
 
 ## Storage, backup, and recovery
 
@@ -227,7 +232,7 @@ PVs to make an alert quiet.
 
 | Recovery claim | What the evidence supports |
 |---|---|
-| Kubernetes resources and selected files via Velero | A weekly schedule exists and manual production/canary backups have completed. The latest actual weekly run observed on 21 October was `PartiallyFailed` (4 errors, 58 warnings); this is not a successful scheduled-backup claim. |
+| Kubernetes resources and selected files via Velero | A weekly schedule exists. The latest actual scheduled runs observed on 18 and 25 October were `PartiallyFailed`; the 25 October run canceled two `invenio-archive` volume backups on worker-01 while the same shared PVC completed on worker-02. The exact kubelet/container reason is not yet established. Manual production and canary completions do not prove scheduled coverage. |
 | PostgreSQL native recovery | CNPG backups/WAL go to MinIO. Recovery of existing data into an isolated CNPG cluster was verified by schema, row-count, and vocabulary-digest comparison. No seeded application record/file consistency proof exists. |
 | Uploaded-file recovery | A 35,840-byte canary file restored with the same SHA-256 into an isolated namespace. The owner approved a private draft with a deterministic 64 KiB file, save-only with no publication or DOI; the upload/save ID is still awaited and no seeded restore has completed. Production file recovery remains unproven. |
 | Application-consistent recovery | Not proven. No seeded Invenio record plus file, permissions, and index state has been restored and verified together. |
