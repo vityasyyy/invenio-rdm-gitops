@@ -32,6 +32,13 @@ kubectl -n database get clusters.postgresql.cnpg.io,backups.postgresql.cnpg.io
 Use a request timeout for remote diagnostics. Synced/Healthy, completed Jobs and
 green CI are different signals; none alone proves public-path health or recovery.
 Bootstrap is not a repair operation and must not be run on the existing cluster.
+
+Placement is chosen by the Kubernetes scheduler; node names in logs are current
+bindings, not fixed assignments. See
+[scheduling and placement](architecture-guide.md#scheduling-and-placement) and the
+[current verified state](current-state.md) for the recorded placement, schedules and
+experiment-readiness gates.
+
 Schema verification compares database revisions with Alembic's dependency-resolved
 heads through its API. Raw `heads` counts and arrow-formatted CLI output are not
 evidence of pending migrations: dependency-only heads need not have separate rows.
@@ -86,10 +93,11 @@ alert. Historical counters are not current failure rates.
 
 See the preserved [backup and restore runbook](../README.md#backup--restore).
 Velero weekly backups retain672h (28d); Prometheus and Loki retain7d. CNPG runs
-daily at02:00 UTC and retains30d until a usable base-backup/WAL chain and compatible
-file-store recovery are established. Invenio file bytes are in MinIO, which is also
-the backup store and therefore a single failure domain; no off-site copy exists.
-A reported recoverability point is not a tested restore.
+daily at02:00 UTC and retains30d. The25October drill verified database recovery, but
+dependency-aware cleanup and file-store compatibility are still unproven, so retention
+stays30d. Invenio file bytes are in MinIO, which is also the backup store and therefore
+a single failure domain; no off-site copy exists. A reported recoverability point is
+not a tested restore.
 
 - MinIO is both the primary file store and the backup store on the same NFS. Do not
   claim independent disaster recovery until an off-site or otherwise independent
@@ -125,14 +133,20 @@ demonstrated, not inferred:
 5. The cleanup result is visible (deletion attempts/failures), and no manual or
    blanket bucket expiry is used.
 
-Observed 2026-10-25: MinIO reported about 36.5GB used and 10,904 objects; Velero
-deletion metrics showed four attempts and four successes with zero failures. CNPG
-had 30d of backups created hourly by a five-field cron; this change corrects the
-schedule to a six-field daily expression. Oldest recoverability point 2026-09-25,
-no recent failed backup; 1,871 older failed Backup CRs from August remain as
-historical API clutter with node-proxy 502 errors. These are status observations,
-not proof of WAL integrity, restore success, or compatible file recovery. Retention
-therefore stays unchanged.
+Observed 2026-10-25: MinIO's export held about35GiB (CNPG backup data plus Velero);
+Velero deletion metrics showed four attempts and four successes with zero failures.
+CNPG had30d of backups created hourly by a five-field cron; this change corrects the
+schedule to a six-field daily expression. Oldest recoverability point 2026-09-25, no
+recent failed backup; 1,871 older failed Backup CRs from August remain as historical
+API clutter with node-proxy 502 errors. These are status observations, not proof of
+WAL integrity, restore success, or compatible file recovery.
+
+The25October isolated drill recovered native backup `20261025T080202` and matched
+production on80 public tables, schema digest `b6ee5d10de3e7659e4e0c5f64204240a`,
+7 users,9,138 vocabularies and vocabulary digest `5fa4a963305262df6c7ad09cb88887e3`;
+records/drafts/files were0 on both sides. The drill Cluster/namespace/Secret were
+removed. This proves database recovery, not seeded file/record consistency. One
+Released `Retain` PV remains for evidence; physical NFS cleanup is separate.
 
 A scheduled Backup can remain `InProgress` until its 4h item-operation timeout after
 a canceled volume backup, then become `PartiallyFailed`. A canceled PVB is not
