@@ -30,9 +30,5 @@ plugins:
   installList:
     - https://github.com/opensearch-project/opensearch-prometheus-exporter/releases/download/2.19.1.0/prometheus-exporter-2.19.1.0.zip
 serviceMonitor:
-  enabled: true
-  path: /_prometheus/metrics
-  scheme: http
-  interval: 30s
-  labels:
-    release: monitoring
+  # The local ServiceMonitor keeps the existing identity and drops headless duplicates.
+  enabled: false
