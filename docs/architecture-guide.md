@@ -228,7 +228,7 @@ Self-management starts **after bootstrap**. A working Kubernetes cluster, creden
 
 ### Rendering tools
 
-**Kustomize** assembles and transforms Kubernetes YAML. In `k8s/apps/invenio/kustomization.yaml`, image overrides pin the effective image digest even if a base Deployment says `:latest`.
+**Kustomize** assembles and transforms Kubernetes YAML. In `k8s/apps/invenio/kustomization.yaml`, the shared `image-pin` component supplies the Git digest even if a base Deployment says `:latest`; an Application-level image override is applied after that component.
 
 **Helm** renders chart templates using values. ArgoCD manages the resulting objects; Helm is not another continuously running controller in this rendering path.
 
@@ -273,7 +273,7 @@ A manifest-only change need not build an image. Publishing an image also does no
 
 The configured updater watches Invenio's `latest` tag using digest updates and `writeBackConfig.method: argocd`: **ArgoCD API write-back, not Git write-back**.
 
-API write-back patches the ArgoCD `Application` object through the API. It does not create a commit. Because the root Application also manages the child `Application` manifests from Git, an API-written override can be reported as drift or reverted by reconciliation. The 21 October audit observed no active image override (`imagesManaged: 0`) and the live image matched the Git-pinned digest, but that is a snapshot, not a guarantee. For reproducible experiments, freeze Image Updater or pin an immutable digest; never treat an API write-back as durable Git desired state.
+API write-back patches the ArgoCD `Application` object through the API. It does not create a commit. The shared `image-pin` component is the Git fallback; Kustomize applies the Application-level override after that component, so the updater's digest wins while the override exists. The Application manifest intentionally has no static `kustomize.images`, so there is no competing Application-level source. Because the root Application also manages the child `Application` manifests from Git, an API-written override can be reported as drift or reverted by reconciliation. The 21 October audit observed no active image override (`imagesManaged: 0`) and the live image matched the Git-pinned digest, but that is a snapshot, not a guarantee. For reproducible experiments, freeze Image Updater or pin an immutable digest; never treat an API write-back as durable Git desired state.
 
 ## 8. Sync, health and ownership
 

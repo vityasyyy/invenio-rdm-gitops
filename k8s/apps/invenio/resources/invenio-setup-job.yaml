@@ -1,10 +1,10 @@
-# InvenioRDM setup / initialization job (UGM image)
+# InvenioRDM post-sync postcondition verification (read-only).
 #
-# This is an ArgoCD PostSync hook — it runs automatically after every sync
-# (including image updates from argocd-image-updater).
-# BeforeHookCreation deletes any previous run before starting a new one.
-#
-# Script is fully idempotent: safe to re-run at any time.
+# This hook must not initialize, migrate, import fixtures, declare queues or
+# rebuild indexes. It uses the same effective configuration and secrets as the
+# application, but only reads state. A failure is an inspection signal, not a
+# trigger to run the full initialization Job: use targeted, approved remediation.
+# Full initialization is only for a verified incomplete initial setup.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -14,8 +14,8 @@ metadata:
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
-  backoffLimit: 3
-  activeDeadlineSeconds: 1800
+  backoffLimit: 0
+  activeDeadlineSeconds: 900
   template:
     metadata:
       labels:
@@ -30,25 +30,34 @@ spec:
         fsGroup: 1654
         seccompProfile:
           type: RuntimeDefault
-      restartPolicy: OnFailure
+      restartPolicy: Never
+      # Read-only mounts keep the instance paths and runtime context consistent
+      # with the application; the verification performs no file writes.
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: invenio-data
+            readOnly: true
         - name: archive
           persistentVolumeClaim:
             claimName: invenio-archive
+            readOnly: true
       containers:
-        - name: setup
+        - name: verify
           image: ghcr.io/vityasyyy/invenio-ugm:latest
           imagePullPolicy: Always
           command:
             - /bin/bash
             - -c
             - |
-              set -e
+              set -euo pipefail
 
-              echo "=== InvenioRDM UGM Setup (PostSync Hook) ==="
+              fail() {
+                echo "ERROR: $*" >&2
+                exit 1
+              }
+
+              echo "=== InvenioRDM postcondition verification (read-only) ==="
 
               python3 - <<'PY'
               import socket, time, urllib.request
@@ -80,54 +89,93 @@ spec:
               wait_http("http://invenio-search.invenio.svc.cluster.local:9200/_cluster/health", "OpenSearch")
               PY
 
-              echo "[1/9] Database tables (idempotent)..."
-              invenio db create 2>&1 || echo "Tables may already exist, continuing."
-              invenio alembic upgrade 2>&1
-              echo "Migrations done."
+              echo "[1/5] Alembic schema heads"
+              invenio shell -c '
+              from flask import current_app
 
-              echo "[2/9] Default files location (local, on the NFS PVC)..."
-              invenio files location create --default default-location "$INVENIO_INSTANCE_PATH/data" 2>&1 \
-                || echo "File location may already exist, continuing."
+              alembic = current_app.extensions["invenio-db"].alembic
+              current = set(alembic.migration_context.get_current_heads())
+              heads = {revision.revision for revision in alembic.heads(resolve_dependencies=True)}
+              if not heads:
+                  raise SystemExit("ERROR: no Alembic heads found")
+              if not current:
+                  raise SystemExit("ERROR: no current Alembic revisions found")
+              behind = sorted(current - heads)
+              missing = sorted(heads - current)
+              if behind or missing:
+                  raise SystemExit(
+                      "ERROR: database schema is not at all image heads; "
+                      f"behind={behind} missing={missing}. "
+                      "Inspect Alembic current/heads and apply targeted approved "
+                      "migration. Do not run fixtures or reindex for this check."
+                  )
+              print(f"Alembic schema at all {len(heads)} heads")
+              '
 
-              echo "[3/9] Admin role and permissions..."
-              invenio roles create admin 2>&1 || echo "Role may already exist."
-              invenio access allow superuser-access role admin 2>&1 || echo "Permission may already exist."
+              echo "[2/5] Default file location"
+              LOCATIONS="$(invenio files location list 2>&1)" \
+                || fail "files location list failed: $LOCATIONS"
+              grep -q 'default-location' <<<"$LOCATIONS" \
+                || fail "default-location is missing; inspect the location list and create or set-default only with approval. Do not run full initialization for this check."
 
-              echo "[4/9] Search index (rdm- prefix from UGM config)..."
-              invenio index init 2>&1 || echo "Indices may already exist, continuing."
+              echo "[3/5] Search indices"
+              INDICES="$(invenio index list 2>&1)" \
+                || fail "index list failed: $INDICES"
+              grep -q 'rdmrecords-records' <<<"$INDICES" \
+                || fail "rdmrecords-records index alias is missing; inspect the index list and initialize the specific missing alias only with approval. Do not run full initialization for this check."
 
-              echo "[5/9] Custom fields..."
-              invenio rdm-records custom-fields init 2>&1 || echo "Records custom fields may already exist."
-              invenio communities custom-fields init 2>&1 || echo "Communities custom fields may already exist."
+              echo "[4/5] Declared queues"
+              QUEUES="$(invenio queues list 2>&1)" \
+                || fail "queues list failed: $QUEUES"
+              for queue in stats-file-download stats-record-view; do
+                grep -qx "$queue" <<<"$QUEUES" \
+                  || fail "queue $queue is missing; inspect the queue list and declare the specific missing queue only with approval. Do not run full initialization for this check."
+              done
 
-              echo "[6/9] Fixtures (general + vocabularies)..."
-              invenio rdm fixtures 2>&1 || true
-              invenio rdm-records fixtures 2>&1 || true
+              echo "[5/5] Admin role and superuser permission"
+              ADMIN_RESULT="$(invenio shell -c '
+              from invenio_db import db
+              from invenio_accounts.models import Role
+              from invenio_access.models import ActionRoles
+              from invenio_access.permissions import superuser_access
+              role = db.session.query(Role).filter(Role.name == "admin").one_or_none()
+              if role is None:
+                  print("STATE:missing-role")
+              elif db.session.query(ActionRoles).filter(
+                  ActionRoles.action == superuser_access.value,
+                  ActionRoles.role_id == role.id,
+              ).count() == 0:
+                  print("STATE:missing-permission")
+              else:
+                  print("STATE:ok")
+              ' 2>&1)" || fail "admin role query failed: $ADMIN_RESULT"
+              ADMIN_STATE="$(grep '^STATE:' <<<"$ADMIN_RESULT" | tail -1 | cut -d: -f2)"
+              [ -n "$ADMIN_STATE" ] \
+                || fail "admin role query returned no state: $ADMIN_RESULT"
+              [ "$ADMIN_STATE" = "ok" ] \
+                || fail "admin role state is '$ADMIN_STATE'; inspect the role and superuser permission and grant only the specific missing access with approval. Do not run full initialization for a single grant."
 
-              echo "[7/9] Message queues..."
-              invenio queues declare 2>&1 || echo "Queues may already be declared."
-
-              echo "[8/9] Rebuild search index for existing records..."
-              invenio rdm-records rebuild-index 2>&1 || echo "No existing records to rebuild."
-
-              echo "[9/9] Setup complete."
-          volumeMounts:
-            - name: data
-              mountPath: /opt/invenio/var/instance/data
-            - name: archive
-              mountPath: /opt/invenio/var/instance/archive
+              echo "All setup postconditions are satisfied. For any missing state, use targeted approved remediation; this proves presence only, not application correctness or recovery."
+          # Effective DB/search/broker settings are required; do not inline or print them.
           envFrom:
             - configMapRef:
                 name: invenio-app-config
             - secretRef:
                 name: invenio-app-secrets
+          volumeMounts:
+            - name: data
+              mountPath: /opt/invenio/var/instance/data
+              readOnly: true
+            - name: archive
+              mountPath: /opt/invenio/var/instance/archive
+              readOnly: true
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 100m
+              memory: 256Mi
             limits:
-              cpu: 1000m
-              memory: 2Gi
+              cpu: "1"
+              memory: 1Gi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

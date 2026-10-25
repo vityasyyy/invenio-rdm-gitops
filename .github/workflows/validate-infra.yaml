@@ -6,6 +6,9 @@ on:
     # NOTE: no `paths` filter on purpose. Branch protection requires these
     # checks on EVERY PR to main, so the workflow must run for every PR —
     # including docs-only ones (see issue #83, which was stuck on Expected).
+  workflow_dispatch:
+    # Manual validation for stacked branches whose PR base is not `main`.
+    # Required PR checks are unchanged.
 
 permissions:
   contents: read
@@ -64,6 +67,9 @@ jobs:
         run: |
           python3 -m pip install PyYAML
           bash scripts/ci-render-manifests.sh
+
+      - name: Render manual initialization Job
+        run: kustomize build k8s/apps/invenio/initialization > rendered/manual-initialize.yaml
 
       - name: Validate rendered manifests with kubeconform
         run: |

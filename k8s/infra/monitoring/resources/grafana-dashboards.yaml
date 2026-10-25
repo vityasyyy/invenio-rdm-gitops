@@ -1,3 +1,4 @@
+---
 # yamllint disable-file
 apiVersion: v1
 kind: ConfigMap
@@ -45,6 +46,11 @@ data:
         {
           "title": "03 Platform",
           "url": "/d/platform-health",
+          "type": "link"
+        },
+        {
+          "title": "04 Application Logs",
+          "url": "/d/invenio-logs",
           "type": "link"
         }
       ],
@@ -550,7 +556,7 @@ data:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "100 * sum(rate(traefik_service_requests_total{service=~\"invenio-web.*\",code=~\"4..\"}[5m])) / clamp_min(sum(rate(traefik_service_requests_total{service=~\"invenio-web.*\"}[5m])), 0.001)",
+              "expr": "100 * sum(rate(traefik_service_requests_total{exported_service=~\"invenio-invenio-.*\",code=~\"4..\"}[5m])) / clamp_min(sum(rate(traefik_service_requests_total{exported_service=~\"invenio-invenio-.*\"}[5m])), 0.001)",
               "legendFormat": "4xx %",
               "refId": "A"
             }
@@ -829,7 +835,13 @@ data:
       "fiscalYearStartMonth": 0,
       "graphTooltip": 0,
       "id": null,
-      "links": [],
+      "links": [
+        {
+          "title": "04 Application Logs",
+          "url": "/d/invenio-logs",
+          "type": "link"
+        }
+      ],
       "liveNow": false,
       "panels": [
         {
@@ -888,7 +900,7 @@ data:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(traefik_service_request_duration_seconds_bucket{service=~\"invenio-web.*\"}[5m])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(traefik_service_request_duration_seconds_bucket{exported_service=~\"invenio-invenio-.*\"}[5m])))",
               "legendFormat": "p95",
               "refId": "A"
             }
@@ -952,7 +964,7 @@ data:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "100 * sum(rate(traefik_service_requests_total{service=~\"invenio-web.*\",code=~\"5..\"}[5m])) / clamp_min(sum(rate(traefik_service_requests_total{service=~\"invenio-web.*\"}[5m])), 0.001)",
+              "expr": "100 * sum(rate(traefik_service_requests_total{exported_service=~\"invenio-invenio-.*\",code=~\"5..\"}[5m])) / clamp_min(sum(rate(traefik_service_requests_total{exported_service=~\"invenio-invenio-.*\"}[5m])), 0.001)",
               "legendFormat": "5xx %",
               "refId": "A"
             }
@@ -1144,7 +1156,7 @@ data:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "opensearch_cluster_status",
+              "expr": "max(opensearch_cluster_status)",
               "legendFormat": "status",
               "refId": "A"
             }
@@ -1208,7 +1220,7 @@ data:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "cnpg_collection_connections_total / cnpg_collection_connections_max",
+              "expr": "100 * sum(cnpg_backends_total{namespace=\"database\"}) / sum(cnpg_pg_settings_setting{namespace=\"database\",name=\"max_connections\"})",
               "legendFormat": "used",
               "refId": "A"
             }
@@ -1257,7 +1269,7 @@ data:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "cnpg_collection_replication_lag",
+              "expr": "max(cnpg_pg_replication_lag{namespace=\"database\"})",
               "legendFormat": "lag",
               "refId": "A"
             }
@@ -1340,7 +1352,13 @@ data:
       "fiscalYearStartMonth": 0,
       "graphTooltip": 0,
       "id": null,
-      "links": [],
+      "links": [
+        {
+          "title": "04 Application Logs",
+          "url": "/d/invenio-logs",
+          "type": "link"
+        }
+      ],
       "liveNow": false,
       "panels": [
         {
@@ -1395,7 +1413,7 @@ data:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "sum(velero_backup_total{schedule!=\"\"})",
+              "expr": "sum(velero_backup_total{schedule=\"weekly-infra-backup\"})",
               "legendFormat": "Backups (all outcomes)",
               "refId": "A"
             }
@@ -1459,7 +1477,7 @@ data:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "sum(rate(velero_backup_failure_total[1h])) * 3600",
+              "expr": "sum(rate({__name__=~\"velero_backup_(partial_)?failure_total\",schedule=\"weekly-infra-backup\"}[1h])) * 3600",
               "legendFormat": "Failures/hour",
               "refId": "A"
             }
@@ -1519,7 +1537,7 @@ data:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "sum(velero_backup_attempt_total)",
+              "expr": "sum(velero_backup_attempt_total{schedule=\"weekly-infra-backup\"})",
               "legendFormat": "Attempts",
               "refId": "A"
             }
@@ -1681,7 +1699,7 @@ data:
           "targets": [
             {
               "editorMode": "code",
-              "expr": "sum by (schedule) (increase(velero_backup_failure_total[24h]))",
+              "expr": "sum by (schedule) (increase({__name__=~\"velero_backup_(partial_)?failure_total\"}[24h]))",
               "legendFormat": "{{schedule}}",
               "refId": "A"
             }
@@ -1990,6 +2008,162 @@ data:
           ],
           "title": "MinIO S3 Request Rate",
           "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 12,
+            "x": 0,
+            "y": 24
+          },
+          "id": 12,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value"
+          },
+          "pluginVersion": "11.0.0",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(increase(velero_backup_items_errors{schedule=\"weekly-infra-backup\"}[24h]))",
+              "legendFormat": "item errors",
+              "refId": "A"
+            }
+          ],
+          "title": "Required-run item errors (24h)",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 12,
+            "x": 12,
+            "y": 24
+          },
+          "id": 13,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.0.0",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(increase(velero_backup_deletion_attempt_total{schedule=\"weekly-infra-backup\"}[24h]))",
+              "legendFormat": "deletion attempts",
+              "refId": "A"
+            },
+            {
+              "editorMode": "code",
+              "expr": "sum(increase(velero_backup_deletion_success_total{schedule=\"weekly-infra-backup\"}[24h]))",
+              "legendFormat": "deletions succeeded",
+              "refId": "B"
+            },
+            {
+              "editorMode": "code",
+              "expr": "sum(increase(velero_backup_deletion_failure_total{schedule=\"weekly-infra-backup\"}[24h]))",
+              "legendFormat": "deletions failed",
+              "refId": "C"
+            }
+          ],
+          "title": "Backup cleanup (24h)",
+          "type": "timeseries"
         }
       ],
       "refresh": "30s",
@@ -2066,7 +2240,13 @@ data:
       "fiscalYearStartMonth": 0,
       "graphTooltip": 0,
       "id": null,
-      "links": [],
+      "links": [
+        {
+          "title": "04 Application Logs",
+          "url": "/d/invenio-logs",
+          "type": "link"
+        }
+      ],
       "liveNow": false,
       "panels": [
         {
@@ -2482,4 +2662,146 @@ data:
       "uid": "platform-health",
       "version": 1,
       "weekStart": ""
+    }
+---
+# yamllint disable-file
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-logs
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: InvenioRDM
+data:
+  logs.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": false,
+      "links": [
+        {
+          "title": "00 InvenioRDM Overview",
+          "url": "/d/overview-invenio-rdm",
+          "type": "link"
+        },
+        {
+          "title": "01 Invenio App",
+          "url": "/d/invenio-app",
+          "type": "link"
+        },
+        {
+          "title": "02 Data & Backups",
+          "url": "/d/data-backups",
+          "type": "link"
+        },
+        {
+          "title": "03 Platform",
+          "url": "/d/platform-health",
+          "type": "link"
+        }
+      ],
+      "panels": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "gridPos": {
+            "h": 22,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "id": 1,
+          "options": {
+            "dedupStrategy": "none",
+            "enableLogDetails": true,
+            "showCommonLabels": false,
+            "showLabels": true,
+            "showTime": true,
+            "sortOrder": "Descending",
+            "wrapLines": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "editorMode": "code",
+              "expr": "{namespace=~\"$namespace\"} |~ \"$search\"",
+              "legendFormat": "{{pod}}",
+              "queryType": "range",
+              "refId": "A"
+            }
+          ],
+          "title": "Application logs",
+          "type": "logs"
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "tags": [
+        "invenio",
+        "logs"
+      ],
+      "templating": {
+        "list": [
+          {
+            "current": {
+              "selected": true,
+              "text": "invenio",
+              "value": "invenio"
+            },
+            "datasource": {
+              "type": "loki",
+              "uid": "loki"
+            },
+            "definition": "label_values(namespace)",
+            "hide": 0,
+            "includeAll": false,
+            "label": "Namespace",
+            "multi": false,
+            "name": "namespace",
+            "options": [],
+            "query": "label_values(namespace)",
+            "refresh": 1,
+            "regex": "",
+            "skipUrlSync": false,
+            "sort": 0,
+            "type": "query"
+          },
+          {
+            "current": {
+              "selected": false,
+              "text": "",
+              "value": ""
+            },
+            "hide": 0,
+            "label": "Search",
+            "name": "search",
+            "options": [
+              {
+                "selected": true,
+                "text": "",
+                "value": ""
+              }
+            ],
+            "query": "",
+            "skipUrlSync": false,
+            "type": "textbox"
+          }
+        ]
+      },
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "timezone": "browser",
+      "title": "04 Application Logs",
+      "uid": "invenio-logs",
+      "version": 1
     }

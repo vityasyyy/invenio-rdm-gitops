@@ -23,7 +23,9 @@ values, a Kustomize directory, or both; values files are not Kubernetes resource
 |---|---|
 | `argocd/root.yaml` | Root `apps` Application; selects `argocd/apps` |
 | `argocd/apps/*.yaml` | Application identities, destination, source versions/paths and ownership |
-| `k8s/apps/invenio/kustomization.yaml` | `invenio-bootstrap`; image digest and explicit application resource list |
+| `k8s/apps/invenio/kustomization.yaml` | `invenio-bootstrap`; application resource list and shared image component |
+| `k8s/apps/invenio/image-pin/` | Single Git image digest component; ImageUpdater's Application override is applied after it |
+| `k8s/apps/invenio/initialization/` | Manual initialization Job and render Kustomization; excluded from automated sync |
 | `k8s/apps/invenio/resources/` | Web, workers, Beat, setup, HPA, PDB, PVCs, configuration, Secrets and routes |
 | `k8s/dependencies/postgresql/` | `invenio-postgresql`; CNPG operator values and database custom resources |
 | `k8s/dependencies/opensearch/` | `invenio-opensearch`; pinned single-node chart values and namespace/network resources |

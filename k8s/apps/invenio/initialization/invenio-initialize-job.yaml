@@ -1,0 +1,274 @@
+# One-off InvenioRDM initialization Job.
+#
+# NOT part of the ArgoCD Application or kustomization.yaml. Routine syncs run
+# only the read-only invenio-setup verification hook. Render the shared image
+# pin and apply only after explicit approval, a verified backup, and a
+# maintenance decision:
+#
+#   kustomize build k8s/apps/invenio/initialization | kubectl apply -f -
+#
+# It performs schema migrations, fixtures, queue declaration and a full search
+# reindex. This is not a routine repair: if a single postcondition is missing,
+# inspect it and use targeted approved remediation instead. Do not rerun the
+# full initialization without new evidence that initial setup is incomplete.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: invenio-initialize
+  namespace: invenio
+  labels:
+    app.kubernetes.io/name: invenio-initialize
+    app.kubernetes.io/part-of: invenio-rdm
+    invenio.vityasy.me/lifecycle: manual-initialization
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 7200
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: invenio-initialize
+        app.kubernetes.io/part-of: invenio-rdm
+    spec:
+      serviceAccountName: default
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654
+        runAsGroup: 1654
+        fsGroup: 1654
+        seccompProfile:
+          type: RuntimeDefault
+      restartPolicy: Never
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: invenio-data
+        - name: archive
+          persistentVolumeClaim:
+            claimName: invenio-archive
+      containers:
+        - name: initialize
+          # Deliberately not runnable as written. The initialization
+          # Kustomization applies the shared image-pin component, which replaces
+          # this tag with the authoritative digest. Never apply this raw file.
+          image: ghcr.io/vityasyyy/invenio-ugm:unpinned-render-with-kustomize
+          imagePullPolicy: Always
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+
+              fail() {
+                echo "ERROR: $*" >&2
+                exit 1
+              }
+
+              echo "=== InvenioRDM initialization (manual, fail-closed) ==="
+
+              python3 - <<'PY'
+              import socket, time, urllib.request
+
+              def wait_tcp(host, port, name):
+                  for i in range(60):
+                      try:
+                          socket.create_connection((host, port), timeout=3).close()
+                          print(f"{name} ready")
+                          return
+                      except Exception:
+                          print(f"Waiting for {name}... ({i+1}/60)")
+                          time.sleep(5)
+                  raise RuntimeError(f"{name} not available after 5 minutes")
+
+              def wait_http(url, name):
+                  for i in range(60):
+                      try:
+                          urllib.request.urlopen(url, timeout=3)
+                          print(f"{name} ready")
+                          return
+                      except Exception:
+                          print(f"Waiting for {name}... ({i+1}/60)")
+                          time.sleep(5)
+                  raise RuntimeError(f"{name} not available after 5 minutes")
+
+              wait_tcp("invenio-postgresql.invenio.svc.cluster.local", 5432, "PostgreSQL")
+              wait_tcp("invenio-redis.invenio.svc.cluster.local", 6379, "Redis")
+              wait_http("http://invenio-search.invenio.svc.cluster.local:9200/_cluster/health", "OpenSearch")
+              PY
+
+              echo "[1/8] Database migrations"
+              invenio alembic upgrade
+
+              echo "[2/8] Default file location"
+              LOCATIONS="$(invenio files location list 2>&1)" \
+                || fail "files location list failed: $LOCATIONS"
+              if grep -q 'default-location' <<<"$LOCATIONS"; then
+                echo "default-location already exists"
+              else
+                invenio files location create --default default-location "$INVENIO_INSTANCE_PATH/data"
+              fi
+
+              echo "[3/8] Admin role"
+              ROLE_RESULT="$(invenio shell -c '
+              from invenio_db import db
+              from invenio_accounts.models import Role
+              role = db.session.query(Role).filter(Role.name == "admin").one_or_none()
+              print("STATE:exists" if role is not None else "STATE:missing")
+              ' 2>&1)" || fail "admin role query failed: $ROLE_RESULT"
+              ROLE_STATE="$(grep '^STATE:' <<<"$ROLE_RESULT" | tail -1 | cut -d: -f2)"
+              [ -n "$ROLE_STATE" ] \
+                || fail "admin role query returned no state: $ROLE_RESULT"
+              if [ "$ROLE_STATE" = "missing" ]; then
+                invenio roles create admin
+              elif [ "$ROLE_STATE" != "exists" ]; then
+                fail "unexpected admin role state: $ROLE_STATE"
+              fi
+
+              echo "[4/8] Superuser permission"
+              PERMISSION_RESULT="$(invenio shell -c '
+              from invenio_db import db
+              from invenio_accounts.models import Role
+              from invenio_access.models import ActionRoles
+              from invenio_access.permissions import superuser_access
+              role = db.session.query(Role).filter(Role.name == "admin").one_or_none()
+              allowed = role is not None and db.session.query(ActionRoles).filter(
+                  ActionRoles.action == superuser_access.value,
+                  ActionRoles.role_id == role.id,
+              ).count() > 0
+              print("STATE:exists" if allowed else "STATE:missing")
+              ' 2>&1)" || fail "superuser permission query failed: $PERMISSION_RESULT"
+              PERMISSION_STATE="$(grep '^STATE:' <<<"$PERMISSION_RESULT" | tail -1 | cut -d: -f2)"
+              [ -n "$PERMISSION_STATE" ] \
+                || fail "superuser permission query returned no state: $PERMISSION_RESULT"
+              if [ "$PERMISSION_STATE" = "missing" ]; then
+                invenio access allow superuser-access role admin
+              elif [ "$PERMISSION_STATE" != "exists" ]; then
+                fail "unexpected superuser permission state: $PERMISSION_STATE"
+              fi
+
+              echo "[5/8] Search index aliases"
+              INDICES="$(invenio index list 2>&1)" \
+                || fail "index list failed: $INDICES"
+              if grep -q 'rdmrecords-records' <<<"$INDICES"; then
+                echo "index aliases already exist"
+              else
+                invenio index init
+              fi
+
+              echo "[6/8] Custom fields"
+              RECORDS_FIELDS_RESULT="$(invenio shell -c '
+              from invenio_rdm_records.config import RDM_CUSTOM_FIELDS
+              print("FIELDS:" + ",".join(sorted(RDM_CUSTOM_FIELDS)))
+              ' 2>&1)" || fail "records custom-field config query failed: $RECORDS_FIELDS_RESULT"
+              RECORDS_FIELDS="$(grep '^FIELDS:' <<<"$RECORDS_FIELDS_RESULT" | tail -1 | cut -d: -f2-)"
+              invenio rdm-records custom-fields init \
+                || fail "records custom-field initialization failed; inspect the error above"
+              if [ -n "$RECORDS_FIELDS" ]; then
+                IFS=',' read -ra fields <<<"$RECORDS_FIELDS"
+                for field in "${fields[@]}"; do
+                  invenio rdm-records custom-fields exists -f "$field" \
+                    || fail "records custom field '$field' is not present after initialization"
+                done
+              fi
+              COMMUNITIES_FIELDS_RESULT="$(invenio shell -c '
+              from invenio_communities.config import COMMUNITIES_CUSTOM_FIELDS
+              print("FIELDS:" + ",".join(sorted(COMMUNITIES_CUSTOM_FIELDS)))
+              ' 2>&1)" || fail "communities custom-field config query failed: $COMMUNITIES_FIELDS_RESULT"
+              COMMUNITIES_FIELDS="$(grep '^FIELDS:' <<<"$COMMUNITIES_FIELDS_RESULT" | tail -1 | cut -d: -f2-)"
+              invenio communities custom-fields init \
+                || fail "communities custom-field initialization failed; inspect the error above"
+              if [ -n "$COMMUNITIES_FIELDS" ]; then
+                IFS=',' read -ra fields <<<"$COMMUNITIES_FIELDS"
+                for field in "${fields[@]}"; do
+                  invenio communities custom-fields exists -f "$field" \
+                    || fail "communities custom field '$field' is not present after initialization"
+                done
+              fi
+
+              echo "[7/8] Fixtures and queues"
+              invenio rdm fixtures
+              invenio rdm-records fixtures
+              invenio queues declare
+
+              echo "[8/8] Rebuild search index"
+              invenio rdm-records rebuild-index
+
+              echo "Verifying initialization postconditions"
+              invenio shell -c '
+              from flask import current_app
+
+              alembic = current_app.extensions["invenio-db"].alembic
+              current = set(alembic.migration_context.get_current_heads())
+              heads = {revision.revision for revision in alembic.heads(resolve_dependencies=True)}
+              if not heads:
+                  raise SystemExit("ERROR: no Alembic heads found")
+              if not current:
+                  raise SystemExit("ERROR: no current Alembic revisions found")
+              behind = sorted(current - heads)
+              missing = sorted(heads - current)
+              if behind or missing:
+                  raise SystemExit(
+                      "ERROR: database schema is not at all image heads after upgrade; "
+                      f"behind={behind} missing={missing}"
+                  )
+              print(f"Alembic schema at all {len(heads)} heads")
+              '
+              LOCATIONS="$(invenio files location list 2>&1)" \
+                || fail "files location list failed after initialization: $LOCATIONS"
+              grep -q 'default-location' <<<"$LOCATIONS" \
+                || fail "default-location is missing after initialization"
+              INDICES="$(invenio index list 2>&1)" \
+                || fail "index list failed after initialization: $INDICES"
+              grep -q 'rdmrecords-records' <<<"$INDICES" \
+                || fail "rdmrecords-records index alias is missing after initialization"
+              QUEUES="$(invenio queues list 2>&1)" \
+                || fail "queues list failed after initialization: $QUEUES"
+              for queue in stats-file-download stats-record-view; do
+                grep -qx "$queue" <<<"$QUEUES" \
+                  || fail "queue $queue is missing after initialization"
+              done
+              ADMIN_RESULT="$(invenio shell -c '
+              from invenio_db import db
+              from invenio_accounts.models import Role
+              from invenio_access.models import ActionRoles
+              from invenio_access.permissions import superuser_access
+              role = db.session.query(Role).filter(Role.name == "admin").one_or_none()
+              if role is None:
+                  print("STATE:missing-role")
+              elif db.session.query(ActionRoles).filter(
+                  ActionRoles.action == superuser_access.value,
+                  ActionRoles.role_id == role.id,
+              ).count() == 0:
+                  print("STATE:missing-permission")
+              else:
+                  print("STATE:ok")
+              ' 2>&1)" || fail "admin role verification query failed: $ADMIN_RESULT"
+              ADMIN_STATE="$(grep '^STATE:' <<<"$ADMIN_RESULT" | tail -1 | cut -d: -f2)"
+              [ "$ADMIN_STATE" = "ok" ] \
+                || fail "admin role state is '${ADMIN_STATE:-missing}' after initialization"
+
+              echo "Initialization and postcondition verification completed."
+          volumeMounts:
+            - name: data
+              mountPath: /opt/invenio/var/instance/data
+            - name: archive
+              mountPath: /opt/invenio/var/instance/archive
+          envFrom:
+            - configMapRef:
+                name: invenio-app-config
+            - secretRef:
+                name: invenio-app-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
