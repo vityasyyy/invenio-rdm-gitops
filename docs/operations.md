@@ -32,6 +32,10 @@ kubectl -n database get clusters.postgresql.cnpg.io,backups.postgresql.cnpg.io
 Use a request timeout for remote diagnostics. Synced/Healthy, completed Jobs and
 green CI are different signals; none alone proves public-path health or recovery.
 Bootstrap is not a repair operation and must not be run on the existing cluster.
+Schema verification compares database revisions with Alembic's dependency-resolved
+heads through its API. Raw `heads` counts and arrow-formatted CLI output are not
+evidence of pending migrations: dependency-only heads need not have separate rows.
+
 Do not rerun setup, migrations, fixture imports, reindexing or queue operations
 while diagnosing an ordinary reconciliation failure.
 
