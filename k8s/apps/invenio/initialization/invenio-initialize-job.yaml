@@ -193,25 +193,14 @@ spec:
               invenio rdm-records rebuild-index
 
               echo "Verifying initialization postconditions"
-              CURRENT_OUTPUT="$(invenio alembic current 2>&1)" \
-                || fail "alembic current failed: $CURRENT_OUTPUT"
-              HEADS_OUTPUT="$(invenio alembic heads --verbose 2>&1)" \
-                || fail "alembic heads failed: $HEADS_OUTPUT"
-              python3 - "$CURRENT_OUTPUT" "$HEADS_OUTPUT" <<'PY'
-              import re, sys
+              invenio shell -c '
+              from flask import current_app
 
-              current_lines = [
-                  line for line in sys.argv[1].splitlines()
-                  if line and not line.startswith("INFO")
-              ]
-              heads = {
-                  match.group(1)
-                  for line in sys.argv[2].splitlines()
-                  if (match := re.match(r"^Rev: (\S+)", line))
-              }
+              alembic = current_app.extensions["invenio-db"].alembic
+              current = set(alembic.migration_context.get_current_heads())
+              heads = {revision.revision for revision in alembic.heads(resolve_dependencies=True)}
               if not heads:
                   raise SystemExit("ERROR: no Alembic heads found")
-              current = {line.split()[0] for line in current_lines}
               if not current:
                   raise SystemExit("ERROR: no current Alembic revisions found")
               behind = sorted(current - heads)
@@ -219,10 +208,10 @@ spec:
               if behind or missing:
                   raise SystemExit(
                       "ERROR: database schema is not at all image heads after upgrade; "
-                      f"behind={behind or 'none'} missing={missing or 'none'}"
+                      f"behind={behind} missing={missing}"
                   )
               print(f"Alembic schema at all {len(heads)} heads")
-              PY
+              '
               LOCATIONS="$(invenio files location list 2>&1)" \
                 || fail "files location list failed after initialization: $LOCATIONS"
               grep -q 'default-location' <<<"$LOCATIONS" \
