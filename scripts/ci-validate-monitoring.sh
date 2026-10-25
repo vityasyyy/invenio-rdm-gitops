@@ -22,7 +22,7 @@ def err(msg):
     errors.append(msg)
     print(f"✗ {msg}")
 
-dash_path = os.path.join(mon, "grafana-dashboards.yaml")
+dash_path = os.path.join(mon, "resources", "grafana-dashboards.yaml")
 docs = [d for d in yaml.safe_load_all(open(dash_path)) if d]
 panels_seen = 0
 dashboard_exprs = []
@@ -64,7 +64,7 @@ if not any("kube_customresource_velero_backup_completion_timestamp" in expr for 
 if any("time() - velero_backup_last_successful_timestamp" in expr for expr in dashboard_exprs):
     err("Grafana dashboards must not derive freshness from the global success gauge")
 
-rules = yaml.safe_load(open(os.path.join(mon, "alerts.yaml")))["spec"]["groups"]
+rules = yaml.safe_load(open(os.path.join(mon, "resources", "alerts.yaml")))["spec"]["groups"]
 rule_test_paths = sorted(
     os.path.join(mon, "tests", name)
     for name in os.listdir(os.path.join(mon, "tests"))
@@ -156,7 +156,7 @@ else:
     ):
         err("KSM RBAC must allow list/watch on velero.io backups and schedules")
 try:
-    cr = yaml.safe_load(open(os.path.join(mon, "discord-receivers.yaml")))
+    cr = yaml.safe_load(open(os.path.join(mon, "resources", "discord-receivers.yaml")))
 except FileNotFoundError:
     err("discord-receivers.yaml missing")
     cr = None
@@ -258,7 +258,7 @@ if grafana_flag is not False:
 # so matchNames/matchLabels/matchers never trip it.
 import re
 _old_route_key = re.compile(r"(?m)^\s*(match|match_re|source_match|source_match_re|target_match|target_match_re)\s*:")
-for fname in ("values.yaml", "discord-receivers.yaml"):
+for fname in ("values.yaml", "resources/discord-receivers.yaml"):
     body = open(os.path.join(mon, fname)).read()
     for m in _old_route_key.finditer(body):
         err(f"{fname}: old-style routing key {m.group(1)!r} — use matchers: (issue #105)")
@@ -275,14 +275,14 @@ def _load(rel):
     with open(os.path.join(REPO_ROOT, rel)) as fh:
         return yaml.safe_load(fh)
 
-vel = _load("k8s/infra/velero/velero-servicemonitor.yaml")
+vel = _load("k8s/infra/velero/resources/velero-servicemonitor.yaml")
 if vel.get("kind") != "ServiceMonitor" or (vel.get("metadata", {}).get("labels") or {}).get("release") != "monitoring":
     err("velero-servicemonitor.yaml must be a ServiceMonitor labelled release: monitoring")
 elif vel["spec"]["endpoints"][0].get("port") != "http-monitoring":
     err("velero ServiceMonitor must scrape port http-monitoring (:8085)")
 
-cf_svc = _load("external-lb/k8s/cloudflared-service.yaml")
-cf_sm = _load("external-lb/k8s/cloudflared-servicemonitor.yaml")
+cf_svc = _load("k8s/infra/cloudflared/resources/cloudflared-service.yaml")
+cf_sm = _load("k8s/infra/cloudflared/resources/cloudflared-servicemonitor.yaml")
 if [p.get("port") for p in cf_svc["spec"].get("ports", [])] != [8080]:
     err("cloudflared Service must expose port 8080")
 if cf_sm.get("kind") != "ServiceMonitor" or (cf_sm.get("metadata", {}).get("labels") or {}).get("release") != "monitoring":
@@ -296,7 +296,7 @@ if mino.get("includeNode") is not True:
 if (mino.get("additionalLabels") or {}).get("release") != "monitoring":
     err("minio metrics.serviceMonitor.additionalLabels.release must be monitoring")
 
-for rel in ("k8s/apps/invenio-deps/opensearch/values.yaml",):
+for rel in ("k8s/dependencies/opensearch/values.yaml",):
     osv = _load(rel)
     if "metricsExporter" in osv:
         err(f"{rel}: stale metricsExporter key (chart 2.32.0 has no such key)")
@@ -306,16 +306,9 @@ for rel in ("k8s/apps/invenio-deps/opensearch/values.yaml",):
         err(f"{rel}: serviceMonitor.labels.release must be monitoring")
     if not (osv.get("plugins", {}).get("installList") or []):
         err(f"{rel}: plugins.installList must carry the verified exporter zip")
-argo_os = open(os.path.join(REPO_ROOT, "argocd/apps/invenio-opensearch.yaml")).read()
-if "metricsExporter" in argo_os:
-    err("argocd/apps/invenio-opensearch.yaml: stale metricsExporter key")
-if "serviceMonitor:" not in argo_os or "prometheus-exporter-2.19.1.0.zip" not in argo_os:
-    err("argocd/apps/invenio-opensearch.yaml: must carry serviceMonitor + verified exporter zip")
-render_sh = open(os.path.join(REPO_ROOT, "scripts/ci-render-manifests.sh")).read()
-if "metricsExporter" in render_sh:
-    err("scripts/ci-render-manifests.sh: stale metricsExporter key in OPENSEARCH_VALUES")
-if "prometheus-exporter-2.19.1.0.zip" not in render_sh:
-    err("scripts/ci-render-manifests.sh: OPENSEARCH_VALUES must carry the verified exporter zip")
+argo_os = _load("argocd/apps/invenio-opensearch.yaml")
+if argo_os["spec"]["sources"][0].get("helm") != {"valueFiles": ["$values/k8s/dependencies/opensearch/values.yaml"]}:
+    err("OpenSearch must consume its authoritative values file without inline overrides")
 
 trm = _load("k8s/infra/traefik/values.yaml")["metrics"]["prometheus"]
 if (trm.get("service") or {}).get("enabled") is not True:
@@ -325,20 +318,20 @@ if (trm.get("serviceMonitor") or {}).get("enabled") is not True:
 if ((trm.get("serviceMonitor") or {}).get("additionalLabels") or {}).get("release") != "monitoring":
     err("traefik serviceMonitor.additionalLabels.release must be monitoring")
 
-pgc_docs = list(yaml.safe_load_all(open(os.path.join(REPO_ROOT, "k8s/apps/invenio-deps/postgresql/cluster.yaml"))))
+pgc_docs = list(yaml.safe_load_all(open(os.path.join(REPO_ROOT, "k8s/dependencies/postgresql/resources/cluster.yaml"))))
 pgc = next(d for d in pgc_docs if d and d.get("kind") == "Cluster")
 if "enablePodMonitor" in (pgc["spec"].get("monitoring") or {}):
     err("postgresql cluster.yaml must not set monitoring.enablePodMonitor (kept the app OutOfSync; manual PodMonitor owns the scrape)")
-if os.path.exists(os.path.join(REPO_ROOT, "k8s/apps/invenio-deps/postgresql/postgres-podmonitor.yaml")):
+if os.path.exists(os.path.join(REPO_ROOT, "k8s/dependencies/postgresql/resources/postgres-podmonitor.yaml")):
     err("postgres-podmonitor.yaml must not exist (name collides with the CNPG-operator-owned object; use postgres-metrics-podmonitor.yaml)")
-pgm = _load("k8s/apps/invenio-deps/postgresql/postgres-metrics-podmonitor.yaml")
+pgm = _load("k8s/dependencies/postgresql/resources/postgres-metrics-podmonitor.yaml")
 if pgm.get("kind") != "PodMonitor" or (pgm.get("metadata", {}).get("labels") or {}).get("release") != "monitoring":
     err("postgres-metrics-podmonitor.yaml must be a PodMonitor labelled release: monitoring")
 elif (pgm["spec"].get("selector", {}).get("matchLabels") or {}).get("cnpg.io/cluster") != "postgres":
     err("postgres-metrics PodMonitor must select matchLabels cnpg.io/cluster: postgres")
 
 # Issue #112: standalone traefik scrape (the chart SM drops every target).
-trsm = _load("k8s/infra/monitoring/traefik-servicemonitor.yaml")
+trsm = _load("k8s/infra/monitoring/resources/traefik-servicemonitor.yaml")
 if trsm.get("kind") != "ServiceMonitor" or (trsm.get("metadata", {}).get("labels") or {}).get("release") != "monitoring":
     err("traefik-servicemonitor.yaml must be a ServiceMonitor labelled release: monitoring")
 elif (trsm["spec"].get("selector", {}).get("matchLabels") or {}).get("app.kubernetes.io/component") != "metrics":
@@ -350,7 +343,7 @@ if "traefik-servicemonitor.yaml" not in kus:
 velkus = open(os.path.join(REPO_ROOT, "k8s/infra/velero/kustomization.yaml")).read()
 if "velero-scrape-netpol.yaml" not in velkus:
     err("velero kustomization must list velero-scrape-netpol.yaml")
-mina = open(os.path.join(REPO_ROOT, "k8s/infra/security/network-policies/minio-allow.yaml")).read()
+mina = open(os.path.join(REPO_ROOT, "k8s/infra/security/resources/network-policies/minio-allow.yaml")).read()
 if "kubernetes.io/metadata.name: monitoring" not in mina:
     err("minio-allow.yaml must admit the monitoring namespace (Prometheus scrape :9000)")
 
@@ -361,7 +354,7 @@ if "kubernetes.io/metadata.name: monitoring" not in mina:
 # (kubelet :10250, node-exporter :9100 hostNetwork, controller :10257,
 # scheduler :10259, etcd :2381). Kube-proxy :10249 deliberately absent — no
 # live targets observed (least-privilege: add only on evidence).
-monallow = open(os.path.join(REPO_ROOT, "k8s/infra/security/network-policies/monitoring-allow.yaml")).read()
+monallow = open(os.path.join(REPO_ROOT, "k8s/infra/security/resources/network-policies/monitoring-allow.yaml")).read()
 for port in ("8085", "9000", "9100", "9153", "10250", "10257", "10259", "2381"):
     if f"port: {port}" not in monallow:
         err(f"monitoring-allow.yaml allow-prometheus-egress must include port {port}")

@@ -16,7 +16,7 @@ spec:
   source:
     repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
     targetRevision: main
-    path: external-lb/k8s
+    path: k8s/infra/cloudflared
   destination:
     server: https://kubernetes.default.svc
     namespace: kube-system

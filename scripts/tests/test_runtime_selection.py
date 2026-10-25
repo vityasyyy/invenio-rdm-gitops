@@ -27,7 +27,7 @@ class RuntimeSelectionTests(unittest.TestCase):
 
     def test_custom_rules_match_prometheus_release_selector(self):
         rules = yaml.safe_load(
-            (ROOT / "k8s/infra/monitoring/alerts.yaml").read_text()
+            (ROOT / "k8s/infra/monitoring/resources/alerts.yaml").read_text()
         )
         app = yaml.safe_load((ROOT / "argocd/apps/monitoring.yaml").read_text())
         self.assertEqual(

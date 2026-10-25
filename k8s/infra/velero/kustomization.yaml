@@ -1,9 +1,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - velero-credentials-secret.yaml
-  - backup-schedule.yaml
-  - node-agent-config.yaml
-  - limit-range.yaml
-  - velero-servicemonitor.yaml
-  - velero-scrape-netpol.yaml
+  - resources/velero-credentials-secret.yaml
+  - resources/backup-schedule.yaml
+  - resources/node-agent-config.yaml
+  - resources/limit-range.yaml
+  - resources/velero-servicemonitor.yaml
+  - resources/velero-scrape-netpol.yaml

@@ -92,16 +92,16 @@ def resource_budget(root):
     """
     root = Path(root)
     values = yaml.safe_load((root / "k8s/infra/velero/values.yaml").read_text()) or {}
-    config = yaml.safe_load((root / "k8s/infra/velero/node-agent-config.yaml").read_text()) or {}
+    config = yaml.safe_load((root / "k8s/infra/velero/resources/node-agent-config.yaml").read_text()) or {}
     settings = json.loads((config.get("data") or {})["node-agent-config.json"])
-    schedule = yaml.safe_load((root / "k8s/infra/velero/backup-schedule.yaml").read_text()) or {}
+    schedule = yaml.safe_load((root / "k8s/infra/velero/resources/backup-schedule.yaml").read_text()) or {}
     quota = (
         yaml.safe_load(
-            (root / "k8s/infra/security/resource-quotas/velero-quota.yaml").read_text()
+            (root / "k8s/infra/security/resources/resource-quotas/velero-quota.yaml").read_text()
         )
         or {}
     ).get("spec", {}).get("hard", {})
-    limit_range = yaml.safe_load((root / "k8s/infra/velero/limit-range.yaml").read_text()) or {}
+    limit_range = yaml.safe_load((root / "k8s/infra/velero/resources/limit-range.yaml").read_text()) or {}
     limit_range_entry = ((limit_range.get("spec") or {}).get("limits") or [{}])[0]
     defaults, max_defaults = (
         limit_range_entry.get("defaultRequest") or {},
@@ -193,7 +193,7 @@ def validate_resource_budget(root, errors):
         if global_maintenance.get("keepLatestMaintenanceJobs") != 3:
             errors.append("repository maintenance history must stay bounded at 3 jobs")
 
-    config = yaml.safe_load((root / "k8s/infra/velero/node-agent-config.yaml").read_text()) or {}
+    config = yaml.safe_load((root / "k8s/infra/velero/resources/node-agent-config.yaml").read_text()) or {}
     settings = json.loads((config.get("data") or {})["node-agent-config.json"])
     mover_resources = settings.get("podResources") or {}
     if mover_resources.get("memoryRequest") != mover_resources.get("memoryLimit"):
@@ -270,8 +270,8 @@ def validate_backup_scope(root, errors):
     """Opt-in allowlist: durable volumes only, no temp or self-backup volumes."""
     root = Path(root)
     expected = {
-        ("k8s/apps/invenio/invenio-deployment.yaml", "Deployment"): {"data", "archive"},
-        ("k8s/apps/invenio-deps/redis/manifests/redis.yaml", "Deployment"): {"data"},
+        ("k8s/apps/invenio/resources/invenio-deployment.yaml", "Deployment"): {"data", "archive"},
+        ("k8s/dependencies/redis/resources/redis.yaml", "Deployment"): {"data"},
     }
     for (relative_path, kind_name), volumes in expected.items():
         path = root / relative_path
@@ -300,7 +300,7 @@ def validate_backup_scope(root, errors):
         if {item.strip() for item in selected.split(",") if item.strip()} != {"storage"}:
             errors.append("Grafana must opt in to backing up only its storage volume")
 
-    schedule_path = root / "k8s/infra/velero/backup-schedule.yaml"
+    schedule_path = root / "k8s/infra/velero/resources/backup-schedule.yaml"
     if not schedule_path.exists():
         errors.append("backup-schedule.yaml is required for backup scope validation")
     else:
@@ -312,7 +312,7 @@ def validate_backup_scope(root, errors):
         if template.get("snapshotVolumes") is not False:
             errors.append("backup-schedule.yaml must not request volume snapshots")
 
-    config_path = root / "k8s/infra/velero/node-agent-config.yaml"
+    config_path = root / "k8s/infra/velero/resources/node-agent-config.yaml"
     if not config_path.exists():
         errors.append("node-agent-config.yaml is required for data-mover sizing")
         return
@@ -344,7 +344,7 @@ def validate_backup_scope(root, errors):
         resources_list = (yaml.safe_load(kustomization_path.read_text()) or {}).get(
             "resources"
         ) or []
-        if "node-agent-config.yaml" not in resources_list:
+        if "resources/node-agent-config.yaml" not in resources_list:
             errors.append("Velero kustomization must include node-agent-config.yaml")
 
     values_path = root / "k8s/infra/velero/values.yaml"
@@ -418,9 +418,9 @@ def validate(root):
             )
 
     kustomization = load("k8s/infra/velero/kustomization.yaml")
-    if "backup-schedule.yaml" not in (kustomization.get("resources") or []):
+    if "resources/backup-schedule.yaml" not in (kustomization.get("resources") or []):
         errors.append("Velero kustomization must keep backup-schedule.yaml Git-managed")
-    schedule = load("k8s/infra/velero/backup-schedule.yaml")
+    schedule = load("k8s/infra/velero/resources/backup-schedule.yaml")
     if schedule.get("apiVersion") != "velero.io/v1" or schedule.get("kind") != "Schedule":
         errors.append("backup-schedule.yaml must remain a velero.io/v1 Schedule")
 

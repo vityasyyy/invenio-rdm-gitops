@@ -8,54 +8,18 @@ metadata:
 spec:
   project: invenio
   sources:
-    # Helm chart: OpenSearch (values inlined to avoid extra Git fetch)
+    # Helm values and custom resources share the same Git source below.
     - chart: opensearch
       repoURL: https://opensearch-project.github.io/helm-charts/
       targetRevision: "2.32.0"
       helm:
-        valuesObject:
-          clusterName: opensearch-cluster
-          nodeGroup: master
-          replicas: 1
-          singleNode: true
-          config:
-            opensearch.yml: |
-              cluster.name: opensearch-cluster
-              network.host: 0.0.0.0
-              plugins.security.disabled: true
-          resources:
-            limits:
-              cpu: 1000m
-              memory: 2Gi
-            requests:
-              cpu: 250m
-              memory: 512Mi
-          persistence:
-            enabled: true
-            storageClass: btd-nfs
-            size: 10Gi
-          securityContext:
-            runAsUser: 1000
-            runAsGroup: 1000
-          roles:
-            - master
-            - ingest
-            - data
-          plugins:
-            enabled: true
-            installList:
-              - https://github.com/opensearch-project/opensearch-prometheus-exporter/releases/download/2.19.1.0/prometheus-exporter-2.19.1.0.zip
-          serviceMonitor:
-            enabled: true
-            path: /_prometheus/metrics
-            scheme: http
-            interval: 30s
-            labels:
-              release: monitoring
+        valueFiles:
+          - $values/k8s/dependencies/opensearch/values.yaml
     # Raw manifests: namespace, netpols
     - repoURL: https://github.com/vityasyyy/invenio-rdm-gitops.git
       targetRevision: main
-      path: k8s/apps/invenio-deps/opensearch/manifests
+      ref: values
+      path: k8s/dependencies/opensearch
   destination:
     server: https://kubernetes.default.svc
     namespace: search

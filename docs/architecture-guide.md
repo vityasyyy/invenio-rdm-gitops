@@ -58,30 +58,13 @@ Two consequences underpin the entire system:
 
 ## 2. Repository map
 
-This is primarily a deployment/operations repository, but it also builds a customized Invenio application image.
-
-| Location | Purpose |
-| --- | --- |
-| `argocd/root.yaml` | Root Application |
-| `argocd/apps/` | Child Application definitions |
-| `k8s/infra/argocd/` | ArgoCD installation, configuration and projects |
-| `k8s/infra/argocd-image-updater/` | Image registry automation |
-| `k8s/apps/invenio/` | Web, workers, Beat, setup, configuration, storage and routes |
-| `k8s/apps/invenio-deps/` | PostgreSQL, Redis and OpenSearch |
-| `k8s/infra/security/` | Network policies and related governance |
-| `k8s/infra/monitoring/` | Alerts, dashboards and monitoring configuration |
-| `k8s/infra/loki/` | Logging backend and canary configuration |
-| `k8s/infra/alloy/` | Log collector and scoped permissions |
-| `k8s/infra/velero/` | Kubernetes and filesystem backup policy |
-| `k8s/infra/minio/` | Backup object storage |
-| `external-lb/k8s/` | Cloudflare Tunnel workloads |
-| `docker/ugm/` | Image build, dependencies, Invenio and uWSGI configuration |
-| `site/`, `templates/`, `static/`, `assets/` | Application customization |
-| `.github/workflows/` | Validation, image build and deployment verification |
-| `scripts/` | Bootstrap, verification, CI checks and tests |
-| `.opencode/` | Agent conventions and workflow skills |
-
-`argocd/projects/` does not exist; the AppProject definitions are under `k8s/infra/argocd/projects/`.
+The [canonical repository map](repository-map.md) owns the path/consumer inventory.
+This repository both builds the customized Invenio image and declares its runtime.
+`argocd/` selects deployments; `k8s/apps/`, `k8s/dependencies/` and `k8s/infra/`
+separate application, dependency and platform ownership. Component roots select
+Helm values and/or compose `resources/` with Kustomize; `patches/` applies only
+when referenced. Terraform provisions external Cloudflare resources separately
+from the cloudflared workload. See [operations](operations.md) for checks.
 
 ### Source, generated and legacy material
 
@@ -89,7 +72,7 @@ This is primarily a deployment/operations repository, but it also builds a custo
 | --- | --- | --- |
 | Source of truth | `argocd/`, `k8s/`, `external-lb/`, `docker/ugm/`, `app_data/`, `assets/`, `static/`, `templates/`, `translations/`, `scripts/`, `.github/workflows/` | Hand-edited and reviewed. Changes reach the cluster through ArgoCD or an image build. |
 | Generated or runtime-only | `rendered/` (gitignored CI output), Kubernetes Secrets produced by Sealed Secrets, Velero `Backup`/`Restore` objects, CNPG `Backup` objects and PVCs, MinIO objects, application data, and an Image Updater override written through the ArgoCD API | Not committed as desired state. Inspect ownership before changing it; a controller may recreate or overwrite it. |
-| Legacy / historical | `docs/cluster-assessment-*.md`, `docs/plans/completed/`, `site/.gitkeep`, `k8s/apps/invenio-deps/opensearch/values.yaml` | Dated evidence, placeholders, or a validation mirror. The OpenSearch Application inlines its Helm values, so that values file is not the live source. MinIO is no longer the primary application-file store. |
+| Legacy / historical | `docs/cluster-assessment-*.md`, `docs/plans/completed/`, `site/.gitkeep` | Dated evidence or placeholders, not current configuration. MinIO is no longer the primary application-file store. |
 
 An image-baked configuration change, such as `docker/ugm/invenio.cfg`, requires a new image and deployment. A manifest-only change, an application ConfigMap change, or a live image-updater override follows a different path and does not necessarily rebuild the image.
 
@@ -438,7 +421,7 @@ About 264,000 existing vocabulary queue messages remained after the bounded run.
 
 ## 12. Setup hooks and migrations
 
-`k8s/apps/invenio/invenio-setup-job.yaml` is an ArgoCD PostSync hook. Its commands include database initialization/migration, default file location and permissions, index initialization, custom fields, fixtures, queue declaration and record-index rebuilding.
+`k8s/apps/invenio/resources/invenio-setup-job.yaml` is an ArgoCD PostSync hook. Its commands include database initialization/migration, default file location and permissions, index initialization, custom fields, fixtures, queue declaration and record-index rebuilding.
 
 Several commands swallow errors using `|| true` or equivalent continuation. Consequently:
 

@@ -85,9 +85,10 @@ def write_fixture(
     (velero / "kustomization.yaml").write_text(yaml.safe_dump({
         "apiVersion": "kustomize.config.k8s.io/v1beta1",
         "kind": "Kustomization",
-        "resources": list(resources) + ["node-agent-config.yaml"],
+        "resources": [f"resources/{name}" for name in resources] + ["resources/node-agent-config.yaml"],
     }))
-    (velero / "backup-schedule.yaml").write_text(yaml.safe_dump({
+    (velero / "resources").mkdir()
+    (velero / "resources/backup-schedule.yaml").write_text(yaml.safe_dump({
         "apiVersion": "velero.io/v1",
         "kind": "Schedule",
         "metadata": {"name": "weekly-infra-backup", "namespace": "velero"},
@@ -126,7 +127,7 @@ def write_fixture(
             },
         }}},
     }))
-    (velero / "node-agent-config.yaml").write_text(yaml.safe_dump({
+    (velero / "resources/node-agent-config.yaml").write_text(yaml.safe_dump({
         "apiVersion": "v1",
         "kind": "ConfigMap",
         "metadata": {"name": "node-agent-config", "namespace": "velero"},
@@ -135,7 +136,7 @@ def write_fixture(
             "loadConcurrency": {"globalConfig": 1, "prepareQueueLength": 1},
         })},
     }))
-    (velero / "limit-range.yaml").write_text(yaml.safe_dump({
+    (velero / "resources/limit-range.yaml").write_text(yaml.safe_dump({
         "apiVersion": "v1",
         "kind": "LimitRange",
         "metadata": {"name": "velero-default-limits", "namespace": "velero"},
@@ -147,7 +148,7 @@ def write_fixture(
             "type": "Container",
         }]},
     }))
-    quota_path = root / "k8s/infra/security/resource-quotas/velero-quota.yaml"
+    quota_path = root / "k8s/infra/security/resources/resource-quotas/velero-quota.yaml"
     quota_path.parent.mkdir(parents=True)
     quota_path.write_text(yaml.safe_dump({
         "apiVersion": "v1",
@@ -163,8 +164,8 @@ def write_fixture(
     }))
 
     for relative_path, kind, volumes in (
-        ("k8s/apps/invenio/invenio-deployment.yaml", "Deployment", "data,archive"),
-        ("k8s/apps/invenio-deps/redis/manifests/redis.yaml", "Deployment", "data"),
+        ("k8s/apps/invenio/resources/invenio-deployment.yaml", "Deployment", "data,archive"),
+        ("k8s/dependencies/redis/resources/redis.yaml", "Deployment", "data"),
     ):
         manifest = root / relative_path
         manifest.parent.mkdir(parents=True, exist_ok=True)
@@ -261,7 +262,7 @@ class VeleroBackupScopeTests(unittest.TestCase):
 
     def test_invenio_backs_up_application_volumes_only(self):
         value = _pod_annotation(
-            ROOT / "k8s/apps/invenio/invenio-deployment.yaml",
+            ROOT / "k8s/apps/invenio/resources/invenio-deployment.yaml",
             "Deployment",
             "backup.velero.io/backup-volumes",
         )
@@ -269,7 +270,7 @@ class VeleroBackupScopeTests(unittest.TestCase):
 
     def test_redis_backs_up_its_durable_volume(self):
         value = _pod_annotation(
-            ROOT / "k8s/apps/invenio-deps/redis/manifests/redis.yaml",
+            ROOT / "k8s/dependencies/redis/resources/redis.yaml",
             "Deployment",
             "backup.velero.io/backup-volumes",
         )
@@ -282,7 +283,7 @@ class VeleroBackupScopeTests(unittest.TestCase):
 
     def test_schedule_is_opt_in(self):
         schedule = yaml.safe_load(
-            (ROOT / "k8s/infra/velero/backup-schedule.yaml").read_text()
+            (ROOT / "k8s/infra/velero/resources/backup-schedule.yaml").read_text()
         )
         self.assertIs(schedule["spec"]["template"]["defaultVolumesToFsBackup"], False)
 
@@ -297,8 +298,8 @@ class VeleroBackupScopeTests(unittest.TestCase):
         self.assertEqual(
             sorted(annotated),
             [
-                "k8s/apps/invenio-deps/redis/manifests/redis.yaml",
-                "k8s/apps/invenio/invenio-deployment.yaml",
+                "k8s/apps/invenio/resources/invenio-deployment.yaml",
+                "k8s/dependencies/redis/resources/redis.yaml",
                 "k8s/infra/monitoring/values.yaml",
             ],
         )
@@ -319,9 +320,9 @@ class VeleroBackupScopeTests(unittest.TestCase):
         kustomization = yaml.safe_load(
             (ROOT / "k8s/infra/velero/kustomization.yaml").read_text()
         )
-        self.assertIn("node-agent-config.yaml", kustomization["resources"])
+        self.assertIn("resources/node-agent-config.yaml", kustomization["resources"])
         config = yaml.safe_load(
-            (ROOT / "k8s/infra/velero/node-agent-config.yaml").read_text()
+            (ROOT / "k8s/infra/velero/resources/node-agent-config.yaml").read_text()
         )
         settings = json.loads(config["data"]["node-agent-config.json"])
         self.assertEqual(settings["podResources"]["memoryLimit"], "1Gi")
@@ -343,7 +344,7 @@ class VeleroBackupScopeTests(unittest.TestCase):
 
     def test_schedule_opt_in_and_no_snapshots(self):
         schedule = yaml.safe_load(
-            (ROOT / "k8s/infra/velero/backup-schedule.yaml").read_text()
+            (ROOT / "k8s/infra/velero/resources/backup-schedule.yaml").read_text()
         )
         template = schedule["spec"]["template"]
         self.assertIs(template["defaultVolumesToFsBackup"], False)
