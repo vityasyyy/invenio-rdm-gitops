@@ -23,8 +23,9 @@ the global lead agent config (skill trigger map).
 - Image: `ghcr.io/vityasyyy/invenio-ugm` — built and pushed from THIS repo by
   `.github/workflows/build-image.yaml` (triggers on `docker/ugm/**`,
   `site/**`, `templates/**`, `static/**`, `translations/**`, `app_data/**`,
-  `assets/**`). Never push from the upstream `gunturbudi` repo. Pin digests in
-  kustomization after image-updater updates.
+  `assets/**`). Never push from the upstream `gunturbudi` repo. The Git image
+  digest lives only in `k8s/apps/invenio/image-pin/`; ImageUpdater's Argo API
+  override is runtime-only and wins while present.
 - Secrets: SealedSecrets (encrypted in git, `bitnami.com/v1alpha1`), sealed
   via `kubeseal`; the private key lives OUTSIDE the repo (`~/.sealed-secrets/`).
   Never commit plaintext secrets; `secrets/` and `keys.txt` are gitignored.
@@ -94,4 +95,4 @@ the global lead agent config (skill trigger map).
 - No test-percentage gate in CI — CI is yamllint + kustomize render +
   kubeconform + selector validation + gitleaks (`validate-infra.yaml`).
 - Image-updater can report `IMAGES: 0` and skip writing a digest — pin the
-  digest in kustomization when the live image must not drift.
+  digest in `k8s/apps/invenio/image-pin/` when the live image must not drift.
