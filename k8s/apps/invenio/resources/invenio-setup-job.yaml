@@ -1,9 +1,10 @@
 # InvenioRDM post-sync postcondition verification (read-only).
 #
 # This hook must not initialize, migrate, import fixtures, declare queues or
-# rebuild indexes. Those operations belong to the separately approved
-# initialization Job under initialization/ and are never part of routine syncs.
-# A missing postcondition fails the hook with an actionable message.
+# rebuild indexes. It uses the same effective configuration and secrets as the
+# application, but only reads state. A failure is an inspection signal, not a
+# trigger to run the full initialization Job: use targeted, approved remediation.
+# Full initialization is only for a verified incomplete initial setup.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -30,6 +31,17 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       restartPolicy: Never
+      # Read-only mounts keep the instance paths and runtime context consistent
+      # with the application; the verification performs no file writes.
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: invenio-data
+            readOnly: true
+        - name: archive
+          persistentVolumeClaim:
+            claimName: invenio-archive
+            readOnly: true
       containers:
         - name: verify
           image: ghcr.io/vityasyyy/invenio-ugm:latest
@@ -78,52 +90,96 @@ spec:
               PY
 
               echo "[1/5] Alembic schema heads"
-              CURRENT="$(invenio alembic current 2>&1)" \
-                || fail "alembic current failed: $CURRENT"
-              grep -q '(head)' <<<"$CURRENT" \
-                || fail "database schema is missing Alembic heads; run the approved invenio-initialize Job"
+              CURRENT_OUTPUT="$(invenio alembic current 2>&1)" \
+                || fail "alembic current failed: $CURRENT_OUTPUT"
+              HEADS_OUTPUT="$(invenio alembic heads --verbose 2>&1)" \
+                || fail "alembic heads failed: $HEADS_OUTPUT"
+              python3 - "$CURRENT_OUTPUT" "$HEADS_OUTPUT" <<'PY'
+              import re, sys
+
+              current_lines = [
+                  line for line in sys.argv[1].splitlines()
+                  if line and not line.startswith("INFO")
+              ]
+              heads = {
+                  match.group(1)
+                  for line in sys.argv[2].splitlines()
+                  if (match := re.match(r"^Rev: (\S+)", line))
+              }
+              if not heads:
+                  raise SystemExit("ERROR: no Alembic heads found")
+              current = {line.split()[0] for line in current_lines}
+              if not current:
+                  raise SystemExit("ERROR: no current Alembic revisions found")
+              behind = sorted(current - heads)
+              missing = sorted(heads - current)
+              if behind or missing:
+                  raise SystemExit(
+                      "ERROR: database schema is not at all image heads; "
+                      f"behind={behind or 'none'} missing={missing or 'none'}. "
+                      "Inspect Alembic current/heads and apply targeted approved "
+                      "migration. Do not run fixtures or reindex for this check."
+                  )
+              print(f"Alembic schema at all {len(heads)} heads")
+              PY
 
               echo "[2/5] Default file location"
               LOCATIONS="$(invenio files location list 2>&1)" \
                 || fail "files location list failed: $LOCATIONS"
               grep -q 'default-location' <<<"$LOCATIONS" \
-                || fail "default-location is missing; run the approved invenio-initialize Job"
+                || fail "default-location is missing; inspect the location list and create or set-default only with approval. Do not run full initialization for this check."
 
               echo "[3/5] Search indices"
               INDICES="$(invenio index list 2>&1)" \
                 || fail "index list failed: $INDICES"
               grep -q 'rdmrecords-records' <<<"$INDICES" \
-                || fail "rdmrecords-records index alias is missing; run the approved invenio-initialize Job"
+                || fail "rdmrecords-records index alias is missing; inspect the index list and initialize the specific missing alias only with approval. Do not run full initialization for this check."
 
               echo "[4/5] Declared queues"
               QUEUES="$(invenio queues list 2>&1)" \
                 || fail "queues list failed: $QUEUES"
               for queue in stats-file-download stats-record-view; do
                 grep -qx "$queue" <<<"$QUEUES" \
-                  || fail "queue $queue is missing; run the approved invenio-initialize Job"
+                  || fail "queue $queue is missing; inspect the queue list and declare the specific missing queue only with approval. Do not run full initialization for this check."
               done
 
               echo "[5/5] Admin role and superuser permission"
-              ADMIN_STATE="$(invenio shell -c '
+              ADMIN_RESULT="$(invenio shell -c '
               from invenio_db import db
               from invenio_accounts.models import Role
               from invenio_access.models import ActionRoles
               from invenio_access.permissions import superuser_access
               role = db.session.query(Role).filter(Role.name == "admin").one_or_none()
               if role is None:
-                  print("missing-role")
+                  print("STATE:missing-role")
               elif db.session.query(ActionRoles).filter(
                   ActionRoles.action == superuser_access.value,
                   ActionRoles.role_id == role.id,
               ).count() == 0:
-                  print("missing-permission")
+                  print("STATE:missing-permission")
               else:
-                  print("ok")
-              ' 2>/dev/null)" || fail "admin role verification failed"
+                  print("STATE:ok")
+              ' 2>&1)" || fail "admin role query failed: $ADMIN_RESULT"
+              ADMIN_STATE="$(grep '^STATE:' <<<"$ADMIN_RESULT" | tail -1 | cut -d: -f2)"
+              [ -n "$ADMIN_STATE" ] \
+                || fail "admin role query returned no state: $ADMIN_RESULT"
               [ "$ADMIN_STATE" = "ok" ] \
-                || fail "admin role state is '$ADMIN_STATE'; run the approved invenio-initialize Job"
+                || fail "admin role state is '$ADMIN_STATE'; inspect the role and superuser permission and grant only the specific missing access with approval. Do not run full initialization for a single grant."
 
-              echo "All setup postconditions are satisfied."
+              echo "All setup postconditions are satisfied. For any missing state, use targeted approved remediation; this proves presence only, not application correctness or recovery."
+          # Effective DB/search/broker settings are required; do not inline or print them.
+          envFrom:
+            - configMapRef:
+                name: invenio-app-config
+            - secretRef:
+                name: invenio-app-secrets
+          volumeMounts:
+            - name: data
+              mountPath: /opt/invenio/var/instance/data
+              readOnly: true
+            - name: archive
+              mountPath: /opt/invenio/var/instance/archive
+              readOnly: true
           resources:
             requests:
               cpu: 100m

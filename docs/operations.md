@@ -37,28 +37,33 @@ while diagnosing an ordinary reconciliation failure.
 
 ## Initialization versus routine sync
 
-The PostSync `invenio-setup` hook is read-only. It checks database schema heads,
-the default file location, search index aliases, declared queues, and the admin
-superuser permission; any missing postcondition fails the hook with an actionable
-message. It never migrates, imports fixtures, declares queues or rebuilds indexes.
+The PostSync `invenio-setup` hook is read-only. It checks that every current
+Alembic revision is an image head, the default file location, search index aliases,
+declared queues, and the admin superuser permission; any missing postcondition fails
+the hook with an actionable message. It never migrates, imports fixtures, declares
+queues or rebuilds indexes. A red hook is an inspection signal, not a trigger to run
+the full initialization Job; use targeted approved remediation for the specific
+missing state.
 
 Initialization is a separate manual artifact:
-`k8s/apps/invenio/initialization/invenio-initialize-job.yaml`. It is deliberately
-not referenced by `k8s/apps/invenio/kustomization.yaml`, so ArgoCD cannot run it
-as part of an ordinary sync or measured repair. Apply it only after explicit
-approval and a verified backup, then confirm every postcondition it prints:
+`k8s/apps/invenio/initialization/`. It is deliberately not referenced by
+`k8s/apps/invenio/kustomization.yaml`, so ArgoCD cannot run it as part of an ordinary
+sync or measured repair. The directory's Kustomization applies the same shared
+image-digest component as the application, so do not apply the raw Job directly:
 
 ```bash
 # Approval required; do not use as a routine repair operation.
-kubectl apply -f k8s/apps/invenio/initialization/invenio-initialize-job.yaml
+kustomize build k8s/apps/invenio/initialization | kubectl apply -f -
 kubectl -n invenio wait --for=condition=Complete job/invenio-initialize --timeout=2h
 kubectl -n invenio logs job/invenio-initialize
 ```
 
 Do not rerun it merely because the verification hook is red; first inspect which
-postcondition is missing. A routine `OutOfSync` repair must not become an implicit
-fixture import, reindex or queue declaration. The old hook's broad `|| echo` and
-`|| true` handling hid those distinctions and is intentionally removed.
+postcondition is missing and use the smallest targeted, approved action. The full
+initialization performs migrations, fixtures and a reindex, so it is only for a
+verified incomplete initial setup. A routine `OutOfSync` repair must not become an
+implicit fixture import, reindex or queue declaration. The old hook's broad `|| echo`
+and `|| true` handling hid those distinctions and is intentionally removed.
 
 Observed live drift: the default file location is currently `s3://invenio-rdm/files/`,
 while the old setup command expected a local `$INVENIO_INSTANCE_PATH/data` path.

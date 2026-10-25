@@ -1,0 +1,10 @@
+# Single authoritative Invenio image pin.
+#
+# Included as a Kustomize component by the automated application and by the
+# manual initialization Job's Kustomization. This keeps the digest in one place
+# while allowing the manual Job to be rendered safely outside the App sync.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: ghcr.io/vityasyyy/invenio-ugm
+    digest: sha256:0f685be3fc05e4fb517a68c2508ac649ce40d9bf7af50c42d738aa93351a82c0

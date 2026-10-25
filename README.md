@@ -192,11 +192,21 @@ import fixtures, declare queues, or rebuild indexes, and it fails closed when a
 postcondition is missing. A green sync therefore proves those checks passed, not
 that the application is functionally correct.
 
-Initialization is a manual, separately approved Job at
-`k8s/apps/invenio/initialization/invenio-initialize-job.yaml`. It is not referenced
-by the Application Kustomization, so it cannot run during an ordinary sync or a
-measured repair. Do not rerun it to make the verification hook green; inspect which
-postcondition is missing. Reverting an image does not reverse a database migration.
+Initialization is a manual, separately approved artifact at
+`k8s/apps/invenio/initialization/`. It is not referenced by the Application
+Kustomization, so it cannot run during an ordinary sync or a measured repair. Its
+Kustomization applies the same shared image digest as the application; render it
+rather than applying the raw Job:
+
+```bash
+# Approval required; never a routine repair.
+kustomize build k8s/apps/invenio/initialization | kubectl apply -f -
+```
+
+Do not rerun the full initialization to make the verification hook green; inspect
+which postcondition is missing and use targeted approved remediation. The full Job
+performs migrations, fixtures and a reindex. Reverting an image does not reverse a
+database migration.
 
 ## Storage, backup, and recovery
 
