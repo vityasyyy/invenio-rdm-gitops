@@ -53,10 +53,10 @@ for cm in docs:
         for field in ("uid", "title", "tags"):
             if field not in d:
                 err(f"{meta.get('name')}/{key}: missing {field!r}")
-        if d.get("title", "")[:2] not in ("00", "01", "02", "03"):
-            err(f"{meta.get('name')}/{key}: title {d.get('title')!r} must start with 00/01/02/03")
-if panels_seen != 4:
-    err(f"want exactly 4 dashboards, found {panels_seen}")
+        if d.get("title", "")[:2] not in ("00", "01", "02", "03", "04"):
+            err(f"{meta.get('name')}/{key}: title {d.get('title')!r} must start with 00/01/02/03/04")
+if panels_seen != 5:
+    err(f"want exactly 5 dashboards, found {panels_seen}")
 if any("velero_backup_timestamp" in expr for expr in dashboard_exprs):
     err("Grafana dashboard query uses nonexistent velero_backup_timestamp")
 if not any("kube_customresource_velero_backup_completion_timestamp" in expr for expr in dashboard_exprs):
@@ -300,15 +300,22 @@ for rel in ("k8s/dependencies/opensearch/values.yaml",):
     osv = _load(rel)
     if "metricsExporter" in osv:
         err(f"{rel}: stale metricsExporter key (chart 2.32.0 has no such key)")
-    if not osv.get("serviceMonitor", {}).get("enabled"):
-        err(f"{rel}: serviceMonitor.enabled must be true")
-    if (osv.get("serviceMonitor", {}).get("labels") or {}).get("release") != "monitoring":
-        err(f"{rel}: serviceMonitor.labels.release must be monitoring")
+    if osv.get("serviceMonitor", {}).get("enabled") is not False:
+        err(f"{rel}: chart ServiceMonitor must be disabled; the local monitor owns deduplication")
     if not (osv.get("plugins", {}).get("installList") or []):
         err(f"{rel}: plugins.installList must carry the verified exporter zip")
 argo_os = _load("argocd/apps/invenio-opensearch.yaml")
 if argo_os["spec"]["sources"][0].get("helm") != {"valueFiles": ["$values/k8s/dependencies/opensearch/values.yaml"]}:
     err("OpenSearch must consume its authoritative values file without inline overrides")
+os_monitor = _load("k8s/dependencies/opensearch/resources/servicemonitor.yaml")
+if os_monitor["metadata"]["name"] != "opensearch-cluster-master-service-monitor":
+    err("OpenSearch ServiceMonitor identity must remain stable")
+if os_monitor["metadata"].get("labels", {}).get("release") != "monitoring":
+    err("OpenSearch ServiceMonitor must be selected by monitoring")
+if os_monitor["spec"]["endpoints"][0].get("relabelings") != [{
+    "sourceLabels": ["__meta_kubernetes_service_name"], "action": "keep", "regex": "opensearch-cluster-master"
+}]:
+    err("OpenSearch must scrape only the ordinary Service, not the duplicate headless endpoint")
 
 trm = _load("k8s/infra/traefik/values.yaml")["metrics"]["prometheus"]
 if (trm.get("service") or {}).get("enabled") is not True:
