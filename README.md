@@ -47,9 +47,10 @@ flowchart TD
 
 The two Invenio hostnames terminate at the same `invenio-web` Service; there is
 no separate API deployment behind `api-invenio.vityasy.me`. Uploaded file bytes
-live on NFS-backed PVCs, while MinIO is the backup object store. All of those
-services share one NFS server, so replicas and backups on that server do not
-create an independent failure domain.
+live in MinIO (`s3://invenio-rdm/files/`), which is also the Velero and CNPG
+backup store. The `invenio-data` and `invenio-archive` PVCs are mounted but
+contain no files. All of those services share one NFS server, so replicas and
+backups do not create an independent failure domain.
 
 ### Public hostnames and shared edge
 
@@ -98,7 +99,7 @@ See [operations](docs/operations.md) for validation and recovery checks.
 |---|---|---|
 | **Source of truth** | `argocd/`, `k8s/`, `external-lb/`, `docker/ugm/`, `app_data/`, `assets/`, `static/`, `templates/`, `translations/`, `scripts/`, `.github/workflows/` | Hand-edited, reviewed, and committed. Changes reach the cluster through ArgoCD or an image build. |
 | **Generated or runtime-only** | `rendered/` (gitignored CI output), Kubernetes Secrets decrypted from SealedSecrets, Velero `Backup`/`Restore` objects, CNPG `Backup` objects and PVCs, MinIO objects, application data, and an Image Updater override written through the ArgoCD API | Not committed. Do not edit it as if it were Git desired state; verify live ownership before changing it. |
-| **Legacy / historical** | `docs/cluster-assessment-*.md`, `docs/plans/completed/`, `site/.gitkeep` | Dated evidence or placeholders, not current deployment instructions. MinIO is no longer the primary application-file store. |
+| **Legacy / historical** | `docs/cluster-assessment-*.md`, `docs/plans/completed/`, `site/.gitkeep` | Dated evidence or placeholders, not current deployment instructions. Use the current source and live checks for storage layout. |
 
 ## Delivery and reconciliation
 
@@ -222,7 +223,12 @@ The backup design has three separate pieces:
 
 1. Velero backs up selected Kubernetes resources and opt-in Pod volumes to MinIO.
 2. CloudNativePG writes PostgreSQL native backups and WAL to MinIO.
-3. Invenio stores uploaded file bytes on the NFS PVCs; these are not in MinIO.
+3. Invenio stores uploaded file bytes in MinIO; its local data/archive PVCs are
+   empty and are not opted in to Velero.
+
+Velero runs weekly with 28-day retention. CNPG runs daily at 02:00 UTC and retains
+30 days until an isolated restore drill verifies the chain. MinIO is also the
+backup store, so it remains a single failure domain; no off-site copy is configured.
 
 Read-only checks:
 
@@ -242,7 +248,7 @@ PVs to make an alert quiet.
 
 | Recovery claim | What the evidence supports |
 |---|---|
-| Kubernetes resources and selected files via Velero | A weekly schedule exists. The latest actual scheduled runs observed on 18 and 25 October were `PartiallyFailed`; the 25 October run canceled two `invenio-archive` volume backups on worker-01 while the same shared PVC completed on worker-02. The exact kubelet/container reason is not yet established. Manual production and canary completions do not prove scheduled coverage. |
+| Kubernetes resources and selected files via Velero | A weekly schedule exists. The 25 October run was `PartiallyFailed` because two duplicate `invenio-archive` volume backups on worker-01 were canceled after their expose Pods failed; the same shared PVC completed on worker-02. Duplicate per-replica opt-ins were removed, but a new scheduled run has not yet been observed and the expose cause remains unproven. Manual production and canary completions do not prove scheduled coverage. |
 | PostgreSQL native recovery | CNPG backups/WAL go to MinIO. Recovery of existing data into an isolated CNPG cluster was verified by schema, row-count, and vocabulary-digest comparison. No seeded application record/file consistency proof exists. |
 | Uploaded-file recovery | A 35,840-byte canary file restored with the same SHA-256 into an isolated namespace. The owner approved a private draft with a deterministic 64 KiB file, save-only with no publication or DOI; the upload/save ID is still awaited and no seeded restore has completed. Production file recovery remains unproven. |
 | Application-consistent recovery | Not proven. No seeded Invenio record plus file, permissions, and index state has been restored and verified together. |

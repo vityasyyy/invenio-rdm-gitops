@@ -85,16 +85,22 @@ alert. Historical counters are not current failure rates.
 ## Backups and recovery boundaries
 
 See the preserved [backup and restore runbook](../README.md#backup--restore).
-Velero weekly backups retain672h (28d); Prometheus and Loki retain7d. CNPG remains
-at30d until a usable base-backup/WAL chain and compatible application-file recovery
-are established. A reported recoverability point is not a tested restore.
+Velero weekly backups retain672h (28d); Prometheus and Loki retain7d. CNPG runs
+daily at02:00 UTC and retains30d until a usable base-backup/WAL chain and compatible
+file-store recovery are established. Invenio file bytes are in MinIO, which is also
+the backup store and therefore a single failure domain; no off-site copy exists.
+A reported recoverability point is not a tested restore.
 
+- MinIO is both the primary file store and the backup store on the same NFS. Do not
+  claim independent disaster recovery until an off-site or otherwise independent
+  copy exists and its recovery is verified.
 - Inspect each scheduled run's actual start/completion, phase, errors, scope labels
   and PodVolumeBackups. A manual/canary completion cannot satisfy the weekly run.
 - Match alert labels and firing timestamps to the run before interpreting Discord
   messages; no active alert now does not explain an earlier notification.
-- Canceled volume backups and an unfinished Backup are not successful coverage,
-  even when a different Pod's backup of a shared PVC completed.
+- Shared RWX volumes are not opted in once per replica; duplicated backups delayed a
+  weekly run and made it partial. A canceled PVB is not coverage even when another
+  pod's copy of the same PVC completed.
 - Bound manual backup TTLs explicitly. Inspect Velero deletion failures and Kopia
   repository maintenance outcomes; completed maintenance alone does not prove bytes
   were reclaimed. Measure bucket bytes/object counts separately.
@@ -111,8 +117,9 @@ demonstrated, not inferred:
 
 1. Barman can list a contiguous base-backup/WAL chain for the proposed 7d window.
 2. A restore drill from that chain reaches a verified application/database state.
-3. The matching Velero file backup is complete for the same window, with no canceled
-   volume backups; database and file timestamps are compatible for the chosen RPO.
+3. The file-store copy is independent and compatible with the chosen database
+   recovery point; empty local PVC backups and canceled volume backups are not
+   counted as coverage.
 4. Barman dependency-aware cleanup removes expired bases only with their unneeded
    WAL, and the object store usage actually decreases.
 5. The cleanup result is visible (deletion attempts/failures), and no manual or
@@ -120,11 +127,12 @@ demonstrated, not inferred:
 
 Observed 2026-10-25: MinIO reported about 36.5GB used and 10,904 objects; Velero
 deletion metrics showed four attempts and four successes with zero failures. CNPG
-had 30d of hourly completed backups, oldest recoverability point 2026-09-25, and no
-recent failed backup; 1,871 older failed Backup CRs from August remain as historical
-API clutter with node-proxy 502 errors. These are status observations, not proof of
-WAL integrity, restore success, or compatible file recovery. Retention therefore
-stays unchanged.
+had 30d of backups created hourly by a five-field cron; this change corrects the
+schedule to a six-field daily expression. Oldest recoverability point 2026-09-25,
+no recent failed backup; 1,871 older failed Backup CRs from August remain as
+historical API clutter with node-proxy 502 errors. These are status observations,
+not proof of WAL integrity, restore success, or compatible file recovery. Retention
+therefore stays unchanged.
 
 A scheduled Backup can remain `InProgress` until its 4h item-operation timeout after
 a canceled volume backup, then become `PartiallyFailed`. A canceled PVB is not
