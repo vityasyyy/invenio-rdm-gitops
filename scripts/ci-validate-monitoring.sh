@@ -61,6 +61,8 @@ if panels_seen != 6:
     err(f"want exactly 6 dashboards, found {panels_seen}")
 if "gitops-reconciliation" not in dashboard_uids:
     err("missing dashboard uid 'gitops-reconciliation' (05 GitOps & Reconciliation)")
+if not any('up{job="argocd-metrics"}' in expr for expr in dashboard_exprs):
+    err("GitOps dashboard must show argocd-metrics scrape health")
 if any("velero_backup_timestamp" in expr for expr in dashboard_exprs):
     err("Grafana dashboard query uses nonexistent velero_backup_timestamp")
 if not any("kube_customresource_velero_backup_completion_timestamp" in expr for expr in dashboard_exprs):
@@ -127,6 +129,7 @@ else:
         "ArgoCDAppNotSynced": ('argocd_app_info{sync_status!="Synced"} == 1', "10m", "warning"),
         "ArgoCDAppUnhealthy": ('argocd_app_info{health_status!="Healthy"} == 1', "10m", "warning"),
         "ArgoCDOperationStuck": ('argocd_app_info{operation="Running"} == 1', "20m", "warning"),
+        "ArgoMetricsScrapeMissing": ('absent(up{job="argocd-metrics"}) or up{job="argocd-metrics"} == 0', "10m", "critical"),
     }
     argo_rules = {
         rule.get("alert"): rule
@@ -146,7 +149,7 @@ else:
         if (rule.get("labels") or {}).get("severity") != severity:
             err(f"{name}: severity must be {severity!r}")
         description = (rule.get("annotations") or {}).get("description", "")
-        if "{{ $labels.name }}" not in description:
+        if not name.startswith("ArgoMetrics") and "{{ $labels.name }}" not in description:
             err(f"{name}: description must name the application label")
 
 values = yaml.safe_load(open(os.path.join(mon, "values.yaml")))
@@ -407,6 +410,12 @@ else:
             err("argocd ServiceMonitor must scrape port metrics at /metrics")
         if endpoint.get("interval") != "30s" or endpoint.get("scrapeTimeout") != "10s":
             err("argocd ServiceMonitor must use interval 30s and scrapeTimeout 10s")
+        if endpoint.get("relabelings") != [{
+            "action": "replace",
+            "targetLabel": "job",
+            "replacement": "argocd-metrics",
+        }]:
+            err("argocd ServiceMonitor must pin job=argocd-metrics for scrape-missing alerting")
 if "argocd-servicemonitor.yaml" not in kus:
     err("kustomization.yaml must list argocd-servicemonitor.yaml")
 

@@ -27,3 +27,9 @@ spec:
       path: /metrics
       interval: 30s
       scrapeTimeout: 10s
+      # Pin the job label so scrape-missing alerting is independent of the
+      # operator's generated job name and the Service's name label.
+      relabelings:
+        - action: replace
+          targetLabel: job
+          replacement: argocd-metrics

@@ -140,6 +140,11 @@ class ObservabilityContracts(unittest.TestCase):
                 "path": "/metrics",
                 "interval": "30s",
                 "scrapeTimeout": "10s",
+                "relabelings": [{
+                    "action": "replace",
+                    "targetLabel": "job",
+                    "replacement": "argocd-metrics",
+                }],
             }],
         )
         kustomization = yaml.safe_load((MONITORING / "kustomization.yaml").read_text())
@@ -196,7 +201,12 @@ class ObservabilityContracts(unittest.TestCase):
             "kube_job_status_failed",
         ):
             self.assertIn(metric, joined)
+        self.assertIn('up{job="argocd-metrics"}', joined)
         self.assertNotIn("argocd_app_operation", joined)
+        self.assertTrue(any(
+            panel.get("title") == "Argo metrics scrape"
+            for panel in dashboard["panels"]
+        ))
 
     def test_backup_dashboard_adds_restore_evidence_from_real_metrics(self):
         data = next(item for item in dashboards() if item["uid"] == "data-backups")
