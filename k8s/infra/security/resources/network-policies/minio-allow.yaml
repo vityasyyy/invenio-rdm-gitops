@@ -57,5 +57,7 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: traefik
       ports:
+        - port: 9000
+          protocol: TCP
         - port: 9001
           protocol: TCP

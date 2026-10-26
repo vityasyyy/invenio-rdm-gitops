@@ -29,7 +29,7 @@ data:
   # The image includes invenio-s3; these settings make the S3 filesystem opener
   # use the cluster MinIO endpoint. Credentials come from invenio-app-secrets.
   INVENIO_FILES_REST_STORAGE_FACTORY: "invenio_s3.s3fs_storage_factory"
-  INVENIO_S3_ENDPOINT_URL: "http://minio.minio.svc.cluster.local:9000"
+  INVENIO_S3_ENDPOINT_URL: "https://minio.vityasy.me"
   INVENIO_S3_REGION_NAME: "us-east-1"
   # Redis session/cache/ratelimit URLs (broker backend also uses Redis, no RabbitMQ)
   INVENIO_ACCOUNTS_SESSION_REDIS_URL: "redis://invenio-redis.invenio.svc.cluster.local:6379/1"

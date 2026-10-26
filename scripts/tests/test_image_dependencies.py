@@ -29,4 +29,4 @@ class ImageDependencyTests(unittest.TestCase):
         self.assertEqual(config["INVENIO_FILES_REST_STORAGE_FACTORY"],
                          "invenio_s3.s3fs_storage_factory")
         self.assertEqual(config["INVENIO_S3_ENDPOINT_URL"],
-                         "http://minio.minio.svc.cluster.local:9000")
+                         "https://minio.vityasy.me")
