@@ -16,6 +16,8 @@ resources:
   - resources/invenio-hpa.yaml
   - resources/invenio-pdb.yaml
   - resources/argocd-log-reader.yaml
+  - resources/orphan-cleanup-configmap.yaml
+  - resources/orphan-cleanup-cronjob.yaml
 
 components:
   - config

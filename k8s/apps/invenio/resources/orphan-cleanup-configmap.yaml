@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: invenio-orphan-cleanup-script
+  namespace: invenio
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+data:
+  cleanup.py: |
+    """Delete S3 objects and DB file instances with no live object reference.
+
+    The DB is authoritative: a file is live only while a files_object row
+    references its FileInstance. Objects under invenio-rdm/files that have no
+    live reference are leftovers from deleted drafts or failed uploads.
+    """
+    from flask import current_app
+    from invenio_files_rest.models import FileInstance, ObjectVersion
+    from invenio_files_rest.tasks import clear_orphaned_files
+    import s3fs
+
+    info = dict(current_app.extensions["invenio-s3"].init_s3fs_info)
+    info["client_kwargs"] = dict(info["client_kwargs"])
+    info["client_kwargs"]["endpoint_url"] = (
+        "http://minio.minio.svc.cluster.local:9000"
+    )
+    fs = s3fs.S3FileSystem(**info)
+
+    live = {
+        file.uri
+        for file in FileInstance.query.join(
+            ObjectVersion, ObjectVersion.file_id == FileInstance.id
+        ).all()
+    }
+
+    deleted = 0
+    for root, _, files in fs.walk("invenio-rdm/files"):
+        for name in files:
+            uri = "s3://" + root + "/" + name
+            if uri not in live:
+                fs.rm_file(root + "/" + name)
+                deleted += 1
+
+    print(f"orphan objects deleted: {deleted}")
+    clear_orphaned_files(force_delete_check=lambda file: True, limit=1000)
