@@ -44,7 +44,7 @@ spec:
 ---
 # Allow Prometheus to scrape targets across all namespaces + DNS.
 # The port list MUST stay in sync with scraped targets (validator asserts
-# 8085/9000/9100/9153/10250/10257/10259/2381 present): a missing port fails
+# 8082/8085/9000/9100/9153/10250/10257/10259/2381 present): a missing port fails
 # closed with scrape timeouts (proven live 2026-09-15 for velero :8085 and
 # minio :9000, issue #117; and for all 17 infra targets, issue #119).
 # Host-IP targets (kubelet, node-exporter, control-plane, etcd) NEVER match
@@ -80,6 +80,8 @@ spec:
         - port: 8080
           protocol: TCP
         - port: 8081
+          protocol: TCP
+        - port: 8082
           protocol: TCP
         - port: 9200
           protocol: TCP

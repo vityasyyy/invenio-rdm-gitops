@@ -81,6 +81,38 @@ spec:
             description: "Invenio pods restarted more than 5 times in the last hour. Check crash causes before it becomes an outage."
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#incident-triage"
             dashboard: "https://grafana.vityasy.me/d/invenio-app"
+    - name: argocd
+      rules:
+        - alert: ArgoCDAppNotSynced
+          expr: argocd_app_info{sync_status!="Synced"} == 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ArgoCD application {{ $labels.name }} is not synced"
+            description: "Application {{ $labels.name }} in project {{ $labels.project }} (namespace {{ $labels.namespace }}) reports sync_status={{ $labels.sync_status }} for more than 10m. Inspect the Application diff and sync result."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#delivery-and-reconciliation"
+            dashboard: "https://grafana.vityasy.me/d/gitops-reconciliation"
+        - alert: ArgoCDAppUnhealthy
+          expr: argocd_app_info{health_status!="Healthy"} == 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ArgoCD application {{ $labels.name }} is unhealthy"
+            description: "Application {{ $labels.name }} in project {{ $labels.project }} (namespace {{ $labels.namespace }}) reports health_status={{ $labels.health_status }} for more than 10m. Inspect workload health and Application events."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#delivery-and-reconciliation"
+            dashboard: "https://grafana.vityasy.me/d/gitops-reconciliation"
+        - alert: ArgoCDOperationStuck
+          expr: argocd_app_info{operation="Running"} == 1
+          for: 20m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ArgoCD operation for {{ $labels.name }} is stuck running"
+            description: "Application {{ $labels.name }} in project {{ $labels.project }} (namespace {{ $labels.namespace }}) has reported operation=Running for more than 20m. Inspect the operation, hook Jobs, and application-controller logs."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#delivery-and-reconciliation"
+            dashboard: "https://grafana.vityasy.me/d/gitops-reconciliation"
     - name: data-backups
       rules:
         - alert: VeleroBackupFailed

@@ -14,4 +14,5 @@ resources:
   - resources/monitoring-pipecheck.yaml
   - resources/pipecheck-egress-netpol.yaml
   - resources/traefik-servicemonitor.yaml
+  - resources/argocd-servicemonitor.yaml
   - resources/grafana-backends-egress.yaml
