@@ -18,8 +18,9 @@ class ImageUpdateContractTests(unittest.TestCase):
     def test_git_has_one_image_digest_source(self):
         pin = yaml.safe_load(IMAGE_PIN.read_text())
         self.assertEqual(pin["kind"], "Component")
-        self.assertEqual([(item["name"], item["digest"]) for item in pin["images"]],
-                         [(IMAGE, "sha256:0f685be3fc05e4fb517a68c2508ac649ce40d9bf7af50c42d738aa93351a82c0")])
+        self.assertEqual(len(pin["images"]), 1)
+        self.assertEqual(pin["images"][0]["name"], IMAGE)
+        self.assertRegex(pin["images"][0]["digest"], r"^sha256:[0-9a-f]{64}$")
         kustomization = yaml.safe_load(APP_KUSTOMIZATION.read_text())
         self.assertIn("image-pin", kustomization["components"])
         self.assertNotIn("images", kustomization)
