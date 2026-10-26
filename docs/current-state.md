@@ -66,12 +66,25 @@ not a fixed assignment. See
 
 ## Storage and files
 
-- Invenio's live default file location is `s3://invenio-rdm/files/`.
-- `invenio-data` and `invenio-archive` are mounted but contain **0 files**. They are not
+- Invenio's live default file location is `s3://invenio-rdm/files/`. The image
+  includes `invenio-s3`/`s3fs`; the app uses
+  `invenio_s3.s3fs_storage_factory` with endpoint `https://minio.vityasy.me`.
+- A private seed draft exists: `4ben9-bgh38`, file `seed.bin`, **65,536 bytes**,
+  MD5 `8f1445bafe2c2095044af7789462f475`, SHA-256
+  `7daca2095d0438260fa849183dfc67faa459fdf4936e1bc91eec6b281b27e4c2`.
+  The public draft-file download returns HTTP 200 with the matching SHA-256.
+- Only `/invenio-rdm/` is routed at `minio.vityasy.me`; other buckets remain
+  unrouted and unauthenticated requests receive a 403. MinIO credentials remain in
+  the SealedSecret.
+- `invenio-data` and `invenio-archive` are mounted but remain empty; they are not
   the authoritative file store and are not opted in to Velero.
-- MinIO `/export` held about **35 GiB** at the snapshot (~26 GiB free, 63% used):
-  approximately 33 GiB PostgreSQL backup data, 2.1 GiB Velero data, and empty
-  application buckets. The MinIO PVC requests 20 GiB, but NFS does not enforce that
+- A daily `invenio-orphan-cleanup` CronJob (04:15) removes S3 objects with no
+  `files_object` reference and then clears orphan `FileInstance` rows. The packaged
+  job was exercised through a one-off Job: it removed one reset orphan and preserved
+  the seed object.
+- MinIO `/export` held about **35 GiB** at the earlier snapshot (~26 GiB free, 63%
+  used): approximately 33 GiB PostgreSQL backup data, 2.1 GiB Velero data, and the
+  application bucket. The MinIO PVC requests 20 GiB, but NFS does not enforce that
   claim.
 - MinIO is both the primary file store and the backup store on the same NFS server.
   This is a **single failure domain**; no independent off-site copy exists.
@@ -106,7 +119,7 @@ deduplication fix.
 | Users / roles | 7 / 1 | 7 / 1 |
 | Vocabularies | 9,138 | 9,138 |
 | Vocabulary digest | `5fa4a963305262df6c7ad09cb88887e3` | same |
-| Records / drafts / files | 0 / 0 / 0 | 0 / 0 / 0 |
+| Records / drafts / files | 0 / 1 / 1 | 0 / 0 / 0 (pre-seed drill) |
 | File locations | 1 | 1 |
 | `pg_is_in_recovery` | false | false |
 
@@ -114,23 +127,52 @@ The drill Cluster was created at 09:39:43 UTC and Ready at 09:41:28 UTC (105 sec
 on a new 10 GiB PVC/PV on worker-02. Production stayed healthy: 18/18 Argo
 Applications Synced/Healthy, PostgreSQL healthy, `/ping` 200.
 
-This proves **database recovery from the current native backup chain**. It does not
-prove seeded record/file consistency, because no records or files exist. The drill
-Cluster, namespace, Secret and scoped network policies were removed. One Released
-`Retain` 10 GiB PV remains as evidence; physical NFS cleanup is a separate storage
-action. The read-only MinIO user/key created for the drill must be revoked at MinIO.
+This proves **database recovery from the current native backup chain**. The drill
+predates the private seed, so it does not prove that the seed file is inside a
+database-consistent backup. The seed upload/download path is now proven separately;
+recovery of a seeded record/file remains a follow-up gate. The drill Cluster,
+namespace, Secret and scoped network policies were removed. One Released `Retain`
+10 GiB PV remains as evidence; physical NFS cleanup is a separate storage action.
+The read-only MinIO user/key created for the drill must be revoked at MinIO.
 
 ## Setup, observability and current alerts
 
+- The Invenio non-secret configuration is a shared Kustomize `Component`
+  `k8s/apps/invenio/config/` with `configMapGenerator`. A config change produces a
+  new `invenio-app-config-<hash>` name; all `envFrom` refs change and ArgoCD rolls the
+  workloads. The 2026-10-26 deployment verified this with no manual restart.
 - The Invenio `PostSync` hook is **read-only** and verifies Alembic dependency-resolved
   heads, default location, index aliases, queues and admin permission. It fails closed.
-- Migrations, fixtures, queue declaration and reindexing are in a manual initialization
-  Job outside the automated Kustomization.
+  Every Argo hook Job now has a positive `activeDeadlineSeconds` and
+  `BeforeHookCreation,HookSucceeded,HookFailed` cleanup.
+- Migrations, fixtures, queue declaration and reindexing remain a manual initialization
+  Job outside the automated Kustomization; this is a deliberate one-off exception.
 - Grafana can reach Loki and Alertmanager. The `invenio-logs` dashboard is provisioned.
-- At the snapshot, `PrometheusRuleFailures` and `KubeMemoryQuotaOvercommit` are no
-  longer active. `VeleroScheduledBackupFailed` remains active for the 25 October run.
+- `VeleroScheduledBackupFailed` remains active for the 25 October run. The MinIO
+  `PodNotReady` alert cleared after the bucket hook repair.
 - `CPUThrottlingHigh` was **info** for the scheduler container and is not routed to
   Discord by the current severity routes.
+
+## GitOps rollout contract and imperative exceptions
+
+- All 18 Argo Applications use automated sync and self-heal. `argocd-self` and
+  `sealed-secrets` intentionally have `prune: false`; their resources are still
+  Git-declared.
+- Routine configuration and workload changes are Git-only. The shared config
+  component produces a new hash and Argo rolls the pods; do **not** use
+  `kubectl rollout restart` or manually apply a workload.
+- The historical `kubectl.kubernetes.io/restartedAt` annotations left by the
+  file-storage repair were removed on 2026-10-26. No live-only rollout annotation
+  remains.
+- Deliberate imperative exceptions:
+  - first cluster/ArgoCD bootstrap (`scripts/bootstrap-infra.sh`);
+  - one-off full initialization and migrations (`k8s/apps/invenio/initialization/`);
+  - secret creation/rotation/revocation, which must never enter Git;
+  - data operations such as seed/reset and restore;
+  - break-glass recovery of a stuck Argo operation or hook.
+  These are versioned, documented and bounded; they are not routine sync steps.
+- The daily orphan cleanup CronJob is the declarative form of a data-maintenance
+  action. It is not a hook and does not block application syncs.
 
 ## Experiment readiness
 
@@ -139,8 +181,9 @@ readiness.
 
 | Gate | Status | Evidence / blocker |
 |---|---|---|
-| Real Invenio workload exists | Partial | Production Invenio is healthy, but it has 0 records, 0 drafts and 0 files |
-| Private draft + 64 KiB file seed | Blocked | No seeded save/upload ID; application data recovery/reset unproven |
+| Real Invenio workload exists | Partial | Production Invenio is healthy with one private draft and one 64 KiB file; no published record |
+| Private draft + 64 KiB file seed | Complete | `4ben9-bgh38`; upload and public download verified, SHA-256 matches |
+| Reset/orphan cleanup | Complete | Draft deletion + packaged CronJob removed the test file instance and S3 object; seed preserved |
 | A/B real-Invenio environments | Blocked | Only the `invenio` namespace exists; no manual/GitOps twin provisioning |
 | HPA-control method review | Blocked | Research PR #6 is open; scenario A method needs owner/supervisor review |
 | Live experiment instruments | Blocked | Current scripts are offline evidence validators; no approved live collection/reset adapter |
@@ -148,22 +191,22 @@ readiness.
 | SMTP/email | Blocked | Live config still uses `smtp.example.org` and `admin@example.org`; relay/auth/CA/firewall unknown |
 | Capacity | Unproven | One sample is 59% memory on both workers; no sustained window or A/B placement proof |
 | Database recovery | Proven | 25 October native drill matched schema, counts and vocabulary digest |
-| File/record consistency | Unproven | No seeded record/file; file bytes are in MinIO and no independent copy exists |
+| File/record consistency | Partial | One private seed file is uploaded/downloaded; no published record and no independent file copy |
 | Weekly backup freshness | Blocked | 25 October run `PartiallyFailed`; next successful run is 1 November |
 | Independent disaster recovery | Blocked | MinIO primary and backup data share one NFS failure domain |
 | Formal run approval | Blocked | No unmeasured pilot or formal collection approval |
 
-The first useful next steps are: seed the private draft and deterministic file; prove
-reset/recovery; provision the two real-Invenio environments; review and freeze the
-method; then run a bounded unmeasured pilot.
+The seed and reset path is complete. The next useful steps are: provision the two
+real-Invenio environments; review and freeze the method; then run a bounded
+unmeasured pilot. Recovery of a seeded record/file still needs a post-seed drill.
 
 ## Next evidence gates
 
 1. **2026-10-26 02:00 UTC** — verify the CNPG daily run, not an hourly run.
 2. **2026-11-01 03:00 UTC** — verify the weekly Velero run has no duplicate PVBs and
    the `VeleroScheduledBackupFailed` alert clears.
-3. Seed the private draft/64 KiB file and prove isolated recovery and reset.
-4. Provision real-Invenio A/B environments and a live, reviewed measurement adapter.
+3. Provision real-Invenio A/B environments and a live, reviewed measurement adapter.
+4. Run a post-seed isolated recovery drill (database + seed file).
 5. Obtain audit/SMTP/capacity/NTP/maintenance evidence from university IT.
 6. Add an independent copy of the MinIO file/backup data.
 7. Revoke the drill MinIO key and decide on the retained drill PV/NFS directory.
@@ -174,6 +217,8 @@ method; then run a bounded unmeasured pilot.
 kubectl get nodes -o wide
 kubectl -n argocd get applications
 kubectl -n invenio get hpa,pods -o wide
+kubectl -n invenio get cronjob invenio-orphan-cleanup
+kubectl -n invenio get configmap | grep invenio-app-config
 kubectl -n database get clusters.postgresql.cnpg.io,scheduledbackups.postgresql.cnpg.io
 kubectl -n database get backups.postgresql.cnpg.io --sort-by=.metadata.creationTimestamp
 kubectl -n velero get schedules,backups
