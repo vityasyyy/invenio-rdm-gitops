@@ -3,8 +3,8 @@
 # Endpoints resolve via ExternalName services in the invenio namespace.
 #
 # Secrets live in invenio-app-secrets (SealedSecret): INVENIO_SQLALCHEMY_DATABASE_URI,
-# INVENIO_SECRET_KEY, INVENIO_CACHE_REDIS_URL, and the (retired) S3 keys. Those are NOT
-# duplicated here.
+# INVENIO_SECRET_KEY, INVENIO_CACHE_REDIS_URL, and the S3 access/secret keys. Those
+# are NOT duplicated here.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -25,6 +25,12 @@ data:
   INVENIO_SITE_API_URL: "https://api-invenio.vityasy.me"
   # Search — IMPORTANT: must be valid JSON. The UGM cfg parses INVENIO_SEARCH_HOSTS.
   INVENIO_SEARCH_HOSTS: '["invenio-search.invenio.svc.cluster.local:9200"]'
+  # File storage — the live default location is s3://invenio-rdm/files/.
+  # The image includes invenio-s3; these settings make the S3 filesystem opener
+  # use the cluster MinIO endpoint. Credentials come from invenio-app-secrets.
+  INVENIO_FILES_REST_STORAGE_FACTORY: "invenio_s3.s3fs_storage_factory"
+  INVENIO_S3_ENDPOINT_URL: "http://minio.minio.svc.cluster.local:9000"
+  INVENIO_S3_REGION_NAME: "us-east-1"
   # Redis session/cache/ratelimit URLs (broker backend also uses Redis, no RabbitMQ)
   INVENIO_ACCOUNTS_SESSION_REDIS_URL: "redis://invenio-redis.invenio.svc.cluster.local:6379/1"
   INVENIO_COMMUNITIES_IDENTITIES_CACHE_REDIS_URL: "redis://invenio-redis.invenio.svc.cluster.local:6379/4"
