@@ -11,3 +11,9 @@ kubeconfig*
 kustomize
 rendered/
 .worktrees/
+
+# Local experiment credentials and seed artifacts
+invenio-token.txt
+seed.bin
+seed-draft.json
+seed-draft-response.json
