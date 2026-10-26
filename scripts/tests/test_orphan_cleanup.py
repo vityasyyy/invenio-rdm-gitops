@@ -9,6 +9,7 @@ APP = ROOT / "k8s/apps/invenio"
 SCRIPT = APP / "resources/orphan-cleanup-configmap.yaml"
 CRONJOB = APP / "resources/orphan-cleanup-cronjob.yaml"
 KUSTOMIZATION = APP / "kustomization.yaml"
+INVENIO_PROJECT = ROOT / "k8s/infra/argocd/resources/invenio-project.yaml"
 
 
 class OrphanCleanupTests(unittest.TestCase):
@@ -38,3 +39,8 @@ class OrphanCleanupTests(unittest.TestCase):
         resources = yaml.safe_load(KUSTOMIZATION.read_text())["resources"]
         self.assertIn("resources/orphan-cleanup-configmap.yaml", resources)
         self.assertIn("resources/orphan-cleanup-cronjob.yaml", resources)
+
+    def test_invenio_project_permits_the_cleanup_cronjob(self):
+        project = yaml.safe_load(INVENIO_PROJECT.read_text())
+        self.assertIn({"group": "batch", "kind": "CronJob"},
+                      project["spec"]["namespaceResourceWhitelist"])
