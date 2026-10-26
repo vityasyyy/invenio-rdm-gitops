@@ -42,6 +42,8 @@ spec:
               kubernetes.io/metadata.name: minio
       ports:
         - protocol: TCP
+          port: 9000
+        - protocol: TCP
           port: 9001
     - to:
         - namespaceSelector:

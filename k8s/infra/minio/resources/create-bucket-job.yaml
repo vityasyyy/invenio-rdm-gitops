@@ -18,6 +18,15 @@ spec:
         app: minio-bucket-creator
     spec:
       serviceAccountName: default
+      # Reuse the running MinIO image: it ships mc and is already cached on
+      # the MinIO node. Co-locate the job so no registry pull is required.
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: minio
+              topologyKey: kubernetes.io/hostname
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -27,7 +36,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: mc
-          image: quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z
+          image: quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh

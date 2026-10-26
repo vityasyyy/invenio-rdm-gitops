@@ -10,6 +10,12 @@ mode: standalone
 
 existingSecret: minio-credentials
 
+# Keep create-bucket-job.yaml aligned: this image ships mc and is already
+# present on the MinIO node, avoiding a second registry dependency.
+image:
+  repository: quay.io/minio/minio
+  tag: RELEASE.2024-12-18T13-15-44Z
+
 buckets: []
 
 # Issue #74: 256Mi/1Gi -> 256Mi/512Mi memory-only; cpu and
