@@ -104,3 +104,69 @@ tests:
       - eval_time: 25m
         alertname: ArgoCDAppUnhealthy
         exp_alerts: []
+
+  - name: argo metrics target up stays quiet
+    interval: 1m
+    input_series:
+      - series: 'up{job="argocd-metrics",instance="10.0.0.1:8082"}'
+        values: '1+0x25'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: ArgoMetricsScrapeMissing
+        exp_alerts: []
+
+  - name: argo metrics series absent fires after ten minutes
+    interval: 1m
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ArgoMetricsScrapeMissing
+        exp_alerts:
+          - exp_labels:
+              job: argocd-metrics
+              severity: critical
+            exp_annotations:
+              summary: "ArgoCD metrics scrape is missing"
+              description: "Prometheus has no up{job=\"argocd-metrics\"} series or the target has reported 0 for 10m. ArgoCD sync/health alerts and the reconciliation dashboard are blind; inspect the ServiceMonitor, network policies, and the application-controller metrics endpoint."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#delivery-and-reconciliation"
+              dashboard: "https://grafana.vityasy.me/d/gitops-reconciliation"
+      - eval_time: 15m
+        alertname: ArgoCDAppNotSynced
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ArgoCDAppUnhealthy
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ArgoCDOperationStuck
+        exp_alerts: []
+
+  - name: argo metrics target down fires after ten minutes
+    interval: 1m
+    input_series:
+      - series: 'up{job="argocd-metrics",instance="10.0.0.1:8082",namespace="argocd",pod="argocd-application-controller-0",endpoint="metrics",service="argocd-metrics"}'
+        values: '0+0x15'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ArgoMetricsScrapeMissing
+        exp_alerts:
+          - exp_labels:
+              job: argocd-metrics
+              instance: 10.0.0.1:8082
+              namespace: argocd
+              pod: argocd-application-controller-0
+              endpoint: metrics
+              service: argocd-metrics
+              severity: critical
+            exp_annotations:
+              summary: "ArgoCD metrics scrape is missing"
+              description: "Prometheus has no up{job=\"argocd-metrics\"} series or the target has reported 0 for 10m. ArgoCD sync/health alerts and the reconciliation dashboard are blind; inspect the ServiceMonitor, network policies, and the application-controller metrics endpoint."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#delivery-and-reconciliation"
+              dashboard: "https://grafana.vityasy.me/d/gitops-reconciliation"
+      - eval_time: 15m
+        alertname: ArgoCDAppNotSynced
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ArgoCDAppUnhealthy
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ArgoCDOperationStuck
+        exp_alerts: []

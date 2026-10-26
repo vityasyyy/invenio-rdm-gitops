@@ -22,6 +22,7 @@ EXPECTED_RULES = {
         "ArgoCDAppNotSynced",
         "ArgoCDAppUnhealthy",
         "ArgoCDOperationStuck",
+        "ArgoMetricsScrapeMissing",
     }),
     "data-backups": sorted({
         "VeleroBackupFailed",

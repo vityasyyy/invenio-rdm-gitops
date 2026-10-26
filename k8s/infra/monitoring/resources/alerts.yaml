@@ -113,6 +113,16 @@ spec:
             description: "Application {{ $labels.name }} in project {{ $labels.project }} (namespace {{ $labels.namespace }}) has reported operation=Running for more than 20m. Inspect the operation, hook Jobs, and application-controller logs."
             runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#delivery-and-reconciliation"
             dashboard: "https://grafana.vityasy.me/d/gitops-reconciliation"
+        - alert: ArgoMetricsScrapeMissing
+          expr: absent(up{job="argocd-metrics"}) or up{job="argocd-metrics"} == 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ArgoCD metrics scrape is missing"
+            description: "Prometheus has no up{job=\"argocd-metrics\"} series or the target has reported 0 for 10m. ArgoCD sync/health alerts and the reconciliation dashboard are blind; inspect the ServiceMonitor, network policies, and the application-controller metrics endpoint."
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#delivery-and-reconciliation"
+            dashboard: "https://grafana.vityasy.me/d/gitops-reconciliation"
     - name: data-backups
       rules:
         - alert: VeleroBackupFailed

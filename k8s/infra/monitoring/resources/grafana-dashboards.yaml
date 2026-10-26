@@ -4202,6 +4202,67 @@ data:
           ],
           "type": "table",
           "description": "Hook Jobs are deleted by Argo's hook-delete-policy and TTL, so this table only shows Jobs present at the last kube-state-metrics scrape. No row is not proof of failure."
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "description": "1 = argocd-metrics scrape target up; 0 = target down; no data = up series absent. ArgoMetricsScrapeMissing fires after 10m.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 30
+          },
+          "id": 10,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value"
+          },
+          "pluginVersion": "11.0.0",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "min(up{job=\"argocd-metrics\"})",
+              "legendFormat": "scrape up",
+              "refId": "A"
+            }
+          ],
+          "title": "Argo metrics scrape",
+          "type": "stat"
         }
       ],
       "refresh": "30s",
