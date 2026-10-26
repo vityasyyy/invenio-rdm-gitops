@@ -149,8 +149,8 @@ The read-only MinIO user/key created for the drill must be revoked at MinIO.
   Job outside the automated Kustomization; this is a deliberate one-off exception.
 - ArgoCD metrics are scraped from `argocd-metrics:8082` through a ServiceMonitor and a
   least-privilege network policy. Prometheus has `argocd_app_info` for all 18
-  Applications. The `argocd` alert group covers non-Synced, unhealthy, and
-  stuck-operation states.
+  Applications. The `argocd` alert group covers non-Synced, unhealthy,
+  stuck-operation, and missing-scrape states.
 - Grafana has six dashboards: overview, Invenio app, data/backups, platform,
   application logs, and **05 GitOps & Reconciliation**. The last is R1-style
   consistency evidence and explicitly not R2/R3 measurement.
@@ -220,8 +220,11 @@ evidence, capacity, and a post-seed recovery drill.
   namespace/app, `INVENIO_TOKEN`, a frozen source revision, and a render digest.
 - The imperative arm pauses and restores both `apps` and `invenio-bootstrap` in
   `finally`; quarantine cleanup is ownership-checked.
-- No live pilot has run. The production `invenio` namespace is not a formal arm
-  environment.
+- A live pilot attempt on 2026-10-27 failed closed before injection: the seed
+  draft endpoint returned HTTP 403. No workload state changed; `invenio-web`
+  remained at 2/2 replicas. Do not retry the live path until a valid token and
+  the formal seed/namespace gates are available. The production `invenio`
+  namespace is not a formal arm environment.
 
 ## Next evidence gates
 
