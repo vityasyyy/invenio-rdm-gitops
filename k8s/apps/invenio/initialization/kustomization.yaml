@@ -3,5 +3,6 @@ kind: Kustomization
 namespace: invenio
 components:
   - ../image-pin
+  - ../config
 resources:
   - invenio-initialize-job.yaml

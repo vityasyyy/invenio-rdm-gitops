@@ -2,7 +2,6 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - resources/namespace.yaml
-  - resources/app-config.yaml
   - resources/namespace-governance.yaml
   - resources/dependencies-external-services.yaml
   - resources/app-sealed-secret.yaml
@@ -19,4 +18,5 @@ resources:
   - resources/argocd-log-reader.yaml
 
 components:
+  - config
   - image-pin

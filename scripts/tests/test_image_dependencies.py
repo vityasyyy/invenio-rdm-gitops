@@ -3,13 +3,18 @@ import tomllib
 import unittest
 from pathlib import Path
 
-import yaml
-
 
 ROOT = Path(__file__).resolve().parents[2]
 PIPFILE = ROOT / "docker/ugm/Pipfile"
 LOCKFILE = ROOT / "docker/ugm/Pipfile.lock"
-APP_CONFIG = ROOT / "k8s/apps/invenio/resources/app-config.yaml"
+APP_CONFIG = ROOT / "k8s/apps/invenio/config/app-config.env"
+
+
+def config_value(key):
+    for line in APP_CONFIG.read_text().splitlines():
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1]
+    raise AssertionError(f"missing {key}")
 
 
 class ImageDependencyTests(unittest.TestCase):
@@ -25,8 +30,7 @@ class ImageDependencyTests(unittest.TestCase):
         self.assertIn("s3fs", locked)
 
     def test_application_uses_the_s3_storage_factory_and_minio_endpoint(self):
-        config = yaml.safe_load(APP_CONFIG.read_text())["data"]
-        self.assertEqual(config["INVENIO_FILES_REST_STORAGE_FACTORY"],
+        self.assertEqual(config_value("INVENIO_FILES_REST_STORAGE_FACTORY"),
                          "invenio_s3.s3fs_storage_factory")
-        self.assertEqual(config["INVENIO_S3_ENDPOINT_URL"],
+        self.assertEqual(config_value("INVENIO_S3_ENDPOINT_URL"),
                          "https://minio.vityasy.me")

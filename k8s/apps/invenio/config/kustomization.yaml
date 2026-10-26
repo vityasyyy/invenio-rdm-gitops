@@ -1,0 +1,16 @@
+# Shared non-secret Invenio configuration.
+#
+# Included as a Kustomize component by the automated application and by the
+# manual initialization Job's Kustomization. The configMapGenerator appends a
+# content hash to the ConfigMap name, so config changes rewrite every envFrom
+# reference and ArgoCD rolls the workloads without a manual restart.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+namespace: invenio
+configMapGenerator:
+  - name: invenio-app-config
+    envs:
+      - app-config.env
+    options:
+      annotations:
+        argocd.argoproj.io/sync-wave: "0"
