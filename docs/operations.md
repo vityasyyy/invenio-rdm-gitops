@@ -119,6 +119,23 @@ Do not use `s3fs.rm()` for this bucket: MinIO rejects its bulk delete with
 draft delete; it removed one orphan and preserved the seed. Check its Job logs and
 the next scheduled run after changes.
 
+## GitOps monitoring
+
+Prometheus scrapes `argocd-metrics` from `argocd-application-controller:8082` through
+a ServiceMonitor and a least-privilege network policy. The `argocd` rule group
+alerts on non-Synced, unhealthy, and operation-running-for-20m Applications.
+Dashboard `05 GitOps & Reconciliation` shows the same state plus HPA and config
+evidence.
+
+If Argo panels or alerts are empty:
+
+1. Check `kubectl -n monitoring get servicemonitor argocd-metrics`.
+2. Check the Prometheus target `up{job="argocd-metrics"}`.
+3. Check the `allow-monitoring-to-argocd-metrics` NetworkPolicy and port 8082 in
+   Prometheus egress.
+4. Check the `argocd` rule group in Prometheus.
+5. Do not interpret an absent series as healthy; it is unknown until scraped.
+
 ## Metrics and logs
 
 Existing Grafana views retain their UIDs: see [incident triage](../README.md#incident-triage).

@@ -147,7 +147,16 @@ The read-only MinIO user/key created for the drill must be revoked at MinIO.
   `BeforeHookCreation,HookSucceeded,HookFailed` cleanup.
 - Migrations, fixtures, queue declaration and reindexing remain a manual initialization
   Job outside the automated Kustomization; this is a deliberate one-off exception.
-- Grafana can reach Loki and Alertmanager. The `invenio-logs` dashboard is provisioned.
+- ArgoCD metrics are scraped from `argocd-metrics:8082` through a ServiceMonitor and a
+  least-privilege network policy. Prometheus has `argocd_app_info` for all 18
+  Applications. The `argocd` alert group covers non-Synced, unhealthy, and
+  stuck-operation states.
+- Grafana has six dashboards: overview, Invenio app, data/backups, platform,
+  application logs, and **05 GitOps & Reconciliation**. The last is R1-style
+  consistency evidence and explicitly not R2/R3 measurement.
+- Verified component versions: Kubernetes `v1.32.6+rke2r1` on Ubuntu 24.04 LTS,
+  ArgoCD `v2.12.0`, OpenSearch `2.19.1`, MinIO
+  `RELEASE.2024-12-18T13-15-44Z`. CNPG operator version is not asserted here.
 - `VeleroScheduledBackupFailed` remains active for the 25 October run. The MinIO
   `PodNotReady` alert cleared after the bucket hook repair.
 - `CPUThrottlingHigh` was **info** for the scheduler container and is not routed to
@@ -184,9 +193,9 @@ readiness.
 | Real Invenio workload exists | Partial | Production Invenio is healthy with one private draft and one 64 KiB file; no published record |
 | Private draft + 64 KiB file seed | Complete | `4ben9-bgh38`; upload and public download verified, SHA-256 matches |
 | Reset/orphan cleanup | Complete | Draft deletion + packaged CronJob removed the test file instance and S3 object; seed preserved |
-| A/B real-Invenio environments | Blocked | Only the `invenio` namespace exists; no manual/GitOps twin provisioning |
-| HPA-control method review | Blocked | Research PR #6 is open; scenario A method needs owner/supervisor review |
-| Live experiment instruments | Blocked | Current scripts are offline evidence validators; no approved live collection/reset adapter |
+| Sequential real-Invenio arms | Blocked | Method now uses one stack at a time; no experiment namespace/twin provisioning exists |
+| HPA-control method review | Aligned | Proposal PR #7 uses HPA-owned scenario A and excludes `/spec/replicas` from static R1 |
+| Live experiment instruments | Partial | Offline validators exist; the real-Invenio harness is being built and is not pilot-validated |
 | Kubernetes audit evidence | Blocked | No API-server audit evidence established; Git is not an audit of out-of-band changes |
 | SMTP/email | Blocked | Live config still uses `smtp.example.org` and `admin@example.org`; relay/auth/CA/firewall unknown |
 | Capacity | Unproven | One sample is 59% memory on both workers; no sustained window or A/B placement proof |
@@ -196,16 +205,17 @@ readiness.
 | Independent disaster recovery | Blocked | MinIO primary and backup data share one NFS failure domain |
 | Formal run approval | Blocked | No unmeasured pilot or formal collection approval |
 
-The seed and reset path is complete. The next useful steps are: provision the two
-real-Invenio environments; review and freeze the method; then run a bounded
-unmeasured pilot. Recovery of a seeded record/file still needs a post-seed drill.
+The proposal now uses sequential automated-imperative and GitOps arms on one stack
+at a time. The seed and reset path is complete; the real-Invenio harness is being
+built. Formal collection still requires experiment-stack provisioning, audit
+evidence, capacity, and a post-seed recovery drill.
 
 ## Next evidence gates
 
-1. **2026-10-26 02:00 UTC** — verify the CNPG daily run, not an hourly run.
-2. **2026-11-01 03:00 UTC** — verify the weekly Velero run has no duplicate PVBs and
+1. **2026-11-01 03:00 UTC** — verify the weekly Velero run has no duplicate PVBs and
    the `VeleroScheduledBackupFailed` alert clears.
-3. Provision real-Invenio A/B environments and a live, reviewed measurement adapter.
+2. Finish and pilot-test the real-Invenio sequential-arm harness.
+3. Provision or explicitly approve the experiment namespace/stack ownership model.
 4. Run a post-seed isolated recovery drill (database + seed file).
 5. Obtain audit/SMTP/capacity/NTP/maintenance evidence from university IT.
 6. Add an independent copy of the MinIO file/backup data.
@@ -219,6 +229,8 @@ kubectl -n argocd get applications
 kubectl -n invenio get hpa,pods -o wide
 kubectl -n invenio get cronjob invenio-orphan-cleanup
 kubectl -n invenio get configmap | grep invenio-app-config
+kubectl -n monitoring get servicemonitor argocd-metrics
+kubectl -n monitoring get prometheusrule | grep cluster-health
 kubectl -n database get clusters.postgresql.cnpg.io,scheduledbackups.postgresql.cnpg.io
 kubectl -n database get backups.postgresql.cnpg.io --sort-by=.metadata.creationTimestamp
 kubectl -n velero get schedules,backups
