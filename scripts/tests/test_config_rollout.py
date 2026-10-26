@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
@@ -12,7 +13,11 @@ CONFIG_COMPONENT = APP / "config/kustomization.yaml"
 
 
 def render(path):
-    output = subprocess.check_output(["kubectl", "kustomize", str(path)], text=True)
+    if shutil.which("kustomize"):
+        command = ["kustomize", "build", str(path)]
+    else:
+        command = ["kubectl", "kustomize", str(path)]
+    output = subprocess.check_output(command, text=True)
     return [doc for doc in yaml.safe_load_all(output) if doc]
 
 
