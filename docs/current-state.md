@@ -149,8 +149,8 @@ The read-only MinIO user/key created for the drill must be revoked at MinIO.
   Job outside the automated Kustomization; this is a deliberate one-off exception.
 - ArgoCD metrics are scraped from `argocd-metrics:8082` through a ServiceMonitor and a
   least-privilege network policy. Prometheus has `argocd_app_info` for all 18
-  Applications. The `argocd` alert group covers non-Synced, unhealthy, and
-  stuck-operation states.
+  Applications. The `argocd` alert group covers non-Synced, unhealthy,
+  stuck-operation, and missing-scrape states.
 - Grafana has six dashboards: overview, Invenio app, data/backups, platform,
   application logs, and **05 GitOps & Reconciliation**. The last is R1-style
   consistency evidence and explicitly not R2/R3 measurement.
@@ -195,7 +195,7 @@ readiness.
 | Reset/orphan cleanup | Complete | Draft deletion + packaged CronJob removed the test file instance and S3 object; seed preserved |
 | Sequential real-Invenio arms | Blocked | Method now uses one stack at a time; no experiment namespace/twin provisioning exists |
 | HPA-control method review | Aligned | Proposal PR #7 uses HPA-owned scenario A and excludes `/spec/replicas` from static R1 |
-| Live experiment instruments | Partial | Offline validators exist; the real-Invenio harness is being built and is not pilot-validated |
+| Live experiment instruments | Partial | `experiments/live/` real-Invenio harness is implemented and dry-run-tested; no live pilot or formal run yet |
 | Kubernetes audit evidence | Blocked | No API-server audit evidence established; Git is not an audit of out-of-band changes |
 | SMTP/email | Blocked | Live config still uses `smtp.example.org` and `admin@example.org`; relay/auth/CA/firewall unknown |
 | Capacity | Unproven | One sample is 59% memory on both workers; no sustained window or A/B placement proof |
@@ -210,11 +210,28 @@ at a time. The seed and reset path is complete; the real-Invenio harness is bein
 built. Formal collection still requires experiment-stack provisioning, audit
 evidence, capacity, and a post-seed recovery drill.
 
+## Experiment harness status
+
+- The real-Invenio sequential-arm harness is merged in the thesis repository at
+  `experiments/live/`; 80 offline tests pass.
+- Dry-run scenarios emit planned mutations with blank timings/R1 and perform no
+  `kubectl`/HTTP calls.
+- Live mode requires `--live`, `--confirm-single-stack`, an explicit
+  namespace/app, `INVENIO_TOKEN`, a frozen source revision, and a render digest.
+- The imperative arm pauses and restores both `apps` and `invenio-bootstrap` in
+  `finally`; quarantine cleanup is ownership-checked.
+- A live pilot attempt on 2026-10-27 failed closed before injection: the seed
+  draft endpoint returned HTTP 403. No workload state changed; `invenio-web`
+  remained at 2/2 replicas. Do not retry the live path until a valid token and
+  the formal seed/namespace gates are available. The production `invenio`
+  namespace is not a formal arm environment.
+
 ## Next evidence gates
 
 1. **2026-11-01 03:00 UTC** — verify the weekly Velero run has no duplicate PVBs and
    the `VeleroScheduledBackupFailed` alert clears.
-2. Finish and pilot-test the real-Invenio sequential-arm harness.
+2. Pilot-test the real-Invenio sequential-arm harness on an approved, isolated
+   `exp-*` stack (not production `invenio`).
 3. Provision or explicitly approve the experiment namespace/stack ownership model.
 4. Run a post-seed isolated recovery drill (database + seed file).
 5. Obtain audit/SMTP/capacity/NTP/maintenance evidence from university IT.
