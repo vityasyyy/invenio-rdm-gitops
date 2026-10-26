@@ -8,9 +8,11 @@ metadata:
   namespace: minio
   annotations:
     argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded,HookFailed
     argocd.argoproj.io/sync-wave: "3"
 spec:
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 300
   backoffLimit: 6
   template:
     metadata:

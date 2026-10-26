@@ -12,10 +12,11 @@ metadata:
   namespace: invenio
   annotations:
     argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded,HookFailed
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 300
   template:
     metadata:
       labels:
