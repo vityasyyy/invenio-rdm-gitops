@@ -76,10 +76,48 @@ verified incomplete initial setup. A routine `OutOfSync` repair must not become 
 implicit fixture import, reindex or queue declaration. The old hook's broad `|| echo`
 and `|| true` handling hid those distinctions and is intentionally removed.
 
-Observed live drift: the default file location is currently `s3://invenio-rdm/files/`,
-while the old setup command expected a local `$INVENIO_INSTANCE_PATH/data` path.
-Verification therefore checks that a default location exists rather than assuming
-which backend is correct; changing the backend is a separate data migration.
+The default file location is intentionally `s3://invenio-rdm/files/`. Verification
+checks that a default location exists rather than assuming which backend is correct;
+changing the backend is a separate data migration.
+
+## Declarative changes and exceptions
+
+Routine desired-state changes go through Git and ArgoCD. All 18 Applications use
+automated sync and self-heal; `argocd-self` and `sealed-secrets` intentionally have
+`prune: false`. Do not use `kubectl rollout restart`, `kubectl apply`, or manual
+Argo sync for a normal change.
+
+Deliberate imperative exceptions are bounded and documented:
+
+- first cluster/ArgoCD bootstrap (`scripts/bootstrap-infra.sh`);
+- one-off full initialization/migrations
+  (`k8s/apps/invenio/initialization/`);
+- secret creation, rotation and revocation, which must never be in Git;
+- data operations such as seed/reset and restore;
+- break-glass recovery of a stuck Argo operation or hook.
+
+An exception is not a routine repair. Record the reason and evidence.
+
+## Configuration changes
+
+The non-secret application config lives in
+`k8s/apps/invenio/config/app-config.env`. The shared `config` Component runs it
+through `configMapGenerator`; a content change produces a new
+`invenio-app-config-<hash>` name and updates every `envFrom` reference, so ArgoCD
+rolls web, worker and scheduler. Never force a rollout manually; if Argo is
+OutOfSync, inspect the Application and the rendered diff.
+
+## Orphan file cleanup
+
+`invenio-orphan-cleanup` runs daily at 04:15. It derives live S3 URIs from
+`files_object` references, removes unreferenced objects under `invenio-rdm/files`
+with single-object `rm_file()` calls, then clears orphan `FileInstance` rows with
+`clear_orphaned_files(force_delete_check=True)`.
+
+Do not use `s3fs.rm()` for this bucket: MinIO rejects its bulk delete with
+`MissingContentMD5`. The packaged CronJob was verified with a one-off Job after a
+draft delete; it removed one orphan and preserved the seed. Check its Job logs and
+the next scheduled run after changes.
 
 ## Metrics and logs
 
