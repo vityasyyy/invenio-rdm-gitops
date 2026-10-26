@@ -5,3 +5,4 @@ resources:
   - resources/minio-credentials-secret.yaml
   - resources/create-bucket-job.yaml
   - resources/minio-console-ingressroute.yaml
+  - resources/minio-s3-ingressroute.yaml
