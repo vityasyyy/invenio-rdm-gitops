@@ -1,0 +1,29 @@
+# Scrape the ArgoCD application-controller metrics endpoint (:8082).
+#
+# The upstream install ships the `argocd-metrics` Service with the
+# `app.kubernetes.io/component: metrics` label. The kustomize `labels`
+# transformer renames its name label to `argocd`, and ArgoCD adds the
+# `app.kubernetes.io/instance: argocd-self` tracking label when the
+# `argocd-self` Application owns the object. Select all three so this monitor
+# cannot accidentally capture another metrics Service in the namespace.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: argocd-metrics
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: metrics
+      app.kubernetes.io/name: argocd
+      app.kubernetes.io/instance: argocd-self
+  namespaceSelector:
+    matchNames:
+      - argocd
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

@@ -1,0 +1,106 @@
+rule_files: []
+evaluation_interval: 1m
+
+tests:
+  - name: synced healthy applications with no operation stay quiet
+    interval: 1m
+    input_series:
+      - series: 'argocd_app_info{name="invenio-bootstrap",namespace="argocd",project="invenio",sync_status="Synced",health_status="Healthy",operation=""}'
+        values: '1+0x30'
+      - series: 'argocd_app_info{name="monitoring",namespace="argocd",project="default",sync_status="Synced",health_status="Healthy"}'
+        values: '1+0x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: ArgoCDAppNotSynced
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: ArgoCDAppUnhealthy
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: ArgoCDOperationStuck
+        exp_alerts: []
+
+  - name: out of sync application fires after ten minutes
+    interval: 1m
+    input_series:
+      - series: 'argocd_app_info{name="invenio-bootstrap",namespace="argocd",project="invenio",sync_status="OutOfSync",health_status="Healthy",operation=""}'
+        values: '1+0x15'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ArgoCDAppNotSynced
+        exp_alerts:
+          - exp_labels:
+              name: invenio-bootstrap
+              namespace: argocd
+              project: invenio
+              sync_status: OutOfSync
+              health_status: Healthy
+              severity: warning
+            exp_annotations:
+              summary: "ArgoCD application invenio-bootstrap is not synced"
+              description: "Application invenio-bootstrap in project invenio (namespace argocd) reports sync_status=OutOfSync for more than 10m. Inspect the Application diff and sync result."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#delivery-and-reconciliation"
+              dashboard: "https://grafana.vityasy.me/d/gitops-reconciliation"
+      - eval_time: 15m
+        alertname: ArgoCDAppUnhealthy
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ArgoCDOperationStuck
+        exp_alerts: []
+
+  - name: unhealthy application fires after ten minutes
+    interval: 1m
+    input_series:
+      - series: 'argocd_app_info{name="invenio-bootstrap",namespace="argocd",project="invenio",sync_status="Synced",health_status="Degraded",operation=""}'
+        values: '1+0x15'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ArgoCDAppUnhealthy
+        exp_alerts:
+          - exp_labels:
+              name: invenio-bootstrap
+              namespace: argocd
+              project: invenio
+              sync_status: Synced
+              health_status: Degraded
+              severity: warning
+            exp_annotations:
+              summary: "ArgoCD application invenio-bootstrap is unhealthy"
+              description: "Application invenio-bootstrap in project invenio (namespace argocd) reports health_status=Degraded for more than 10m. Inspect workload health and Application events."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#delivery-and-reconciliation"
+              dashboard: "https://grafana.vityasy.me/d/gitops-reconciliation"
+      - eval_time: 15m
+        alertname: ArgoCDAppNotSynced
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ArgoCDOperationStuck
+        exp_alerts: []
+
+  - name: running operation fires after twenty minutes
+    interval: 1m
+    input_series:
+      - series: 'argocd_app_info{name="invenio-bootstrap",namespace="argocd",project="invenio",sync_status="Synced",health_status="Healthy",operation="Running"}'
+        values: '1+0x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: ArgoCDOperationStuck
+        exp_alerts:
+          - exp_labels:
+              name: invenio-bootstrap
+              namespace: argocd
+              project: invenio
+              sync_status: Synced
+              health_status: Healthy
+              operation: Running
+              severity: warning
+            exp_annotations:
+              summary: "ArgoCD operation for invenio-bootstrap is stuck running"
+              description: "Application invenio-bootstrap in project invenio (namespace argocd) has reported operation=Running for more than 20m. Inspect the operation, hook Jobs, and application-controller logs."
+              runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#delivery-and-reconciliation"
+              dashboard: "https://grafana.vityasy.me/d/gitops-reconciliation"
+      - eval_time: 25m
+        alertname: ArgoCDAppNotSynced
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: ArgoCDAppUnhealthy
+        exp_alerts: []

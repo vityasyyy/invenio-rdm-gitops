@@ -52,6 +52,11 @@ data:
           "title": "04 Application Logs",
           "url": "/d/invenio-logs",
           "type": "link"
+        },
+        {
+          "title": "05 GitOps & Reconciliation",
+          "url": "/d/gitops-reconciliation",
+          "type": "link"
         }
       ],
       "liveNow": false,
@@ -840,6 +845,11 @@ data:
           "title": "04 Application Logs",
           "url": "/d/invenio-logs",
           "type": "link"
+        },
+        {
+          "title": "05 GitOps & Reconciliation",
+          "url": "/d/gitops-reconciliation",
+          "type": "link"
         }
       ],
       "liveNow": false,
@@ -905,7 +915,7 @@ data:
               "refId": "A"
             }
           ],
-          "title": "p95 latency per route (s)",
+          "title": "p95 latency all routes (s)",
           "type": "stat"
         },
         {
@@ -1276,6 +1286,156 @@ data:
           ],
           "title": "PG replication lag",
           "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 12
+          },
+          "id": 8,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum by (exported_service) (rate(traefik_service_requests_total{exported_service=~\"invenio-invenio-.*\"}[5m]))",
+              "refId": "A",
+              "legendFormat": "{{exported_service}}"
+            }
+          ],
+          "title": "Per-route request rate",
+          "type": "timeseries",
+          "description": "Requests per second per Traefik exported_service. Routes are labelled by the Traefik service name, not by Invenio endpoint path."
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 12
+          },
+          "id": 9,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "histogram_quantile(0.95, sum by (le, exported_service) (rate(traefik_service_request_duration_seconds_bucket{exported_service=~\"invenio-invenio-.*\"}[5m])))",
+              "refId": "A",
+              "legendFormat": "{{exported_service}}"
+            }
+          ],
+          "title": "Per-route p95 latency",
+          "type": "timeseries",
+          "description": "p95 over the 5m bucket window, grouped by exported_service. Bucket boundaries limit tail precision."
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 12
+          },
+          "id": 10,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "100 * sum by (exported_service) (rate(traefik_service_requests_total{exported_service=~\"invenio-invenio-.*\",code=~\"5..\"}[5m])) / clamp_min(sum by (exported_service) (rate(traefik_service_requests_total{exported_service=~\"invenio-invenio-.*\"}[5m])), 0.001)",
+              "refId": "A",
+              "legendFormat": "{{exported_service}}"
+            }
+          ],
+          "title": "Per-route 5xx ratio",
+          "type": "timeseries",
+          "description": "5xx percentage per exported_service. A missing series means that route has no traffic, not zero errors."
         }
       ],
       "refresh": "30s",
@@ -1356,6 +1516,11 @@ data:
         {
           "title": "04 Application Logs",
           "url": "/d/invenio-logs",
+          "type": "link"
+        },
+        {
+          "title": "05 GitOps & Reconciliation",
+          "url": "/d/gitops-reconciliation",
           "type": "link"
         }
       ],
@@ -2164,6 +2329,75 @@ data:
           ],
           "title": "Backup cleanup (24h)",
           "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "description": "Velero restore counters over 24h. Restores are run manually for drills; zero attempts is not proof of recoverability.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 24,
+            "x": 0,
+            "y": 30
+          },
+          "id": 14,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto"
+          },
+          "pluginVersion": "11.0.0",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(increase(velero_restore_attempt_total[24h]))",
+              "legendFormat": "restore attempts",
+              "refId": "A"
+            },
+            {
+              "editorMode": "code",
+              "expr": "sum(increase(velero_restore_success_total[24h]))",
+              "legendFormat": "restores succeeded",
+              "refId": "B"
+            },
+            {
+              "editorMode": "code",
+              "expr": "sum(increase(velero_restore_failed_total[24h])) + sum(increase(velero_restore_partial_failure_total[24h]))",
+              "legendFormat": "restores failed/partial",
+              "refId": "C"
+            }
+          ],
+          "title": "Restore evidence (24h)",
+          "type": "stat"
         }
       ],
       "refresh": "30s",
@@ -2244,6 +2478,11 @@ data:
         {
           "title": "04 Application Logs",
           "url": "/d/invenio-logs",
+          "type": "link"
+        },
+        {
+          "title": "05 GitOps & Reconciliation",
+          "url": "/d/gitops-reconciliation",
           "type": "link"
         }
       ],
@@ -2621,6 +2860,233 @@ data:
           "title": "Pipecheck Job succeeded",
           "type": "stat",
           "description": "0/missing until the PostSync pipecheck Job first runs after sync (T5); then 1."
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 3
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 12,
+            "y": 4
+          },
+          "id": 7,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value"
+          },
+          "pluginVersion": "11.0.0",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "count(kube_pod_status_phase{phase=\"Pending\"} == 1)",
+              "refId": "A",
+              "legendFormat": "pending"
+            }
+          ],
+          "title": "Pending pods",
+          "type": "stat",
+          "description": "Pods whose phase is Pending, cluster-wide. Check scheduling events and capacity before deleting anything."
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 8
+          },
+          "id": 8,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(kube_pod_container_resource_requests{resource=\"cpu\",unit=\"core\"})",
+              "refId": "A",
+              "legendFormat": "requests (cores)"
+            },
+            {
+              "editorMode": "code",
+              "expr": "sum(kube_node_status_allocatable{resource=\"cpu\",unit=\"core\"})",
+              "refId": "B",
+              "legendFormat": "allocatable (cores)"
+            }
+          ],
+          "title": "CPU requests vs allocatable",
+          "type": "timeseries",
+          "description": "Cluster-wide container CPU requests against allocatable CPU. Requests are scheduling reservations, not measured usage."
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 8
+          },
+          "id": 9,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(kube_pod_container_resource_requests{resource=\"memory\",unit=\"byte\"})",
+              "refId": "A",
+              "legendFormat": "requests (bytes)"
+            },
+            {
+              "editorMode": "code",
+              "expr": "sum(kube_node_status_allocatable{resource=\"memory\",unit=\"byte\"})",
+              "refId": "B",
+              "legendFormat": "allocatable (bytes)"
+            }
+          ],
+          "title": "Memory requests vs allocatable",
+          "type": "timeseries",
+          "description": "Cluster-wide container memory requests against allocatable memory. Requests are scheduling reservations, not measured usage."
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 16
+          },
+          "id": 10,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "100 * (1 - max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_available_bytes) / clamp_min(max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_capacity_bytes), 1))",
+              "refId": "A",
+              "legendFormat": "{{namespace}}/{{persistentvolumeclaim}}"
+            }
+          ],
+          "title": "PVC usage % by claim",
+          "type": "timeseries",
+          "description": "Per-PVC usage from kubelet volume stats. NFS capacity may not enforce the PVC request; use the actual filesystem evidence for storage decisions."
         }
       ],
       "refresh": "30s",
@@ -2701,6 +3167,11 @@ data:
           "title": "03 Platform",
           "url": "/d/platform-health",
           "type": "link"
+        },
+        {
+          "title": "05 GitOps & Reconciliation",
+          "url": "/d/gitops-reconciliation",
+          "type": "link"
         }
       ],
       "panels": [
@@ -2740,6 +3211,72 @@ data:
           ],
           "title": "Application logs",
           "type": "logs"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 22
+          },
+          "id": 2,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "editorMode": "code",
+              "expr": "sum(count_over_time({namespace=~\"$namespace\"} [5m]))",
+              "legendFormat": "all lines / 5m",
+              "queryType": "range",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "editorMode": "code",
+              "expr": "sum(count_over_time({namespace=~\"$namespace\"} |~ \"(?i)error|exception|traceback\" [5m]))",
+              "legendFormat": "error-like / 5m",
+              "queryType": "range",
+              "refId": "B"
+            }
+          ],
+          "title": "Bounded error-like and ingestion rate",
+          "type": "timeseries",
+          "description": "Bounded 5m counts in the selected namespace. Error-like lines are a text match, not a structured severity; quiet traffic and missing data are not zero errors."
         }
       ],
       "refresh": "30s",
@@ -2804,4 +3341,907 @@ data:
       "title": "04 Application Logs",
       "uid": "invenio-logs",
       "version": 1
+    }
+---
+# yamllint disable-file
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-gitops
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: InvenioRDM
+data:
+  gitops.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": {
+              "type": "grafana",
+              "uid": "-- Grafana --"
+            },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "description": "R1-style consistency evidence, not R2/R3 measurement. ArgoCD application sync/health and kube-state-metrics deployment, HPA, config and hook-Job state show declared-versus-observed reconciliation. Absent series mean the metric is not scraped, not that the object is healthy.",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [
+        {
+          "title": "00 InvenioRDM Overview",
+          "url": "/d/overview-invenio-rdm",
+          "type": "link"
+        },
+        {
+          "title": "01 Invenio App",
+          "url": "/d/invenio-app",
+          "type": "link"
+        },
+        {
+          "title": "02 Data & Backups",
+          "url": "/d/data-backups",
+          "type": "link"
+        },
+        {
+          "title": "03 Platform",
+          "url": "/d/platform-health",
+          "type": "link"
+        },
+        {
+          "title": "04 Application Logs",
+          "url": "/d/invenio-logs",
+          "type": "link"
+        }
+      ],
+      "liveNow": false,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 3
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 0
+          },
+          "id": 1,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value"
+          },
+          "pluginVersion": "11.0.0",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "count(argocd_app_info{sync_status!=\"Synced\"})",
+              "refId": "A",
+              "legendFormat": "out of sync"
+            }
+          ],
+          "title": "Argo apps out of sync",
+          "type": "stat",
+          "description": "Applications whose argocd_app_info sync_status is not Synced. No data means Argo metrics are not scraped."
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 2
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 6,
+            "y": 0
+          },
+          "id": 2,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto"
+          },
+          "pluginVersion": "11.0.0",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "count(argocd_app_info{health_status=\"Healthy\"})",
+              "refId": "A",
+              "legendFormat": "healthy"
+            },
+            {
+              "editorMode": "code",
+              "expr": "count(argocd_app_info)",
+              "refId": "B",
+              "legendFormat": "total"
+            }
+          ],
+          "title": "Argo apps healthy / total",
+          "type": "stat",
+          "description": "Healthy applications against all applications discovered by argocd_app_info."
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 12,
+            "y": 0
+          },
+          "id": 3,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value"
+          },
+          "pluginVersion": "11.0.0",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "max(kube_job_status_succeeded{namespace=\"invenio\",job_name=~\"invenio-setup.*\"})",
+              "refId": "A",
+              "legendFormat": "succeeded"
+            }
+          ],
+          "title": "Hook Job succeeded",
+          "type": "stat",
+          "description": "Latest PostSync hook Job present in kube-state-metrics. Hook Jobs are ephemeral; no data is not proof of failure."
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 18,
+            "y": 0
+          },
+          "id": 4,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value"
+          },
+          "pluginVersion": "11.0.0",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "max(kube_job_status_failed{namespace=\"invenio\",job_name=~\"invenio-setup.*\"})",
+              "refId": "A",
+              "legendFormat": "failed"
+            }
+          ],
+          "title": "Hook Job failed",
+          "type": "stat",
+          "description": "Latest PostSync hook Job failure count present in kube-state-metrics. Inspect Job logs and Application events."
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Sync"
+                },
+                "properties": [
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "Synced": {
+                            "color": "green",
+                            "index": 0
+                          },
+                          "OutOfSync": {
+                            "color": "orange",
+                            "index": 1
+                          },
+                          "Unknown": {
+                            "color": "red",
+                            "index": 2
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Health"
+                },
+                "properties": [
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "Healthy": {
+                            "color": "green",
+                            "index": 0
+                          },
+                          "Progressing": {
+                            "color": "orange",
+                            "index": 1
+                          },
+                          "Degraded": {
+                            "color": "red",
+                            "index": 2
+                          },
+                          "Missing": {
+                            "color": "red",
+                            "index": 3
+                          },
+                          "Unknown": {
+                            "color": "red",
+                            "index": 4
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Operation"
+                },
+                "properties": [
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "Running": {
+                            "color": "orange",
+                            "index": 0
+                          },
+                          "Terminating": {
+                            "color": "orange",
+                            "index": 1
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 12,
+            "x": 0,
+            "y": 4
+          },
+          "id": 5,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true,
+            "sortBy": [
+              {
+                "desc": false,
+                "displayName": "Application"
+              }
+            ]
+          },
+          "pluginVersion": "11.0.0",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "argocd_app_info",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Argo application status",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Value": true,
+                  "container": true,
+                  "dest_namespace": true,
+                  "dest_server": true,
+                  "endpoint": true,
+                  "instance": true,
+                  "job": true,
+                  "namespace": true,
+                  "pod": true,
+                  "repo": true,
+                  "service": true
+                },
+                "renameByName": {
+                  "health_status": "Health",
+                  "name": "Application",
+                  "operation": "Operation",
+                  "project": "Project",
+                  "sync_status": "Sync"
+                }
+              }
+            }
+          ],
+          "type": "table",
+          "description": "Live argocd_app_info rows by application. Empty Operation means no operation is currently recorded."
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 12,
+            "x": 12,
+            "y": 4
+          },
+          "id": 6,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "kube_deployment_status_replicas_available{namespace=\"invenio\",deployment=~\"invenio-web|invenio-worker|invenio-scheduler\"}",
+              "refId": "A",
+              "legendFormat": "{{deployment}} available"
+            },
+            {
+              "editorMode": "code",
+              "expr": "kube_deployment_spec_replicas{namespace=\"invenio\",deployment=~\"invenio-web|invenio-worker|invenio-scheduler\"}",
+              "refId": "B",
+              "legendFormat": "{{deployment}} desired"
+            }
+          ],
+          "title": "Deployment availability",
+          "type": "timeseries",
+          "description": "Available versus desired replicas for the Invenio Deployments. HPA changes the desired count; a persistent gap is rollout or availability evidence."
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 14
+          },
+          "id": 7,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "kube_horizontalpodautoscaler_status_current_replicas{namespace=\"invenio\"}",
+              "refId": "A",
+              "legendFormat": "{{horizontalpodautoscaler}} current"
+            },
+            {
+              "editorMode": "code",
+              "expr": "kube_horizontalpodautoscaler_status_desired_replicas{namespace=\"invenio\"}",
+              "refId": "B",
+              "legendFormat": "{{horizontalpodautoscaler}} desired"
+            },
+            {
+              "editorMode": "code",
+              "expr": "kube_horizontalpodautoscaler_spec_max_replicas{namespace=\"invenio\"}",
+              "refId": "C",
+              "legendFormat": "{{horizontalpodautoscaler}} max"
+            }
+          ],
+          "title": "HPA current / desired / max",
+          "type": "timeseries",
+          "description": "HPA current, desired and maximum replica counts from kube-state-metrics. Desired is a controller target, not proof the Deployment reached it."
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 14
+          },
+          "id": 8,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true,
+            "sortBy": [
+              {
+                "desc": false,
+                "displayName": "ConfigMap"
+              }
+            ]
+          },
+          "pluginVersion": "11.0.0",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "kube_configmap_info{namespace=\"invenio\",configmap=~\"invenio-app-config-.*\"}",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Live invenio-app-config ConfigMaps",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Value": true,
+                  "container": true,
+                  "endpoint": true,
+                  "instance": true,
+                  "job": true,
+                  "namespace": true,
+                  "pod": true,
+                  "service": true
+                },
+                "renameByName": {
+                  "configmap": "ConfigMap"
+                }
+              }
+            }
+          ],
+          "type": "table",
+          "description": "Generated config ConfigMap names currently present. The hash changes when Git config changes; an old name can remain until rollout or cleanup."
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 22
+          },
+          "id": 9,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true
+          },
+          "pluginVersion": "11.0.0",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "kube_job_status_succeeded{namespace=\"invenio\",job_name=~\"invenio-setup.*\"}",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "A"
+            },
+            {
+              "editorMode": "code",
+              "expr": "kube_job_status_failed{namespace=\"invenio\",job_name=~\"invenio-setup.*\"}",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "B"
+            },
+            {
+              "editorMode": "code",
+              "expr": "(time() - kube_job_status_start_time{namespace=\"invenio\",job_name=~\"invenio-setup.*\"})",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "C"
+            },
+            {
+              "editorMode": "code",
+              "expr": "(time() - kube_job_status_completion_time{namespace=\"invenio\",job_name=~\"invenio-setup.*\"})",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "D"
+            }
+          ],
+          "title": "Recent hook Job evidence",
+          "transformations": [
+            {
+              "id": "joinByField",
+              "options": {
+                "byField": "job_name",
+                "mode": "outerTabular"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Time 1": true,
+                  "Time 2": true,
+                  "Time 3": true,
+                  "container": true,
+                  "endpoint": true,
+                  "instance": true,
+                  "job": true,
+                  "namespace": true,
+                  "pod": true,
+                  "service": true
+                },
+                "renameByName": {
+                  "Value #A": "Succeeded",
+                  "Value #B": "Failed",
+                  "Value #C": "Started (s ago)",
+                  "Value #D": "Completed (s ago)",
+                  "job_name": "Job"
+                }
+              }
+            }
+          ],
+          "type": "table",
+          "description": "Hook Jobs are deleted by Argo's hook-delete-policy and TTL, so this table only shows Jobs present at the last kube-state-metrics scrape. No row is not proof of failure."
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "style": "dark",
+      "tags": [
+        "gitops",
+        "argocd",
+        "reconciliation"
+      ],
+      "templating": {
+        "list": [
+          {
+            "current": {
+              "selected": true,
+              "text": "Prometheus",
+              "value": "Prometheus"
+            },
+            "hide": 0,
+            "includeAll": false,
+            "label": "Datasource",
+            "multi": false,
+            "name": "datasource",
+            "options": [],
+            "query": "prometheus",
+            "refresh": 1,
+            "regex": "",
+            "skipUrlSync": false,
+            "type": "datasource"
+          }
+        ]
+      },
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "timepicker": {},
+      "timezone": "",
+      "title": "05 GitOps & Reconciliation",
+      "uid": "gitops-reconciliation",
+      "version": 1,
+      "weekStart": ""
     }

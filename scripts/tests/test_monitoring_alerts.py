@@ -18,6 +18,11 @@ EXPECTED_RULES = {
         "TraefikServiceDown",
         "InvenioPodRestartHigh",
     }),
+    "argocd": sorted({
+        "ArgoCDAppNotSynced",
+        "ArgoCDAppUnhealthy",
+        "ArgoCDOperationStuck",
+    }),
     "data-backups": sorted({
         "VeleroBackupFailed",
         "VeleroBackupMetricsMissing",

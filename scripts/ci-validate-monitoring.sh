@@ -5,7 +5,7 @@
 # Discord, issue #110; messages must render empty-annotation fallbacks), and the
 # absence of the deleted bridge stack. Issue #105 adds: invenio-SM absence, matchers-only routing,
 # and source-key pins for every new scrape (velero, cloudflared, minio,
-# opensearch, traefik, postgres PodMonitor).
+# opensearch, traefik, argocd, postgres PodMonitor).
 # Exit non-zero on violation.
 set -euo pipefail
 
@@ -26,6 +26,7 @@ dash_path = os.path.join(mon, "resources", "grafana-dashboards.yaml")
 docs = [d for d in yaml.safe_load_all(open(dash_path)) if d]
 panels_seen = 0
 dashboard_exprs = []
+dashboard_uids = set()
 def _exprs(value):
     if isinstance(value, dict):
         for key, item in value.items():
@@ -50,13 +51,16 @@ for cm in docs:
             continue
         panels_seen += 1
         dashboard_exprs.extend(_exprs(d))
+        dashboard_uids.add(d.get("uid"))
         for field in ("uid", "title", "tags"):
             if field not in d:
                 err(f"{meta.get('name')}/{key}: missing {field!r}")
-        if d.get("title", "")[:2] not in ("00", "01", "02", "03", "04"):
-            err(f"{meta.get('name')}/{key}: title {d.get('title')!r} must start with 00/01/02/03/04")
-if panels_seen != 5:
-    err(f"want exactly 5 dashboards, found {panels_seen}")
+        if d.get("title", "")[:2] not in ("00", "01", "02", "03", "04", "05"):
+            err(f"{meta.get('name')}/{key}: title {d.get('title')!r} must start with 00/01/02/03/04/05")
+if panels_seen != 6:
+    err(f"want exactly 6 dashboards, found {panels_seen}")
+if "gitops-reconciliation" not in dashboard_uids:
+    err("missing dashboard uid 'gitops-reconciliation' (05 GitOps & Reconciliation)")
 if any("velero_backup_timestamp" in expr for expr in dashboard_exprs):
     err("Grafana dashboard query uses nonexistent velero_backup_timestamp")
 if not any("kube_customresource_velero_backup_completion_timestamp" in expr for expr in dashboard_exprs):
@@ -112,6 +116,38 @@ for group in rules:
             err(f"alert {name}: missing anti-flap 'for:'")
 if n_alerts == 0:
     err("no alert rules found")
+
+# Argo/GitOps alerts: pin the exact expressions, anti-flap windows and severity
+# so a dashboard-only scrape cannot silently ship without actionable alerts.
+argo_group = next((group for group in rules if group.get("name") == "argocd"), None)
+if argo_group is None:
+    err("alerts.yaml must define the argocd group")
+else:
+    expected_argo = {
+        "ArgoCDAppNotSynced": ('argocd_app_info{sync_status!="Synced"} == 1', "10m", "warning"),
+        "ArgoCDAppUnhealthy": ('argocd_app_info{health_status!="Healthy"} == 1', "10m", "warning"),
+        "ArgoCDOperationStuck": ('argocd_app_info{operation="Running"} == 1', "20m", "warning"),
+    }
+    argo_rules = {
+        rule.get("alert"): rule
+        for rule in argo_group.get("rules", [])
+        if rule.get("alert")
+    }
+    if set(argo_rules) != set(expected_argo):
+        err(f"argocd alert rules are {sorted(argo_rules)}, want {sorted(expected_argo)}")
+    for name, (expr, duration, severity) in expected_argo.items():
+        rule = argo_rules.get(name)
+        if rule is None:
+            continue
+        if rule.get("expr") != expr:
+            err(f"{name}: expr must be {expr!r}")
+        if rule.get("for") != duration:
+            err(f"{name}: for must be {duration!r}")
+        if (rule.get("labels") or {}).get("severity") != severity:
+            err(f"{name}: severity must be {severity!r}")
+        description = (rule.get("annotations") or {}).get("description", "")
+        if "{{ $labels.name }}" not in description:
+            err(f"{name}: description must name the application label")
 
 values = yaml.safe_load(open(os.path.join(mon, "values.yaml")))
 node_exporter_tolerations = (values.get("prometheus-node-exporter") or {}).get("tolerations") or []
@@ -346,6 +382,34 @@ elif (trsm["spec"].get("selector", {}).get("matchLabels") or {}).get("app.kubern
 if "traefik-servicemonitor.yaml" not in kus:
     err("kustomization.yaml must list traefik-servicemonitor.yaml")
 
+# ArgoCD application-controller scrape. The selector uses the live Service
+# labels: the kustomize labels transformer owns `name: argocd`, while ArgoCD's
+# tracking label supplies `instance: argocd-self`.
+argosm = _load("k8s/infra/monitoring/resources/argocd-servicemonitor.yaml")
+if argosm.get("kind") != "ServiceMonitor" or (argosm.get("metadata", {}).get("labels") or {}).get("release") != "monitoring":
+    err("argocd-servicemonitor.yaml must be a ServiceMonitor labelled release: monitoring")
+else:
+    argo_spec = argosm.get("spec", {})
+    if (argo_spec.get("selector", {}).get("matchLabels") or {}) != {
+        "app.kubernetes.io/component": "metrics",
+        "app.kubernetes.io/name": "argocd",
+        "app.kubernetes.io/instance": "argocd-self",
+    }:
+        err("argocd ServiceMonitor selector must match the argocd-metrics Service labels")
+    if (argo_spec.get("namespaceSelector", {}).get("matchNames") or []) != ["argocd"]:
+        err("argocd ServiceMonitor namespaceSelector.matchNames must be [argocd]")
+    endpoints = argo_spec.get("endpoints") or []
+    if not endpoints:
+        err("argocd ServiceMonitor must define the metrics endpoint")
+    else:
+        endpoint = endpoints[0]
+        if endpoint.get("port") != "metrics" or endpoint.get("path") != "/metrics":
+            err("argocd ServiceMonitor must scrape port metrics at /metrics")
+        if endpoint.get("interval") != "30s" or endpoint.get("scrapeTimeout") != "10s":
+            err("argocd ServiceMonitor must use interval 30s and scrapeTimeout 10s")
+if "argocd-servicemonitor.yaml" not in kus:
+    err("kustomization.yaml must list argocd-servicemonitor.yaml")
+
 # Issue #112: scrape ingress allows (default-deny namespaces).
 velkus = open(os.path.join(REPO_ROOT, "k8s/infra/velero/kustomization.yaml")).read()
 if "velero-scrape-netpol.yaml" not in velkus:
@@ -362,11 +426,43 @@ if "kubernetes.io/metadata.name: monitoring" not in mina:
 # scheduler :10259, etcd :2381). Kube-proxy :10249 deliberately absent — no
 # live targets observed (least-privilege: add only on evidence).
 monallow = open(os.path.join(REPO_ROOT, "k8s/infra/security/resources/network-policies/monitoring-allow.yaml")).read()
-for port in ("8085", "9000", "9100", "9153", "10250", "10257", "10259", "2381"):
+for port in ("8082", "8085", "9000", "9100", "9153", "10250", "10257", "10259", "2381"):
     if f"port: {port}" not in monallow:
         err(f"monitoring-allow.yaml allow-prometheus-egress must include port {port}")
 if "10.17.117.0/24" not in monallow:
     err("monitoring-allow.yaml allow-prometheus-egress must carry the node-subnet ipBlock (issue #119)")
+
+argocd_policies = {
+    doc["metadata"]["name"]: doc
+    for doc in yaml.safe_load_all(open(os.path.join(
+        REPO_ROOT,
+        "k8s/infra/security/resources/network-policies/argocd-allow.yaml",
+    )))
+    if doc
+}
+argo_metrics_policy = argocd_policies.get("allow-monitoring-to-argocd-metrics")
+if argo_metrics_policy is None:
+    err("argocd-allow.yaml must define allow-monitoring-to-argocd-metrics")
+else:
+    argo_spec = argo_metrics_policy.get("spec") or {}
+    if (argo_spec.get("podSelector", {}).get("matchLabels") or {}).get(
+        "app.kubernetes.io/name"
+    ) != "argocd-application-controller":
+        err("argocd metrics policy must select app.kubernetes.io/name: argocd-application-controller")
+    if argo_spec.get("policyTypes") != ["Ingress"]:
+        err("argocd metrics policy must be Ingress-only")
+    ingress = (argo_spec.get("ingress") or [{}])[0]
+    source = (ingress.get("from") or [{}])[0]
+    if (source.get("namespaceSelector", {}).get("matchLabels") or {}).get(
+        "kubernetes.io/metadata.name"
+    ) != "monitoring":
+        err("argocd metrics policy must admit the monitoring namespace")
+    if (source.get("podSelector", {}).get("matchLabels") or {}).get(
+        "app.kubernetes.io/name"
+    ) != "prometheus":
+        err("argocd metrics policy must admit only the Prometheus pod")
+    if ingress.get("ports") != [{"port": 8082, "protocol": "TCP"}]:
+        err("argocd metrics policy must allow only TCP 8082")
 
 # Issue #123: RKE2 binds controller-manager :10257, scheduler :10259 and etcd
 # :2381 to localhost (live `connection refused` 2026-09-15) — the chart must
