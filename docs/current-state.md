@@ -206,33 +206,42 @@ readiness.
 | Formal run approval | Blocked | No unmeasured pilot or formal collection approval |
 
 The proposal now uses sequential automated-imperative and GitOps arms on one stack
-at a time. The seed and reset path is complete; the real-Invenio harness is being
-built. Formal collection still requires experiment-stack provisioning, audit
-evidence, capacity, and a post-seed recovery drill.
+at a time. The seed and reset path is complete; the real-Invenio harness is
+pilot-tested. Formal collection still requires audit evidence, capacity, an
+accepted production-like-stack decision, and a post-seed recovery drill.
 
 ## Experiment harness status
 
 - The real-Invenio sequential-arm harness is merged in the thesis repository at
-  `experiments/live/`; 80 offline tests pass.
+  `experiments/live/`; 84 offline tests pass.
 - Dry-run scenarios emit planned mutations with blank timings/R1 and perform no
   `kubectl`/HTTP calls.
 - Live mode requires `--live`, `--confirm-single-stack`, an explicit
   namespace/app, `INVENIO_TOKEN`, a frozen source revision, and a render digest.
 - The imperative arm pauses and restores both `apps` and `invenio-bootstrap` in
   `finally`; quarantine cleanup is ownership-checked.
-- A live pilot attempt on 2026-10-27 failed closed before injection: the seed
-  draft endpoint returned HTTP 403. No workload state changed; `invenio-web`
-  remained at 2/2 replicas. Do not retry the live path until a valid token and
-  the formal seed/namespace gates are available. The production `invenio`
-  namespace is not a formal arm environment.
+- A 2026-10-27 pilot used the existing production-like `invenio` stack, not an
+  `exp-*` twin. It is **pilot evidence, not formal data**.
+- GitOps pilot results: A observed (HPA detection 1.29s/recovery 19.32s); B
+  observed (ArgoCD 1.19s/17.23s); C observed (ArgoCD 1.28s/65.71s); D/E observed
+  with detection right-censored by the 2s sampler; F right-censored with cleanup
+  OK; G right-censored and not an ArgoCD self-heal case (its annotation is removed
+  by the harness, not Argo).
+- Imperative A observed after the harness fixes (HPA detection 1.30s/recovery
+  23.39s; arm state restored; web 2/2). No seed/record data was changed.
+- The initial live attempts exposed and fixed real harness issues: Cloudflare
+  rejected the default Python User-Agent; the content endpoint rejects
+  `application/octet-stream`; Python forwarded API headers to the presigned MinIO
+  redirect; the sampler shadowed `Thread._stop`; and scenario G's annotation must
+  be cleaned explicitly. None of these are token-scope problems.
 
 ## Next evidence gates
 
 1. **2026-11-01 03:00 UTC** — verify the weekly Velero run has no duplicate PVBs and
    the `VeleroScheduledBackupFailed` alert clears.
-2. Pilot-test the real-Invenio sequential-arm harness on an approved, isolated
-   `exp-*` stack (not production `invenio`).
-3. Provision or explicitly approve the experiment namespace/stack ownership model.
+2. Decide whether the production-like `invenio` stack is acceptable for formal
+   experiments or whether an isolated `exp-*` stack must be provisioned.
+3. Enable RKE2 API audit or explicitly accept the R3 actor limitation.
 4. Run a post-seed isolated recovery drill (database + seed file).
 5. Obtain audit/SMTP/capacity/NTP/maintenance evidence from university IT.
 6. Add an independent copy of the MinIO file/backup data.
