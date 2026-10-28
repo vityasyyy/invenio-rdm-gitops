@@ -1,8 +1,37 @@
 # Current verified cluster state
 
-Verified **2026-10-25 around 09:45 UTC** against `main` at `d7ef120`. This is a
-dated operational snapshot, not a permanent guarantee. Re-run the checks at the end
-before relying on it for an experiment or an incident decision.
+Latest scoped verification: **2026-10-28 around 18:28–18:33 UTC**, worker probe
+rollout at `3c471a3`, described below. The broader baseline sections retain their
+**2026-10-25 around 09:45 UTC** observation against `d7ef120`; they are not all
+re-certified by this scoped rollout. Re-run the relevant checks before relying
+on a dated observation for an experiment or incident decision.
+
+## Worker probe rollout — 2026-10-28
+
+- Helper packaging #196, image delivery #198 and probe activation #197 are
+  merged. The shared pinned image is
+  `sha256:52645b7b3804fca0178d4428994372356669569dd31b560f096615fdf343a357`.
+- Image build/verification `40737568055`, image-delivery Deploy Verify
+  `40742121674` and activation Deploy Verify `40744166618` passed.
+- Invenio was Synced/Healthy with operation Succeeded at `3c471a3`; the three
+  new worker pods were Ready with zero restarts and helper-based probes.
+- Successful readiness probes averaged **0.76–0.82 s** over the first few
+  samples, versus approximately **12–14 s** before. The installed helper also
+  returned exit 0 in 1.013 s. Long-term CPU/memory and replica savings remain
+  unverified.
+- Public `/ping` passed through the deployment smoke test and native curl. The
+  existing harness verified private seed `4ben9-bgh38`: 65,536 bytes and SHA-256
+  `7daca2095d0438260fa849183dfc67faa459fdf4936e1bc91eec6b281b27e4c2`.
+- A post-rollout sample showed web 2/2, worker 3/3 and scheduler 1/1; node memory
+  47/60/55%. These fresh-pod measurements are **not sustained capacity proof**
+  and must not be attributed solely to the probe correction.
+- HPA policy, resources, concurrency, node capacity and the 70% experiment gate
+  were not changed. The incomplete batch remains stopped; instrument/method
+  defects and a warm baseline still block another formal collection. R3 is not
+  measured; off-site copy remains deferred.
+
+See [worker probe findings](worker-probe-findings.md) for the failure history,
+serializer contract, evidence limitations and rollback procedure.
 
 ## Summary
 

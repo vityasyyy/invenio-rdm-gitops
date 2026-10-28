@@ -19,6 +19,20 @@ no-download session, use already-cached charts (`--charts <directory>` containin
 upstream sources explicitly. Do not run remote render commands as an offline test.
 Existing output must be empty to avoid validating stale objects as fresh output.
 
+## Worker health checks
+
+Worker startup/liveness/readiness probes use the image-packaged
+`worker_healthcheck.py`, not a full Invenio import. Success requires the exact
+own-node broker pong; MessagePack/JSON replies are accepted and broker values
+are never printed. The reply wait is not a total connection deadline: kubelet
+`timeoutSeconds` remains the outer execution limit.
+
+For future changes, deliver and verify a helper-bearing image **before** a
+probe command references it. Roll back probe commands independently if needed;
+do not add a silent missing-helper fallback. See
+[worker probe findings](worker-probe-findings.md). Do not infer sustained memory
+savings or experiment readiness from a successful ping alone.
+
 ## Day-to-day checks
 
 ```bash

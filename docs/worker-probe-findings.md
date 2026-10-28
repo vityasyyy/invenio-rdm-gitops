@@ -1,10 +1,36 @@
 # Celery worker probe cost, msgpack replies and idle replica retention
 
-Observed 2026-10-28 on `btd-rke2` with the `invenio` app idle. Read-only
-inspection, Prometheus queries and two owner-approved live checks: the bare CLI
-client failed, the corrected helper source answered once. The fix is prepared in
-two un-deployed stages, described under "Delivered stages" below.
+Investigation observed 2026-10-28 on `btd-rke2` with the `invenio` app idle.
+The bare CLI candidate failed; the corrected helper source passed a separately
+approved check. The owner subsequently approved staged production delivery;
+its scoped verification is recorded below. Original investigation measurements
+and prospective effect estimates are retained as such, not rewritten as results.
 Related: #127 (probe cadence), #193 (idle CPU/memory investigation).
+
+## Production verification — 2026-10-28, 18:28–18:33 UTC
+
+Helper #196, image pin #198 and activation #197 are deployed at Git revision
+`3c471a3` and image digest
+`sha256:52645b7b3804fca0178d4428994372356669569dd31b560f096615fdf343a357`.
+Both relevant Deploy Verify runs passed (`40742121674`, `40744166618`), after
+the build and image verification passed (`40737568055`). All three worker pods
+were Ready with zero restarts and the expected helper commands.
+
+The first observed readiness-duration means were 0.761, 0.787 and 0.819 s,
+with 2–4 successes per pod at that sample. Startup and available liveness
+samples also succeeded. An installed-file own-node ping returned exit 0 in
+1.013 s. This verifies the deployed check, not a six-hour resource improvement.
+The fresh pods used about 347 MiB each at the sample; startup/warm-up and the
+shared image rollout confound any immediate memory-saving comparison.
+
+Original worker performance responses were session-only. The lead subsequently
+archived a reconstruction of the fixed 11:00–17:00 UTC window (15-second steps):
+worker CPU mean 0.141–0.142 cores, working-set medians 362–425 MiB, peaks
+613–668 MiB and probe means 12.29–13.62 s. Exact extrema differ with query and
+sample alignment; the original values below are not claimed independently
+reproduced. Raw requests/responses, derived summary and rollout checks are held
+in the local evidence archive `~/skripsi/experiments/evidence-local/` with
+checksums, not an off-site backup or published dataset.
 
 ## Summary
 
@@ -226,17 +252,17 @@ A fallback probe (`test -x helper || old probe`) would avoid the ordering
 requirement but keeps two probe semantics and can silently mask a missing image,
 so it is not used.
 
-The helper source itself answered once over stdin (see "Live helper check"), but
-the installed-file path and the kubelet exec path are still unverified. After
-the image lands and with a new approval, run:
+The pre-deployment source check alone did not verify packaging. The installed
+path and kubelet probes were subsequently verified under the staged rollout
+approval above. For a future separately approved diagnostic, the command is:
 
 ```
 kubectl exec -n invenio <one-worker-pod> -c worker -- \
   python3 /opt/invenio/var/instance/worker_healthcheck.py 15
 ```
 
-Expect exit 0 and no output. That is the in-image check; the earlier approvals
-are used up.
+Expect exit 0 and no output. Do not use a successful manual ping as a substitute
+for kubelet probe results, deployment health or sustained resource measurements.
 
 ## Expected replica outcome (reconstructed, not a guarantee)
 
