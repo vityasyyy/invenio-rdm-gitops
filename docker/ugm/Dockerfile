@@ -22,6 +22,7 @@ RUN pipenv install --deploy --system
 
 COPY ./docker/ugm/uwsgi_ui.ini ./docker/ugm/uwsgi_rest.ini ${INVENIO_INSTANCE_PATH}
 COPY ./docker/ugm/invenio.cfg ${INVENIO_INSTANCE_PATH}
+COPY ./docker/ugm/worker_healthcheck.py ${INVENIO_INSTANCE_PATH}
 COPY ./templates/ ${INVENIO_INSTANCE_PATH}/templates/
 COPY ./app_data/ ${INVENIO_INSTANCE_PATH}/app_data/
 COPY ./translations/ ${INVENIO_INSTANCE_PATH}/translations/
