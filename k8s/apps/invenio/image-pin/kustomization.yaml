@@ -7,4 +7,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: ghcr.io/vityasyyy/invenio-ugm
-    digest: sha256:14de27fa5637c66fe5fec97edd9a7d0e17acb5bcb9e2b4bd5fb4467a42a5b41e
+    digest: sha256:52645b7b3804fca0178d4428994372356669569dd31b560f096615fdf343a357
