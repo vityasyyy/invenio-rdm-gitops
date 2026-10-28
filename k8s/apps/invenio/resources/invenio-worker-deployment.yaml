@@ -92,18 +92,14 @@ spec:
             limits:
               cpu: 1000m
               memory: 2Gi
-          # Probe cadence (issue #127): each exec run re-imports the whole app
-          # (~11s CPU measured live) — tight periods burned ~570m/pod with
-          # empty queues. Stretched periods keep failure math equivalent
-          # (startup 12x15s, liveness 3x300s, readiness 3x120s) while cutting
-          # probe burn ~4x. Timeouts stay under periods (readiness timeout
-          # previously exceeded its period, piling overlapping runs).
+          # Broker ping to this pod's own node. Replies are msgpack, which the
+          # Celery CLI's default client refuses, hence the helper script.
           startupProbe:
             exec:
               command:
                 - /bin/sh
                 - -c
-                - celery -A invenio_app.celery inspect ping -d celery@$(hostname) --timeout 30
+                - exec python3 /opt/invenio/var/instance/worker_healthcheck.py 30
             initialDelaySeconds: 30
             periodSeconds: 15
             timeoutSeconds: 30
@@ -113,7 +109,7 @@ spec:
               command:
                 - /bin/sh
                 - -c
-                - celery -A invenio_app.celery inspect ping -d celery@$(hostname) --timeout 30
+                - exec python3 /opt/invenio/var/instance/worker_healthcheck.py 30
             initialDelaySeconds: 30
             periodSeconds: 300
             timeoutSeconds: 25
@@ -123,7 +119,7 @@ spec:
               command:
                 - /bin/sh
                 - -c
-                - celery -A invenio_app.celery inspect ping -d celery@$(hostname) --timeout 15
+                - exec python3 /opt/invenio/var/instance/worker_healthcheck.py 15
             initialDelaySeconds: 60
             periodSeconds: 120
             timeoutSeconds: 25
