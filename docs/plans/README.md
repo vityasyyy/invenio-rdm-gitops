@@ -8,10 +8,31 @@ Plans live in `docs/plans/` — `active/` for work that still has an owner actio
 
 | Plan | Status |
 |---|---|
-| [Codebase improvements](active/2026-05-19-codebase-improvements.md) | Most tasks merged. Open: released-PV cleanup, independent/off-site backup, and the worker-02 kubelet/IT dependency. |
-| [Email confirmation / SMTP](active/2026-09-02-email-confirmation.md) | Mail plumbing deployed, but the live host is still `smtp.example.org`; university relay credentials, CA and firewall details are pending. |
-| [Architecture and DR findings](active/2026-09-03-architecture-and-dr.md) | Failure-mode/DR roadmap. Independent MinIO/NFS recovery and host-maintenance prevention remain open. |
-| [Worker-02 incident](active/2026-10-16-worker02-incident.md) | Software and alert work merged; university IT restart-policy prevention remains external under #145. |
+| [Codebase improvements](active/2026-05-19-codebase-improvements.md) | Historical implementation instructions are not current commands. Current worker probes/logging/layout supersede the old recipes. Retained-PV cleanup requires destructive/storage approval; off-site copy and database HA are deferred, not implemented. Host prevention remains IT-owned. |
+| [Email confirmation / SMTP](active/2026-09-02-email-confirmation.md) | Plumbing deployed; current non-secret source still uses `smtp.example.org:587`. University relay/auth/sender/CA details, narrow egress and end-to-end confirmation proof remain pending. Do not expose credentials or follow historical direct-push recipes. |
+| [Architecture and DR findings](active/2026-09-03-architecture-and-dr.md) | Native database and canary recovery proofs exist; post-seed consistency and actual weekly success remain open in #139. Off-site copy explicitly deferred; shared NFS is one failure domain. Key backup/revocation and IT maintenance confirmation remain owner actions. |
+| [Worker-02 incident](active/2026-10-16-worker02-incident.md) | Incident diagnosis and alert repairs delivered; recurrence prevention still requires university IT policy confirmation and observation under #145. Healthy pods do not prove that host policy changed. |
+
+### Review boundary — 29 October 2026
+
+The operator's five additional untracked planning records were reviewed alongside
+the four tracked plans above. They remain local process material, not additions
+to product history. Their dispositions are:
+
+| Local record | Disposition |
+|---|---|
+| 20 October experiment readiness | Still active: seeded recovery, actual weekly backup success, queue/task progress, precise capacity and method gates. Old load/twin-stack/R3 requirements are not automatically the selected R1/R2 protocol. |
+| 21 October issue reliability wave | Bounded wave complete; delivered repairs and remaining #139/#140/#145/#161 limitations are recorded. Not whole-cluster certification. |
+| 22 October blocker audit | Dated read-only audit complete; findings handed to current instrument/method work and operational issues. Its proposed twin-stack instructions are superseded, not a new provisioning requirement. |
+| 23 October maintainability/observability alignment | Implementation delivered through #170–177; remaining retention verification, seeded recovery and cross-repository method acceptance stay explicit. Do not shorten PostgreSQL's 30-day retention to satisfy the older seven-day proposal. |
+| 29 October worker probe rollout | Image/probe delivery and six-hour background acceptance verified. Task progress, loaded behavior and formal readiness are not implied. |
+
+See [current state](../current-state.md#post-rollout-background-window--2026-10-29)
+and [worker findings](../worker-probe-findings.md) for the dated evidence. No plan
+is declared fully remediated merely because a review or implementation wave
+finished. External credentials/IT/storage actions and the 1 November 03:00 UTC
+Velero result cannot be completed by moving a file. Live fault injection and a
+new formal batch remain separately approved operations.
 
 ## Completed
 
