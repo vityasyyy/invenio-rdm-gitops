@@ -1,0 +1,112 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: invenio-rdm-file-backup
+  namespace: minio
+  labels:
+    app.kubernetes.io/name: invenio-rdm-file-backup
+    app.kubernetes.io/part-of: invenio-rdm
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  # Suspended until destination, credentials, capacity and activation are
+  # separately approved. A manual run is a live backup, not a scheduling proof.
+  suspend: true
+  schedule: "30 2 * * *"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 900
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: invenio-rdm-file-backup
+            app.kubernetes.io/part-of: invenio-rdm
+        spec:
+          restartPolicy: Never
+          serviceAccountName: default
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+            - name: backup
+              configMap:
+                name: s3-file-backup
+                items:
+                  - key: s3-file-backup.py
+                    path: s3-file-backup.py
+                  - key: s3-file-backup-config.json
+                    path: config.json
+            - name: tmp
+              emptyDir: {}
+          containers:
+            - name: backup
+              # Pinned to the observed cached runtime digest; this is independent
+              # of the CNPG Cluster tag. Deployment must still verify the
+              # pullable reference, node cache and placement.
+              image: ghcr.io/cloudnative-pg/postgresql@sha256:99be063781d171d3971089b49c992706bdab9ccbd2b57cdf126c7542773aedfe
+              imagePullPolicy: IfNotPresent
+              command:
+                - python3
+                - /config/s3-file-backup.py
+                - --config
+                - /config/config.json
+                - backup
+              env:
+                - name: HOME
+                  value: /tmp
+                - name: PYTHONDONTWRITEBYTECODE
+                  value: "1"
+                - name: PYTHONUNBUFFERED
+                  value: "1"
+                - name: AWS_EC2_METADATA_DISABLED
+                  value: "true"
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: s3-file-backup-credentials
+                      key: accessKeyId
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: s3-file-backup-credentials
+                      key: secretAccessKey
+                - name: AWS_SESSION_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: s3-file-backup-credentials
+                      key: sessionToken
+                      optional: true
+              volumeMounts:
+                - name: backup
+                  mountPath: /config
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 1000
+                seccompProfile:
+                  type: RuntimeDefault
