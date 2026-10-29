@@ -6,12 +6,18 @@ Plans live in `docs/plans/` — `active/` for work that still has an owner actio
 
 ## Active
 
-| Plan | Status |
-|---|---|
-| [Codebase improvements](active/2026-05-19-codebase-improvements.md) | Historical implementation instructions are not current commands. Current worker probes/logging/layout supersede the old recipes. Retained-PV cleanup requires destructive/storage approval; off-site copy and database HA are deferred, not implemented. Host prevention remains IT-owned. |
-| [Email confirmation / SMTP](active/2026-09-02-email-confirmation.md) | Plumbing deployed; current non-secret source still uses `smtp.example.org:587`. University relay/auth/sender/CA details, narrow egress and end-to-end confirmation proof remain pending. Do not expose credentials or follow historical direct-push recipes. |
-| [Architecture and DR findings](active/2026-09-03-architecture-and-dr.md) | Native database and canary recovery proofs exist; post-seed consistency and actual weekly success remain open in #139. Off-site copy explicitly deferred; shared NFS is one failure domain. Key backup/revocation and IT maintenance confirmation remain owner actions. |
-| [Worker-02 incident](active/2026-10-16-worker02-incident.md) | Incident diagnosis and alert repairs delivered; recurrence prevention still requires university IT policy confirmation and observation under #145. Healthy pods do not prove that host policy changed. |
+Every row below carries an explicit disposition as of 2026-10-29. A **parked**
+plan is not a completed plan: it is deliberately not being worked because it is
+externally blocked, superseded, or deferred by owner decision. Full reasoning and
+reopen conditions are in the local disposition register
+(`2026-10-29-active-plan-dispositions.md`, untracked process material).
+
+| Plan | Disposition | Why it is not being worked now |
+|---|---|---|
+| [Codebase improvements](active/2026-05-19-codebase-improvements.md) | **Parked** | Historical implementation instructions are not current commands; worker probes/logging/layout superseded the old recipes. Only retained-PV cleanup (destructive approval) and off-site copy (owner-deferred) remain. Host prevention is IT-owned. |
+| [Email confirmation / SMTP](active/2026-09-02-email-confirmation.md) | **Parked — external** | Plumbing deployed and verified. University relay/auth/sender/CA details and approved narrow egress are still missing, and email confirmation is not an R1/R2 endpoint. |
+| [Architecture and DR findings](active/2026-09-03-architecture-and-dr.md) | **Parked** | Native database and canary recovery proofs exist. Off-site copy is explicitly deferred and shared NFS is one failure domain; key custody/revocation and storage cleanup are owner/storage actions. |
+| [Worker-02 incident](active/2026-10-16-worker02-incident.md) | **Parked — external** | Diagnosis and alert repairs delivered under #145. Recurrence prevention needs university IT restart/maintenance-policy confirmation; healthy pods do not prove host policy changed. |
 
 ### Review boundary — 29 October 2026
 
@@ -28,7 +34,8 @@ to product history. Their dispositions are:
 | 29 October worker probe rollout | Image/probe delivery and six-hour background acceptance verified. Task progress, loaded behavior and formal readiness are not implied. |
 | 29 October operational S3 design | Machinery and explicitly approved suspended deployment delivered through #204 (`13eb258`). Parent #202/#139 remain active for provisioning, runtime/capacity/telemetry checks, actual backup, activation and isolated recovery. |
 | 29 October S3 implementation brief | Bounded delivery completed and local brief moved to `completed/`; 254 tests with five existing skips, six PR checks and Deploy Verify passed. No backup Jobs ran. |
-| 29 October S3 activation preflight | Read-only operational evidence and maintained-document reconciliation in progress; no provisioning, backup/prune/restore or activation approval. |
+| 29 October S3 activation preflight | Evidence gathered, reviewed, corrected and archived; maintained documentation synchronized through #206. Closed — remaining backup activation/recovery is deliberately parked, not pending analysis. |
+| 29 October S3 private provisioning | Private bucket, dedicated writer identity and Secret provisioned by the owner; Secret key names verified without reading values; one approved manual backup succeeded and the recurring schedule stayed suspended. |
 
 See [current state](../current-state.md#post-rollout-background-window--2026-10-29)
 and [worker findings](../worker-probe-findings.md) for the dated evidence. No plan
