@@ -1,0 +1,11 @@
+{
+  "endpoint": "http://minio.minio.svc.cluster.local:9000",
+  "region": "us-east-1",
+  "sources": [
+    "invenio-rdm",
+    "invenio-rdm-uploads"
+  ],
+  "destination": "invenio-rdm-file-backups",
+  "prefix": "snapshots/",
+  "retention_days": 30
+}

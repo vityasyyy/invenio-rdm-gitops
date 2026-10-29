@@ -167,6 +167,7 @@ not a fixed assignment. See
 | Next Velero run | 2026-11-01 03:00 UTC |
 | 25 October Velero run | `PartiallyFailed`, one error; duplicate per-replica volume opt-ins were removed afterward |
 | Velero alerts | Scheduled-failure critical and stale-backup warning observed 29 October; actual successful weekly execution remains unproven |
+| Operational S3 file backup | Suspended `invenio-rdm-file-backup` command and CronJob are in Git and offline-tested only. Destination bucket, dedicated Secret, activation, retained point and isolated restore proof are pending |
 
 The 25 October run created three `data` and three `archive` PodVolumeBackups. Two
 duplicate `archive` backups on worker-01 were canceled after their expose Pods failed;

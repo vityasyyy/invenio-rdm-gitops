@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - resources/grafana-ingress.yaml
   - resources/alerts.yaml
+  - resources/s3-file-backup-alerts.yaml
   - resources/grafana-admin-secret.yaml
   - resources/grafana-dashboards.yaml
   - resources/networkpolicy-kube-api.yaml

@@ -1,0 +1,109 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: s3-file-backup-alerts
+  namespace: monitoring
+  labels:
+    release: monitoring
+  annotations:
+    argocd.argoproj.io/sync-options: Replace=true
+spec:
+  groups:
+    - name: file-backups
+      rules:
+        - alert: S3FileBackupJobFailed
+          expr: |
+            (
+              max by (namespace, job_name) (
+                kube_job_failed{
+                  namespace="minio",job_name=~"invenio-rdm-file-backup-.*",
+                  condition="true"
+                } == 1
+              )
+              and on (namespace, job_name)
+              (
+                kube_job_owner{
+                  namespace="minio",owner_kind="CronJob",
+                  owner_name="invenio-rdm-file-backup"
+                }
+              )
+            )
+            and on()
+            (
+              kube_cronjob_spec_suspend{
+                namespace="minio",cronjob="invenio-rdm-file-backup"
+              } == 0
+            )
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "S3 file backup job failed"
+            description: >-
+              The owned file-backup Job reports the terminal Failed condition
+              while the CronJob is active. Inspect the Job and command logs; a
+              failed run does not publish a completion marker.
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+            dashboard: "https://grafana.vityasy.me/d/data-backups"
+        - alert: S3FileBackupNeverSucceeded
+          expr: |
+            (
+              absent(
+                kube_job_status_completion_time{
+                  namespace="minio",job_name=~"invenio-rdm-file-backup-.*"
+                }
+                and on (namespace, job_name)
+                kube_job_owner{
+                  namespace="minio",owner_kind="CronJob",
+                  owner_name="invenio-rdm-file-backup"
+                }
+              )
+            )
+            and on()
+            (
+              kube_cronjob_spec_suspend{
+                namespace="minio",cronjob="invenio-rdm-file-backup"
+              } == 0
+            )
+          for: 36h
+          labels:
+            severity: critical
+          annotations:
+            summary: "S3 file backup has never succeeded"
+            description: >-
+              The file-backup CronJob is active but no Job completion timestamp
+              is visible. Verify the CronJob, Job history and kube-state-metrics
+              contract; a missing series is unknown, not a successful run.
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+            dashboard: "https://grafana.vityasy.me/d/data-backups"
+        - alert: S3FileBackupStale
+          expr: |
+            (
+              time() - max(
+                kube_job_status_completion_time{
+                  namespace="minio",job_name=~"invenio-rdm-file-backup-.*"
+                }
+                and on (namespace, job_name)
+                kube_job_owner{
+                  namespace="minio",owner_kind="CronJob",
+                  owner_name="invenio-rdm-file-backup"
+                }
+              ) > 36 * 3600
+            )
+            and on()
+            (
+              kube_cronjob_spec_suspend{
+                namespace="minio",cronjob="invenio-rdm-file-backup"
+              } == 0
+            )
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "S3 file backup success is stale"
+            description: >-
+              The newest visible successful file-backup Job is more than 36
+              hours old while the CronJob is active. Job completion is an
+              outcome proxy, not proof that a retained point restores.
+            runbook_url: "https://github.com/vityasyyy/invenio-rdm-gitops/blob/main/README.md#backup--restore"
+            dashboard: "https://grafana.vityasy.me/d/data-backups"

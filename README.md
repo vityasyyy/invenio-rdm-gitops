@@ -228,20 +228,27 @@ per-directory quotas, and they do not isolate services from NFS-server loss.
 
 ### Backup & Restore
 
-The backup design has three separate pieces:
+The backup design has four separate pieces:
 
 1. Velero backs up selected Kubernetes resources and opt-in volumes (Redis and
    Grafana storage) to MinIO.
 2. CloudNativePG writes PostgreSQL native backups and WAL to MinIO.
 3. Invenio stores uploaded file bytes in MinIO; its local data/archive PVCs are
    empty and are not opted in to Velero.
+4. A **suspended** `invenio-rdm-file-backup` CronJob is intended to copy both
+   application buckets into retained, verified restore points on the same MinIO.
+   It is in Git and offline-tested only: the destination bucket, dedicated
+   credentials, activation, retention and isolated restore proof are still pending.
 
 Velero runs weekly with 28-day retention. CNPG runs daily at 02:00 UTC and retains
-30 days. The 25 October drill verified database recovery, but retention stays at
-30 days until dependency-aware cleanup and file-store compatibility are proven.
-MinIO is also the backup store, so it remains a single failure domain; no off-site
-copy is configured. The 25 October Velero run was `PartiallyFailed`; the next weekly
-run is the evidence gate for the deduplication fix.
+30 days. The file-backup command proposes daily 02:30 UTC restore points with a
+30-day policy, but no schedule or prune is active. The 25 October drill verified
+database recovery, but retention stays at 30 days until dependency-aware cleanup
+and file-store compatibility are proven. MinIO is also the backup store, so it
+remains a single failure domain; no off-site copy is configured. The 25 October
+Velero run was `PartiallyFailed`; the next weekly run is the evidence gate for the
+deduplication fix. See [operational file backup](docs/operations.md#operational-s3-file-backup-suspended)
+and [permission boundaries](docs/s3-file-backup-permissions.md).
 
 Read-only checks:
 
@@ -265,6 +272,7 @@ PVs to make an alert quiet.
 | PostgreSQL native recovery | CNPG backups/WAL go to MinIO. The 25 October drill recovered `20261025T080202` into an isolated CNPG cluster and matched production on 80 public tables, schema digest, 7 users, 9,138 vocabularies and vocabulary digest. No seeded application record/file consistency proof exists. |
 | Uploaded-file recovery | A 35,840-byte canary file restored with the same SHA-256 into an isolated namespace. The owner approved a private draft with a deterministic 64 KiB file, save-only with no publication or DOI; the upload/save ID is still awaited and no seeded restore has completed. Production file recovery remains unproven. |
 | Application-consistent recovery | Not proven. No seeded Invenio record plus file, permissions, and index state has been restored and verified together. |
+| Operational file backup | Suspended command and CronJob are in Git and offline-tested only. No destination bucket, dedicated Secret, scheduled success, retained point or isolated file/DB restore proof exists yet. |
 | Independent disaster recovery | Not demonstrated. MinIO and the primary NFS data share the same NFS server; an off-site or independent copy is not provided here. |
 | RPO/RTO | No contractual guarantee. Velero is weekly and CNPG is daily; actual restore time depends on data size, credentials, storage, and operator behavior. |
 

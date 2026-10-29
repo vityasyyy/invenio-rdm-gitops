@@ -42,6 +42,8 @@ For backup status, use fully qualified `backups.velero.io` and
 `backups.postgresql.cnpg.io`; unqualified `backups` can select the wrong CRD.
 The 29 October daily PostgreSQL run completed. Actual Sunday Velero success is
 still pending 1 November 03:00 UTC; manual recovery proof does not replace it.
+The operational file backup remains suspended and has no successful point or
+restore proof; see [its runbook](#operational-s3-file-backup-suspended).
 
 ## Day-to-day checks
 
@@ -195,6 +197,121 @@ not a tested restore.
   backups keep required WAL. Never apply blanket bucket expiry or manual purges.
 - Keep file backups, database recovery time and external stores consistent; do not
   infer application-level consistency from Kubernetes object backup completion.
+
+### Operational S3 file backup (suspended)
+
+The repository contains a **suspended** `invenio-rdm-file-backup` CronJob and one
+command source, `k8s/infra/minio/resources/s3-file-backup.py`. The command and
+manifests are offline-tested only. No destination bucket, dedicated Secret,
+credential, activation, scheduled success, retained point or restore drill has been
+performed. The existing private inventory key is not a backup-writer or restore
+credential.
+
+Scope and integrity:
+
+- Sources are the entire `invenio-rdm` and `invenio-rdm-uploads` buckets. Completed
+  temporary objects are included and an empty staging bucket is explicit in the
+  manifest. Native unfinished multipart transfers are counted, never aborted or
+  completed; users restart unfinished transfers after recovery.
+- Destination is the private `invenio-rdm-file-backups` bucket, owned prefix
+  `snapshots/`. It is not a deletion-following mirror. Source versioning, lifecycle
+  and ACL settings are not changed. Source versioning must stay unconfigured for
+  full-bucket coverage; a configured state fails the run rather than claiming version
+  coverage.
+- Each point has a unique UTC/random identity, paginated source-listing bounds,
+  source settings and aggregate incomplete-upload counts. Objects are acquired with
+  a conditional `If-Match` source identity where available.
+- Bytes are streamed with explicit SDK multipart calls in filled 8 MiB parts, one
+  transfer at a time, and hashed with SHA-256. The observed cached s3transfer
+  0.10.3 runtime was not inspected under this offline scope; a local 0.14.0 source
+  check showed its non-seekable read path does not fill short reads. The command
+  therefore does not assume managed short-read or buffering behavior. One part is
+  resident; the S3 10,000-part limit caps a supported object at 80,000 MiB
+  (about 78 GiB) at this chunk size. The destination is read back and verified
+  for every object. ETag is a source identity/precondition, not a universal
+  content MD5. Standard content headers and user metadata are preserved; object
+  tags are not copied.
+- A second source inventory detects observed changes. A source change, missing
+  object, permission error, partial read/write or verification mismatch fails the
+  run without a completion marker. The partial prefix remains as failure evidence.
+- The private manifest and `COMPLETE.json` marker are written only after all
+  verification succeeds; the marker binds the manifest SHA-256. Acquisition is
+  sequential and non-atomic. It is not a PostgreSQL/file snapshot and does not prove
+  application-level consistency.
+- The command has no application imports, database mount, PVC, Kubernetes API token
+  or application/root credential. The job is pinned to the observed cached runtime
+  digest
+  `ghcr.io/cloudnative-pg/postgresql@sha256:99be063781d171d3971089b49c992706bdab9ccbd2b57cdf126c7542773aedfe`
+  with the command overridden to Python. The CNPG Cluster image tag is separate and
+  unchanged. Deployment must still verify the pullable reference, node cache and
+  placement; the digest is not proof of a cross-registry pull.
+
+The suspended job proposes daily 02:30 UTC, `Forbid`, starting grace 300s and active
+deadline 900s, requests 100m/64Mi and limits 500m/256Mi. It does not change existing
+HPA, resource budgets, capacity gates or the 70% research gate. Adding the recurring
+workload still requires deployment approval and apparatus re-freeze.
+
+Monitoring is narrow and suspended-aware: `S3FileBackupJobFailed`,
+`S3FileBackupNeverSucceeded` and `S3FileBackupStale` are gated on
+`kube_cronjob_spec_suspend == 0`; the proposed stale window is 36 hours. Terminal
+failure uses the Job Failed condition (`kube_job_failed{condition="true"} == 1`)
+with CronJob ownership from `kube_job_owner`; failed-pod counters and retry gaps
+are not terminal. Actual kube-state-metrics availability, selectors and success
+semantics must be verified after deployment. Job completion is an outcome proxy,
+not proof that a retained point restores; inspect the private marker and run an
+isolated restore.
+
+After separate approval, a manual backup is a live destination write:
+
+```bash
+kubectl -n minio create job \
+  --from=cronjob/invenio-rdm-file-backup \
+  invenio-rdm-file-backup-manual-$(date -u +%Y%m%d-%H%M%S)
+```
+
+A restore must run in a separately provisioned drill scope and is not performed by
+the CronJob:
+
+```bash
+SNAPSHOT_ID=20261030T023000Z-0123456789ab
+DRILL_BUCKET=invenio-rdm-drill-example
+python3 /config/s3-file-backup.py --config /config/config.json restore \
+  --snapshot-id "$SNAPSHOT_ID" \
+  --destination-bucket "$DRILL_BUCKET" \
+  --destination-prefix "restore/$SNAPSHOT_ID/" \
+  --confirm
+```
+
+Replace the snapshot ID and drill bucket with the approved verified values. The
+command refuses a non-empty drill prefix, a missing bucket, or any target outside
+`invenio-rdm-drill-*` and `restore/`.
+
+Prune is disabled by default and is not scheduled. It requires a separate
+destructive-scope approval, a strictly newer verified capture time, and a
+destination-only delete identity:
+
+```bash
+python3 /config/s3-file-backup.py --config /config/config.json prune --confirm
+```
+
+The command preserves the latest verified point and same-time peers without a
+strictly newer success; it never traverses source, CNPG or Velero prefixes.
+Prune re-reads and hashes every object in complete points before
+any deletion, validates that each point contains exactly its marker, manifest and
+manifested objects, and refuses all deletion on incomplete, corrupt, unexpected or
+unverifiable state. Inspectable incomplete, malformed or extra state returns
+`attention` and CLI status 2; content-integrity, permission or network failures
+return status 1. Restore is the only mode that writes outside the backup
+destination. Do not add lifecycle expiry, a scheduled prune, or a broad storage
+cleanup to replace the explicit mode. Provision the bucket, policies and Secret
+privately using [the permission examples](s3-file-backup-permissions.md).
+
+Limits: primary file bytes and retained backup points share the same MinIO and NFS
+failure domain; no off-site copy exists. The nominal RPO is up to one day only while
+jobs actually succeed. There is no atomic database/file snapshot, no resumable
+multipart continuation, and no restore proof until the separately approved byte and
+native-DB linkage drill completes. Parent #202 remains open until a real scheduled
+success and isolated restore are verified.
 
 ### Retention change gate
 

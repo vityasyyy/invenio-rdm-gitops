@@ -6,3 +6,17 @@ resources:
   - resources/create-bucket-job.yaml
   - resources/minio-console-ingressroute.yaml
   - resources/minio-s3-ingressroute.yaml
+  - resources/s3-file-backup-cronjob.yaml
+
+configMapGenerator:
+  # The command and its settings have one editable source. The generator hash
+  # rewrites the CronJob volume reference so changes cannot drift from a copy.
+  - name: s3-file-backup
+    namespace: minio
+    files:
+      - resources/s3-file-backup.py
+      - resources/s3-file-backup-config.json
+    options:
+      labels:
+        app.kubernetes.io/name: invenio-rdm-file-backup
+        app.kubernetes.io/part-of: invenio-rdm
