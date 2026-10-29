@@ -15,7 +15,7 @@ Plans live in `docs/plans/` — `active/` for work that still has an owner actio
 
 ### Review boundary — 29 October 2026
 
-The operator's five additional untracked planning records were reviewed alongside
+The operator's additional untracked planning records were reviewed alongside
 the four tracked plans above. They remain local process material, not additions
 to product history. Their dispositions are:
 
@@ -26,6 +26,9 @@ to product history. Their dispositions are:
 | 22 October blocker audit | Dated read-only audit complete; findings handed to current instrument/method work and operational issues. Its proposed twin-stack instructions are superseded, not a new provisioning requirement. |
 | 23 October maintainability/observability alignment | Implementation delivered through #170–177; remaining retention verification, seeded recovery and cross-repository method acceptance stay explicit. Do not shorten PostgreSQL's 30-day retention to satisfy the older seven-day proposal. |
 | 29 October worker probe rollout | Image/probe delivery and six-hour background acceptance verified. Task progress, loaded behavior and formal readiness are not implied. |
+| 29 October operational S3 design | Machinery and explicitly approved suspended deployment delivered through #204 (`13eb258`). Parent #202/#139 remain active for provisioning, runtime/capacity/telemetry checks, actual backup, activation and isolated recovery. |
+| 29 October S3 implementation brief | Bounded delivery completed and local brief moved to `completed/`; 254 tests with five existing skips, six PR checks and Deploy Verify passed. No backup Jobs ran. |
+| 29 October S3 activation preflight | Read-only operational evidence and maintained-document reconciliation in progress; no provisioning, backup/prune/restore or activation approval. |
 
 See [current state](../current-state.md#post-rollout-background-window--2026-10-29)
 and [worker findings](../worker-probe-findings.md) for the dated evidence. No plan
