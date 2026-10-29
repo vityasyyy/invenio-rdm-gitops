@@ -167,7 +167,23 @@ not a fixed assignment. See
 | Next Velero run | 2026-11-01 03:00 UTC |
 | 25 October Velero run | `PartiallyFailed`, one error; duplicate per-replica volume opt-ins were removed afterward |
 | Velero alerts | Scheduled-failure critical and stale-backup warning observed 29 October; actual successful weekly execution remains unproven |
-| Operational S3 file backup | Suspended `invenio-rdm-file-backup` command and CronJob are in Git and offline-tested only. Destination bucket, dedicated Secret, activation, retained point and isolated restore proof are pending |
+| Operational S3 file backup | #204 (`13eb258`) deployed the suspended `invenio-rdm-file-backup` CronJob and rules on 29 October. Zero backup Jobs; destination bucket, dedicated Secret, activation, retained points and isolated recovery proof remain pending |
+
+### Suspended file-backup deployment — 29 October 10:04–10:07 UTC
+
+The owner approved suspended deployment only. All six PR checks in run
+`40849767229` and post-merge Deploy Verify `40854677445` passed, including the
+revision/health/operation/hook checks and `/ping` smoke test. Both affected Argo
+applications reached `13eb258` with successful operations. The CronJob was
+suspended with zero owned/active backup Jobs; all three backup rules evaluated
+healthy/inactive with no errors at 10:06:40 UTC.
+
+This is configuration deployment, not successful backup execution. Actual image/
+placement/resource behavior and metric contracts, private provisioning, first
+backup, isolated seed/staging/native-DB recovery and activation remain gates in
+#202/#139. No prune release or experiment collection was authorized.
+
+### Weekly Velero evidence
 
 The 25 October run created three `data` and three `archive` PodVolumeBackups. Two
 duplicate `archive` backups on worker-01 were canceled after their expose Pods failed;

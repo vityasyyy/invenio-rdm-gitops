@@ -351,15 +351,16 @@ The same customized Python/InvenioRDM image runs several roles:
 | Web | Browser and REST requests |
 | Celery workers | Asynchronous tasks |
 | Celery Beat | Periodic task enqueueing |
-| Setup Job | Database/application initialization and update commands |
+| PostSync verifier | Read-only schema, file-location, index, queue and permission postconditions |
+| Manual initialization Job | Separately approved initialization for verified incomplete setup; excluded from automated sync |
 
 | Backend | What it holds |
 | --- | --- |
 | PostgreSQL | Accounts, drafts/records, file metadata, vocabularies and application state |
-| NFS | Uploaded file bytes and mounted durable filesystem content |
+| NFS | Backing filesystem for MinIO file/backup objects and other mounted durable content |
 | OpenSearch | Searchable representations derived from application data |
 | Redis | Broker messages, sessions, task results and caches |
-| MinIO | Backup objects here, not the primary research-file store |
+| MinIO | Primary uploaded-file objects and CNPG/Velero backup objects; staged file-backup destination shares the same service |
 
 ```mermaid
 flowchart TD
@@ -368,7 +369,9 @@ flowchart TD
     Redis --> Workers[Celery workers]
     Workers --> DB[PostgreSQL]
     Workers --> Search[OpenSearch]
-    Workers --> Files[NFS files]
+    Workers --> Files[MinIO file objects]
+    Web --> Files
+    Files --> NFS[Shared NFS backing storage]
 ```
 
 Request handling and task execution are separate paths. Healthy worker processes do not prove every queue is consumed or every task is successful.
@@ -460,16 +463,11 @@ About 264,000 existing vocabulary queue messages remained after the bounded run.
 
 ## 12. Setup hooks and migrations
 
-`k8s/apps/invenio/resources/invenio-setup-job.yaml` is an ArgoCD PostSync hook. Its commands include database initialization/migration, default file location and permissions, index initialization, custom fields, fixtures, queue declaration and record-index rebuilding.
+`k8s/apps/invenio/resources/invenio-setup-job.yaml` is the read-only ArgoCD PostSync verifier. It checks dependency-resolved Alembic heads, default file location, index aliases, declared queues and admin permission. It does not initialize/migrate the database, load fixtures, declare queues or rebuild indexes, and failures require inspection rather than an automatic full initialization.
 
-Several commands swallow errors using `|| true` or equivalent continuation. Consequently:
+The initialization Job lives separately under `k8s/apps/invenio/initialization/`, outside automated sync. Use it only with approval for verified incomplete initial setup; normal remediation should target the failed postcondition. Historical setup commands that swallowed errors or rebuilt indexes are not current ordinary-sync instructions.
 
-- A successful Job can hide a failed setup operation.
-- A green sync is not sufficient functional proof.
-- A PostSync migration is not a migration completed before new application Pods start.
-- A comment saying “idempotent” does not establish safe repeated effects.
-
-No explicit index-drop command was observed, so ordinary sync was not shown to erase the vocabulary repair. Repeated fixture/rebuild effects and their queue impact still need investigation.
+A green verifier still does not establish task progress, file recoverability or application-level data consistency. A required migration must be explicitly planned and approved rather than inferred from PostSync success.
 
 Schema evolution should explicitly address old/new application compatibility, migration failure visibility, ordering and rollback limitations. Reverting an image does not automatically reverse a database migration.
 
@@ -493,11 +491,11 @@ These PVC sizes are not independently enforced filesystem quotas in this setup. 
 
 ```mermaid
 flowchart TD
-    NFS[Shared NFS filesystem] --> Files[Invenio files]
+    NFS[Shared NFS filesystem] --> Files[Invenio auxiliary mounts]
     NFS --> PG[PostgreSQL storage]
     NFS --> Redis[Redis persistence]
     NFS --> Search[OpenSearch storage]
-    NFS --> MinIO[MinIO backup storage]
+    NFS --> MinIO[MinIO file and backup objects]
     NFS --> Observe[Monitoring and logging storage]
 ```
 
@@ -510,16 +508,19 @@ flowchart TD
     PG[PostgreSQL] -->|native backup and WAL| MinIO[MinIO objects]
     Files[Selected persistent files] -->|Velero filesystem backup| MinIO
     API[Kubernetes resources] -->|Velero resource backup| MinIO
+    Uploads[Uploaded file objects] -.->|suspended full-copy job| Points[File restore points]
+    Points -->|same service and NFS| MinIO
 ```
 
-CNPG native database recovery and Velero resource/filesystem recovery serve different purposes. A running restored database alone does not prove consistency with uploaded files.
+CNPG native database recovery and Velero resource/filesystem recovery serve different purposes. The dashed file-copy path is deployed but suspended: no retained file point exists from it yet. A running restored database alone does not prove consistency with uploaded files.
 
 | Recovery claim | Evidence boundary |
 | --- | --- |
-| Kubernetes resources and selected files via Velero | Weekly schedule and manual/canary Backups exist. The latest actual weekly run at the 21 October audit was `PartiallyFailed` (4 errors, 58 warnings); backup status is not restore proof. |
+| Kubernetes resources and selected files via Velero | Weekly schedule and manual/canary Backups exist. The 25 October weekly run was `PartiallyFailed`; duplicate shared-volume opt-ins were removed, but actual success of the next weekly run remains unproven. See current-state for dated evidence; backup status is not restore proof. |
 | PostgreSQL native recovery | Native restore of existing data into an isolated CNPG cluster matched schema, row counts and a vocabulary content digest. It did not include a seeded application record or file. |
-| Uploaded-file recovery | A 35,840-byte canary file restored with the same SHA-256. The owner approved a private draft with a deterministic 64 KiB file, save-only with no publication or DOI; the upload/save ID is still awaited and no seeded restore has completed. Production-file recovery is unproven. |
-| Application-consistent recovery | Not proven: the approved private draft/64 KiB seed has not yet been uploaded, saved, backed up and restored together with permissions, publication state and search/index behavior. |
+| Uploaded-file recovery | A 35,840-byte canary file restored with the same SHA-256. The private draft/64 KiB seed now exists with verified source upload/download and database/file linkage. No seeded restore has completed; production-file recovery remains unproven. |
+| Application-consistent recovery | Not proven: the source seed has not been restored with native database/file linkage, permissions, publication state and relevant index behavior verified together. |
+| Operational file backup | #204 deployed offline-tested tooling, a suspended CronJob and three healthy/inactive rules. No backup Jobs ran; private provisioning, actual points, activation and isolated recovery remain open in #202/#139. |
 | Independent disaster recovery | Not demonstrated. MinIO and primary NFS data share the same NFS server; no off-site or independent copy is established here. |
 | RPO/RTO | No guarantee. Velero is weekly, CNPG is more frequent, and restore time varies with data size, credentials, storage and operator behavior. |
 
@@ -531,7 +532,7 @@ CNPG native database recovery and Velero resource/filesystem recovery serve diff
 
 ### What recovery must prove
 
-A useful seeded test checks a known draft/record, its permissions, associated file metadata, exact file bytes/checksum, and relevant indexing behavior after restore. It also proves that the experiment can return to the same baseline. The approved seed scope is one private draft with a deterministic 64 KiB file, save-only and without publication or DOI; the upload/save ID is pending, and a restore has not yet been completed.
+A useful seeded test checks a known draft/record, its permissions, associated file metadata, exact file bytes/checksum, and relevant indexing behavior after restore. It also proves that the experiment can return to the same baseline. The source private draft with its deterministic 64 KiB file is verified, save-only and without publication or DOI; isolated restore verification remains pending.
 
 A private-draft test does not prove published-record, DOI or public-search recovery. Backup completion is evidence of backup execution, not proof of successful restoration.
 
@@ -776,6 +777,12 @@ operations, placement and experiment readiness are in
 | #163 | This documentation change: README/guide alignment. Close only after the PR and required checks pass. |
 
 Open issues are neither untouched failures nor all stale. They need evidence-backed reconciliation, not blanket closure. An assessment here is a dated snapshot; re-check the issue's own acceptance criteria before closing it.
+
+The table above preserves the historical audit assessment. By 29 October, the
+seed's source linkage and revision/hook-aware deployment verifier were delivered;
+#204 additionally verified suspended file-backup deployment. These supersede the
+table's pending-seed and old-verifier descriptions, not its unresolved recovery
+or external-IT gates. Current state and GitHub acceptance criteria take precedence.
 
 ### Readiness priorities
 

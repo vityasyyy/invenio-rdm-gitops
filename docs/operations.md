@@ -201,11 +201,21 @@ not a tested restore.
 ### Operational S3 file backup (suspended)
 
 The repository contains a **suspended** `invenio-rdm-file-backup` CronJob and one
-command source, `k8s/infra/minio/resources/s3-file-backup.py`. The command and
-manifests are offline-tested only. No destination bucket, dedicated Secret,
-credential, activation, scheduled success, retained point or restore drill has been
-performed. The existing private inventory key is not a backup-writer or restore
+command source, `k8s/infra/minio/resources/s3-file-backup.py`. The tooling is
+offline-tested; #204 (`13eb258`) additionally deployed its suspended resources on
+29 October. PR CI `40849767229` and Deploy Verify `40854677445` passed. Both Argo
+operations succeeded, zero backup Jobs existed, and the three loaded rules
+evaluated healthy/inactive. No destination bucket, dedicated Secret, activation,
+scheduled success, retained point or restore drill has been provisioned or proven
+by that delivery. The private inventory key is not a backup-writer or restore
 credential.
+
+Before requesting a first backup, review pinned-runtime/cache/placement,
+capacity, network and actual metric-contract evidence and the scoped private
+provisioning packet. Keep scheduling suspended for the separately approved
+controlled backup and isolated restore proof. Schedule activation and retention
+deletion retain separate approvals; no source object or primary database is a
+restore target.
 
 Scope and integrity:
 

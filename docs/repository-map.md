@@ -36,7 +36,7 @@ values, a Kustomize directory, or both; values files are not Kubernetes resource
 | `k8s/infra/{traefik,loki}/values.yaml` | Helm-only components; no ceremonial resource directories |
 | `k8s/infra/alloy/` | Helm values plus namespace-scoped RBAC and PodMonitor |
 | `k8s/infra/monitoring/` | Monitoring chart values; resources package dashboards, alerts, routing and network policies; `tests/` holds rule cases |
-| `k8s/infra/minio/` | Helm values plus encrypted credentials, bucket initialization and console route |
+| `k8s/infra/minio/` | Helm values plus encrypted credentials, bucket initialization, routes and the authoritative S3 backup command/config with generated ConfigMap and suspended CronJob |
 | `k8s/infra/velero/` | Helm values plus weekly Schedule, bounded data-mover configuration and metrics access |
 | `k8s/infra/security/` | Network policies, quotas, limits and namespace admission policy resources |
 | `k8s/infra/sealed-secrets/` | Pinned upstream controller installation |
