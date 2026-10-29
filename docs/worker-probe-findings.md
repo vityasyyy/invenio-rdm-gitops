@@ -34,6 +34,49 @@ checksums, not an off-site backup or published dataset.
 
 ## Summary
 
+### Six-hour background follow-up — 2026-10-29
+
+Window: **2026-10-28 22:23:34 to 2026-10-29 04:23:34 UTC**, 15-second
+evaluations (1,440 samples for each surviving worker's CPU and memory). Exact
+requests and raw responses include the earlier full history from 18:30 UTC.
+
+| Worker suffix | CPU mean | Working-set median / sampled peak | Readiness mean / executions | Liveness mean / executions |
+|---|---:|---:|---:|---:|
+| `f8b5k` | 8.45m | 351.17 / 367.59MiB | 0.764s / 180 | 0.757s / 72 |
+| `4djv4` | 8.63m | 350.65 / 373.66MiB | 0.781s / 180 | 0.776s / 72 |
+
+Duration and success counters had no observed resets; no failed-probe series
+was returned. Worker OOM counters and all five application restart counters
+stayed zero. Worker and web HPA current/desired stayed two throughout this
+window. This supports sustained lower probe duration and lower observed worker
+CPU than the reconstructed 0.141–0.142-core baseline; it is not a controlled
+causal estimate or evidence of loaded throughput/latency.
+
+Worker working-set endpoint changes were approximately +0.12/+3.87MiB. Web
+working-set medians were about 345.51/413.50MiB. Web was restarted by the shared
+image delivery, and no web concurrency/HPA/resource change was made; do not
+attribute its replica count or memory change to the Celery helper.
+
+Task/queue metrics are absent and the available worker logs had no entries in
+the requested interval. Read-only Redis showed `celery` depth zero but unchanged
+`vocabularies` backlog 264,140, with no evictions/rejected connections and AOF
+write/rewrite status OK. Neither the zero queue nor a broker pong proves task
+progress or background throughput. That remains a separate queue-readiness
+follow-up, not justification for dispatching tasks or draining the backlog.
+
+Exact current node working-set/allocatable samples were 45.98/57.92/59.71%; the
+same historical metric was unavailable. Host MemAvailable history is separately
+archived and must not be substituted for it. The 70% experiment gate, resource
+budgets and all HPA policies remain unchanged. Both weekly-failure and stale-backup
+alerts remained firing; no formal-readiness claim follows from this observation.
+
+Evidence: local checksummed archive
+`~/skripsi/experiments/evidence-local/post-probe-acceptance-20261029T042334Z/`,
+alongside the original investigation archive. Not an off-site copy or a new
+formal dataset. Original historical diagnosis and forecasts below remain dated.
+
+### Historical diagnosis
+
 The worker probes ran `celery -A invenio_app.celery inspect ping`, which builds
 the whole Flask application in a new process on every execution. Kubelet's own
 probe timing shows 12.2–13.8 s per run, 38–43 runs per hour per pod, and the

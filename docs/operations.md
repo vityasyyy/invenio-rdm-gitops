@@ -33,6 +33,16 @@ do not add a silent missing-helper fallback. See
 [worker probe findings](worker-probe-findings.md). Do not infer sustained memory
 savings or experiment readiness from a successful ping alone.
 
+The six-hour background acceptance window is recorded in the findings. It does
+not verify loaded task progress: Redis `vocabularies` still held 264,140 messages
+on 29 October. Do not purge, unboundedly drain or submit synthetic tasks as a
+routine health check. Missing task/queue metrics are an evidence gap, not zero.
+
+For backup status, use fully qualified `backups.velero.io` and
+`backups.postgresql.cnpg.io`; unqualified `backups` can select the wrong CRD.
+The 29 October daily PostgreSQL run completed. Actual Sunday Velero success is
+still pending 1 November 03:00 UTC; manual recovery proof does not replace it.
+
 ## Day-to-day checks
 
 ```bash

@@ -1,10 +1,47 @@
 # Current verified cluster state
 
-Latest scoped verification: **2026-10-28 around 18:28–18:33 UTC**, worker probe
-rollout at `3c471a3`, described below. The broader baseline sections retain their
+Latest scoped verification: **2026-10-29 around 04:23–04:30 UTC**, including the
+six-hour post-rollout observation below. The broader baseline sections retain their
 **2026-10-25 around 09:45 UTC** observation against `d7ef120`; they are not all
 re-certified by this scoped rollout. Re-run the relevant checks before relying
 on a dated observation for an experiment or incident decision.
+
+## Post-rollout background window — 2026-10-29
+
+Fixed summary window **2026-10-28 22:23:34 to 2026-10-29 04:23:34 UTC**,
+15-second evaluations. Both surviving worker pods have 1,440 CPU/memory samples;
+the full retained query window starts at 18:30 UTC. This is observational
+background evidence, not a controlled load test or formal experiment.
+
+- Worker CPU means **8.45/8.63m per pod**, compared with approximately
+  **141–142m** in the reconstructed historical window. Readiness probe means
+  **0.764/0.781s**, with 180 executions per pod; liveness **0.757/0.776s**,
+  with 72 per pod. No duration-counter reset or failed-probe series was observed.
+- Worker working-set medians **351.17/350.65MiB**, sampled peaks
+  **367.59/373.66MiB**. Shared-image restart, different pod populations and
+  workload differences prevent attributing all memory change to the helper.
+- Web and worker HPA current/desired stayed at **2** throughout this window.
+  All five application pods had zero restarts; worker OOM-event counters and
+  reported node Memory/Disk/PIDPressure stayed zero. All 18 Applications were
+  Synced/Healthy at the live check. MinIO retained a historical terminal Error
+  operation; it is not evidence of a new failed deployment.
+- Raw metrics-server working-set/allocatable sample at approximately 04:23 UTC:
+  server **45.98%**, worker-01 **57.92%**, worker-02 **59.71%**. Historical node
+  working-set series were unavailable in the queried Prometheus metrics. Host
+  `1-MemAvailable/MemTotal` history is retained separately and must not substitute
+  for the experiment gate. Sustained compliance with that exact gate is unproven.
+- Read-only Redis: `vocabularies` backlog **264,140**, `celery` depth **0**,
+  evictions/rejected connections **0**, AOF enabled with last write/rewrite OK.
+  Available worker logs contain no entries in the requested interval; task/queue
+  metrics are absent. This does **not** prove task progress or an empty workload.
+- Alloy generic-drop counters did not increase and canary missing counters stayed
+  zero. Cold-start replay remains unresolved. Both **VeleroScheduledBackupFailed**
+  and **VeleroBackupStale** fired throughout; neither was suppressed.
+
+Local exact queries/responses, summary, snapshots and aggregate checks are retained
+with SHA-256 manifests in
+`~/skripsi/experiments/evidence-local/post-probe-acceptance-20261029T042334Z/`.
+This is not an off-site backup. See [worker findings](worker-probe-findings.md).
 
 ## Worker probe rollout — 2026-10-28
 
@@ -124,12 +161,12 @@ not a fixed assignment. See
 
 | Item | Current state |
 |---|---|
-| CNPG schedule | `0 0 2 * * *` — daily at 02:00 UTC; next run 2026-10-26 02:00 UTC |
+| CNPG schedule | `0 0 2 * * *` — daily at 02:00 UTC; 26–29 October daily runs completed, latest 29 October 02:00:15–02:00:21 UTC |
 | CNPG retention | 30 days; **not reduced to 7 days** |
 | Velero schedule | `0 3 * * 0` — weekly Sunday 03:00 UTC; TTL 672h (28 days) |
 | Next Velero run | 2026-11-01 03:00 UTC |
 | 25 October Velero run | `PartiallyFailed`, one error; duplicate per-replica volume opt-ins were removed afterward |
-| Velero alert | `VeleroScheduledBackupFailed` is firing for the 25 October run until a successful weekly run supersedes it |
+| Velero alerts | Scheduled-failure critical and stale-backup warning observed 29 October; actual successful weekly execution remains unproven |
 
 The 25 October run created three `data` and three `archive` PodVolumeBackups. Two
 duplicate `archive` backups on worker-01 were canceled after their expose Pods failed;
@@ -222,27 +259,34 @@ readiness.
 | Real Invenio workload exists | Partial | Production Invenio is healthy with one private draft and one 64 KiB file; no published record |
 | Private draft + 64 KiB file seed | Complete | `4ben9-bgh38`; upload and public download verified, SHA-256 matches |
 | Reset/orphan cleanup | Complete | Draft deletion + packaged CronJob removed the test file instance and S3 object; seed preserved |
-| Sequential real-Invenio arms | Blocked | Method now uses one stack at a time; no experiment namespace/twin provisioning exists |
+| Sequential real-Invenio arms | Selected, not yet validated end-to-end | One real production-like stack, automated imperative comparator and GitOps sequentially; no twin stack or NGINX surrogate |
 | HPA-control method review | Aligned | Proposal PR #7 uses HPA-owned scenario A and excludes `/spec/replicas` from static R1 |
-| Live experiment instruments | Partial | `experiments/live/` real-Invenio harness is implemented and dry-run-tested; no live pilot or formal run yet |
-| Kubernetes audit evidence | Blocked | No API-server audit evidence established; Git is not an audit of out-of-band changes |
-| SMTP/email | Blocked | Live config still uses `smtp.example.org` and `admin@example.org`; relay/auth/CA/firewall unknown |
-| Capacity | Unproven | One sample is 59% memory on both workers; no sustained window or A/B placement proof |
+| Live experiment instruments | Blocked on corrections | Pilot and stopped partial collection exist; retry-ID validation, baseline waiting, exact node accounting, timing and R1 declaration provenance need correction/validation |
+| Kubernetes audit / R3 | Not measured | No usable API-server audit stream established; R3 is excluded, not fabricated from Git history |
+| SMTP/email | Operational follow-up | Placeholder relay remains; IT relay/auth/CA/firewall details needed. Not automatically an R1/R2 gate unless the selected protocol uses email |
+| Capacity | Partial evidence | Six-hour background history and exact current node sample retained; no exact historical gate series or loaded recovery headroom proof; keep 70% unchanged |
 | Database recovery | Proven | 25 October native drill matched schema, counts and vocabulary digest |
 | File/record consistency | Partial | One private seed file is uploaded/downloaded; no published record and no independent file copy |
 | Weekly backup freshness | Blocked | 25 October run `PartiallyFailed`; next successful run is 1 November |
-| Independent disaster recovery | Blocked | MinIO primary and backup data share one NFS failure domain |
-| Formal run approval | Blocked | No unmeasured pilot or formal collection approval |
+| Independent disaster recovery | Deferred limitation | MinIO primary and backup data share one NFS failure domain; off-site copy explicitly deferred |
+| Formal run approval | Pending | Previous attempts are incomplete; no new formal batch approved after apparatus corrections |
 
-The proposal now uses sequential automated-imperative and GitOps arms on one stack
-at a time. The seed and reset path is complete; the real-Invenio harness is
-pilot-tested. Formal collection still requires audit evidence, capacity, an
-accepted production-like-stack decision, and a post-seed recovery drill.
+The selected direction is sequential automated-imperative and GitOps arms on one
+real stack. The seed/reset path is verified separately from seeded recovery.
+Earlier pilot and partial attempts do not validate a fresh complete comparison.
+Instrument corrections, method/supervisor alignment, capacity and post-seed
+recovery readiness remain gates; R3 and off-site copy are disclosed limitations,
+not silently revived requirements or completed measurements.
 
 ## Experiment harness status
 
 - The real-Invenio sequential-arm harness is merged in the thesis repository at
-  `experiments/live/`; 84 offline tests pass.
+  `experiments/live/`. The pre-correction baseline on 29 October passed 127
+  offline tests; passing units did not catch the reproduced integration defects.
+- Stopped `formal-20261027c`: 210 planned cells, 60 observed, 9 right-censored,
+  1 baseline-failed and 140 pending; 76 attempt rows. GitOps never started.
+  Earlier partial attempts, pilot and synthetic data remain separate. None is
+  a completed formal comparative dataset or a source of replacement samples.
 - Dry-run scenarios emit planned mutations with blank timings/R1 and perform no
   `kubectl`/HTTP calls.
 - Live mode requires `--live`, `--confirm-single-stack`, an explicit
@@ -268,12 +312,15 @@ accepted production-like-stack decision, and a post-seed recovery drill.
 
 1. **2026-11-01 03:00 UTC** — verify the weekly Velero run has no duplicate PVBs and
    the `VeleroScheduledBackupFailed` alert clears.
-2. Decide whether the production-like `invenio` stack is acceptable for formal
-   experiments or whether an isolated `exp-*` stack must be provisioned.
-3. Enable RKE2 API audit or explicitly accept the R3 actor limitation.
+2. Repair/verify the runner-to-analyzer path and freeze independently verified
+   declaration, timing, R1/R2 semantics, configuration and analysis identities.
+3. Record owner and supervisor agreement on the one-stack comparator and R3
+   exclusion separately; do not claim supervisor approval from owner direction.
 4. Run a post-seed isolated recovery drill (database + seed file).
-5. Obtain audit/SMTP/capacity/NTP/maintenance evidence from university IT.
-6. Add an independent copy of the MinIO file/backup data.
+5. Obtain capacity/NTP/maintenance evidence from university IT; keep SMTP/CA/
+   firewall and audit access as separately owned operational follow-ups.
+6. Retain the deferred independent-copy limitation; implementation requires a
+   separate storage/account decision and approval.
 7. Revoke the drill MinIO key and decide on the retained drill PV/NFS directory.
 
 ## Recheck commands
@@ -288,6 +335,6 @@ kubectl -n monitoring get servicemonitor argocd-metrics
 kubectl -n monitoring get prometheusrule | grep cluster-health
 kubectl -n database get clusters.postgresql.cnpg.io,scheduledbackups.postgresql.cnpg.io
 kubectl -n database get backups.postgresql.cnpg.io --sort-by=.metadata.creationTimestamp
-kubectl -n velero get schedules,backups
+kubectl -n velero get schedules.velero.io,backups.velero.io
 kubectl -n invenio exec deploy/invenio-web -c web -- invenio files location list
 ```
