@@ -36,6 +36,7 @@ to product history. Their dispositions are:
 | 29 October S3 implementation brief | Bounded delivery completed and local brief moved to `completed/`; 254 tests with five existing skips, six PR checks and Deploy Verify passed. No backup Jobs ran. |
 | 29 October S3 activation preflight | Evidence gathered, reviewed, corrected and archived; maintained documentation synchronized through #206. Closed — remaining backup activation/recovery is deliberately parked, not pending analysis. |
 | 29 October S3 private provisioning | Private bucket, dedicated writer identity and Secret provisioned by the owner; Secret key names verified without reading values; one approved manual backup succeeded and the recurring schedule stayed suspended. |
+| 29 October S3 schedule activation | Suspended state removed after the owner approved activation; Argo operation succeeded and the CronJob now reports `suspend: false`. Prune remains unscheduled. The first scheduled 02:30 UTC run is still the outstanding evidence. |
 
 See [current state](../current-state.md#post-rollout-background-window--2026-10-29)
 and [worker findings](../worker-probe-findings.md) for the dated evidence. No plan
