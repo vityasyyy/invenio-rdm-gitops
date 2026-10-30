@@ -9,9 +9,9 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "4"
 spec:
-  # Suspended until destination, credentials, capacity and activation are
-  # separately approved. A manual run is a live backup, not a scheduling proof.
-  suspend: true
+  # Active: destination, dedicated credentials and one verified manual run exist.
+  # The first scheduled run and retention release remain separately reviewed.
+  suspend: false
   schedule: "30 2 * * *"
   timeZone: "Etc/UTC"
   concurrencyPolicy: Forbid
