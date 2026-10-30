@@ -1403,7 +1403,7 @@ class ManifestWiringTests(unittest.TestCase):
         cronjob = find_document(rendered, "CronJob", "invenio-rdm-file-backup")
         self.assertEqual(cronjob["spec"]["schedule"], "30 2 * * *")
         self.assertEqual(cronjob["spec"]["timeZone"], "Etc/UTC")
-        self.assertTrue(cronjob["spec"]["suspend"])
+        self.assertFalse(cronjob["spec"]["suspend"])
         self.assertEqual(cronjob["spec"]["concurrencyPolicy"], "Forbid")
         self.assertEqual(cronjob["spec"]["startingDeadlineSeconds"], 300)
         self.assertEqual(cronjob["spec"]["successfulJobsHistoryLimit"], 3)
