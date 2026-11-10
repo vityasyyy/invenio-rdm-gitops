@@ -179,9 +179,9 @@ existing automated access path without changing Cloudflare or ArgoCD policies.
 
 ### HPA and scheduler ownership
 
-- `invenio-web-hpa`: 2–4 replicas, CPU target 70% and memory target 80% of requests.
-- `invenio-worker-hpa`: 1–4 replicas, same utilization targets; each worker runs
-  Celery concurrency 2.
+- `invenio-web-hpa`: 2–4 replicas, CPU target 70% of requests; no memory target.
+- `invenio-worker-hpa`: 1–4 replicas, CPU target 70% and memory target 80% of
+  requests; each worker runs Celery concurrency 2.
 - `invenio-scheduler`: one replica with `Recreate`. This prevents overlap during a
   normal Deployment revision rollout; it is not a distributed lock or an
   exactly-once task guarantee. The liveness probe checks process presence, not
